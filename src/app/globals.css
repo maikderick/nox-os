@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --nox-bg: #050508;
+  --nox-surface: #0f1117;
+  --nox-panel: #151822;
+  --nox-border: #2a2f3d;
+  --nox-text: #f4f6fb;
+  --nox-muted: #9aa3b5;
+  --nox-purple: #8b5cf6;
+  --nox-cyan: #22d3ee;
+  --nox-blue: #3b82f6;
+  --background: var(--nox-bg);
+  --foreground: var(--nox-text);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-nox-bg: var(--nox-bg);
+  --color-nox-surface: var(--nox-surface);
+  --color-nox-panel: var(--nox-panel);
+  --color-nox-border: var(--nox-border);
+  --color-nox-muted: var(--nox-muted);
+  --color-nox-purple: var(--nox-purple);
+  --color-nox-cyan: var(--nox-cyan);
+  --color-nox-blue: var(--nox-blue);
+  --font-sans: var(--font-display);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--nox-bg);
+  color: var(--nox-text);
+  font-family: var(--font-display), "Segoe UI", sans-serif;
+  min-height: 100vh;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--nox-purple) 40%, transparent);
+}
+
+.nox-grid {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 92, 246, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.nox-glow {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(139, 92, 246, 0.28), transparent),
+    radial-gradient(ellipse 50% 40% at 90% 20%, rgba(34, 211, 238, 0.12), transparent);
+}
+
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #0b0d12;
+  border-radius: 0.75rem;
+}
