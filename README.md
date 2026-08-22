@@ -11,6 +11,7 @@ Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior
 - Funil comercial
 - Fila padrão somente com empresas sem site próprio
 - Landings demonstrativas gratuitas por categoria, sem API de IA
+- Melhoria editorial opcional com Claude (server-side, sempre como rascunho)
 - WhatsApp **manual** somente com opt-in `verified` (sem disparo automático/massa)
 - Alteração da própria senha e gestão administrativa de usuários
 - Deduplicação idempotente
@@ -106,7 +107,7 @@ Atribuição: © OpenStreetMap contributors (ODbL).
 
 ## Landings demonstrativas
 
-Na ficha de um lead elegível, use **Gerar landing demonstrativa**. O NOX OS cria a
+Na ficha de um lead elegível, use **Gerar demonstração automática**. O NOX OS cria a
 prévia com templates locais por categoria, sem Claude ou outra API paga. A página:
 
 - usa endereço aleatório em `/demo/[slug]` e validade configurável;
@@ -118,6 +119,47 @@ prévia com templates locais por categoria, sem Claude ou outra API paga. A pág
 
 O conteúdo e o estado ficam na tabela `DemoLanding`; aplique as migrations antes de
 usar o recurso em um ambiente já existente.
+
+### Melhorar com Claude (opcional)
+
+O gerador automático continua sendo o caminho principal e gratuito. Depois de gerar a
+demonstração, **Melhorar com Claude** pede ao modelo uma reescrita apenas do conteúdo
+editorial. O fluxo é: gerar → melhorar → comparar → aplicar ao rascunho → salvar →
+aprovar → compartilhar.
+
+Regras aplicadas pelo servidor:
+
+- a chamada acontece somente no servidor, com sessão autenticada e limite por hora;
+- o Claude controla apenas `headline`, `subheadline`, `aboutTitle`, `about`,
+  `factsTitle`, `benefits`, `servicesTitle`, `servicesIntro`, `services`,
+  `galleryTitle`, `galleryIntro`, `processTitle`, `processIntro`, `processSteps`,
+  `faqTitle`, `faqs`, `contactTitle`, `contactText`, `finalCtaTitle`, `finalCtaText`,
+  `ctaLabel`, `primaryColor` e `accentColor`;
+- `businessSnapshot`, telefone, endereço, coordenadas, redes sociais, URLs de imagens,
+  slug, validade e estado de aprovação nunca são enviados para alteração;
+- serviços sugeridos que não estejam confirmados na ficha são descartados;
+- a resposta é validada pelo schema Zod e por regras anti-invenção (avaliações,
+  preços, horários, prêmios, tempo de mercado, garantias, telefones, e-mails e URLs).
+  Uma resposta reprovada é reenviada uma vez com as correções; se falhar de novo, nada
+  é alterado;
+- a sugestão **não é persistida**: ela volta para revisão no editor e só entra no banco
+  quando você salva. Qualquer alteração de conteúdo em uma página aprovada devolve a
+  demonstração para **rascunho**.
+
+Variáveis de ambiente (defina apenas no painel da Vercel, nunca no código nem com
+prefixo `NEXT_PUBLIC_`):
+
+| Variável | Padrão | Função |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | — | Habilita o botão. Sem ela, só o gerador gratuito aparece. |
+| `ANTHROPIC_MODEL` | `claude-opus-5` | Modelo usado na Messages API. |
+| `ANTHROPIC_MAX_TOKENS` | `8000` | Teto de tokens da resposta. |
+| `ANTHROPIC_TIMEOUT_MS` | `45000` | Timeout de cada chamada. |
+| `DEMO_AI_HOURLY_LIMIT` | `20` | Melhorias por usuário por hora (auditadas em `AuditLog`). |
+
+Falhas do Claude (timeout, indisponibilidade, chave inválida, resposta reprovada) são
+exibidas com mensagem clara e **não** alteram a demonstração — o gerador automático
+continua funcionando normalmente.
 
 ## WhatsApp e consentimento
 

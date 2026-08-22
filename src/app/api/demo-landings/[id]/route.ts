@@ -65,9 +65,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
     );
   }
 
+  // Any content change sends an approved demo back to draft, so a shared link can
+  // never point at copy nobody approved. Approving is the only way out.
+  const returnsToDraft = body.data.content !== undefined && body.data.status !== "APPROVED";
+
   const effectiveStatus = isDemoLandingExpired(requestedExpiry)
     ? "EXPIRED"
-    : (body.data.status ?? current.status);
+    : returnsToDraft
+      ? "DRAFT"
+      : (body.data.status ?? current.status);
 
   const approvedAt =
     effectiveStatus === "APPROVED"
@@ -102,6 +108,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     entityId: landing.id,
     meta: {
       changedContent: body.data.content !== undefined,
+      returnedToDraft: returnsToDraft && current.status === "APPROVED",
       capturedBusinessSnapshot: snapshot.captured,
       status: landing.status,
       expiresAt: landing.expiresAt.toISOString(),

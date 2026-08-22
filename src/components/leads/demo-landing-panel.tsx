@@ -86,6 +86,52 @@ const STATUS_LABELS: Record<DemoLanding["status"], string> = {
   EXPIRED: "Expirada",
 };
 
+type AiSuggestion = {
+  content: EditableLandingContent;
+  changedFields: string[];
+  droppedServices: string[];
+  model: string;
+};
+
+const AI_FIELD_LABELS: Record<string, string> = {
+  headline: "Título principal",
+  subheadline: "Subtítulo",
+  aboutTitle: "Título da seção Sobre",
+  about: "Sobre a empresa",
+  factsTitle: "Título dos destaques",
+  benefits: "Informações disponíveis",
+  servicesTitle: "Título dos serviços",
+  servicesIntro: "Introdução dos serviços",
+  services: "Serviços confirmados",
+  galleryTitle: "Título da galeria",
+  galleryIntro: "Introdução da galeria",
+  processTitle: "Título de Como funciona",
+  processIntro: "Introdução de Como funciona",
+  processSteps: "Etapas",
+  faqTitle: "Título das perguntas frequentes",
+  faqs: "Perguntas frequentes",
+  contactTitle: "Título da seção de contato",
+  contactText: "Texto de contato",
+  finalCtaTitle: "Título da chamada final",
+  finalCtaText: "Texto da chamada final",
+  ctaLabel: "Chamada do botão",
+  primaryColor: "Cor principal",
+  accentColor: "Cor de destaque",
+};
+
+function describeFieldValue(value: unknown): string {
+  if (typeof value === "string") return value || "—";
+  if (!Array.isArray(value)) return "—";
+  if (value.length === 0) return "— (vazio)";
+  return value
+    .map((item) =>
+      typeof item === "string"
+        ? `• ${item}`
+        : `• ${(item as DemoFaq).question} → ${(item as DemoFaq).answer}`,
+    )
+    .join("\n");
+}
+
 export function DemoLandingPanel({
   leadId,
   leadName,
@@ -103,9 +149,15 @@ export function DemoLandingPanel({
   const [dirty, setDirty] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [aiConfigured, setAiConfigured] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<AiSuggestion | null>(null);
 
   const applyLanding = useCallback((next: DemoLanding | null) => {
     setLanding(next);
+    setSuggestion(null);
+    setAiError(null);
     if (next) {
       setDraft(toDraft(next.content));
       setExpiresOn(toDateInput(next.expiresAt));
@@ -132,7 +184,11 @@ export function DemoLandingPanel({
       if (!response.ok) {
         throw new Error(await readApiError(response, "Não foi possível carregar a demonstração."));
       }
-      const payload = (await response.json()) as { landing: DemoLanding | null };
+      const payload = (await response.json()) as {
+        landing: DemoLanding | null;
+        ai?: { configured?: boolean };
+      };
+      setAiConfigured(Boolean(payload.ai?.configured));
       applyLanding(payload.landing ?? null);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -236,6 +292,51 @@ export function DemoLandingPanel({
     }
   }
 
+  async function improveWithClaude() {
+    if (!landing) return;
+    setAiBusy(true);
+    setAiError(null);
+    setNotice(null);
+    setError(null);
+    try {
+      const response = await fetch(`/api/demo-landings/${landing.id}/improve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(
+          await readApiError(
+            response,
+            "Não foi possível melhorar a demonstração com o Claude. Nada foi alterado.",
+          ),
+        );
+      }
+      const payload = (await response.json()) as { suggestion: AiSuggestion };
+      if (!payload.suggestion?.changedFields?.length) {
+        setSuggestion(null);
+        setNotice("O Claude não sugeriu mudanças no conteúdo editorial.");
+        return;
+      }
+      setSuggestion(payload.suggestion);
+    } catch (cause) {
+      setAiError(errorMessage(cause));
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function applySuggestion() {
+    if (!suggestion) return;
+    setDraft(toDraft(suggestion.content));
+    setSuggestion(null);
+    setDirty(true);
+    setAiError(null);
+    setError(null);
+    setNotice(
+      "Sugestão aplicada ao rascunho. Revise, salve e aprove antes de compartilhar o link.",
+    );
+  }
+
   async function updateLanding(status?: DemoLanding["status"]) {
     if (!landing) return;
     const parsedContent = demoLandingContentSchema.safeParse(toContent(draft));
@@ -334,8 +435,9 @@ export function DemoLandingPanel({
             )}
           </div>
           <p className="mt-1 max-w-3xl text-sm text-nox-muted">
-            O conteúdo é criado por um modelo automático e fica marcado como demonstração não
-            oficial. Revise e confirme cada informação antes de compartilhar.
+            O conteúdo é criado por um gerador automático sem custo e fica marcado como demonstração
+            não oficial. Depois, se quiser, o Claude pode melhorar apenas os textos — sempre como
+            rascunho. Revise e confirme cada informação antes de compartilhar.
           </p>
         </div>
         {landing && previewUrl && (
@@ -379,7 +481,7 @@ export function DemoLandingPanel({
               onClick={() => void createLanding()}
               className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {busy ? "Gerando…" : "Gerar landing demonstrativa"}
+              {busy ? "Gerando…" : "Gerar demonstração automática"}
             </button>
           </div>
         </div>
@@ -390,6 +492,122 @@ export function DemoLandingPanel({
           <div className="rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 text-xs text-amber-100">
             Não inclua avaliações, preços, horários, promoções ou serviços que não estejam
             confirmados na ficha da empresa.
+          </div>
+
+          <div className="rounded-xl border border-nox-border bg-nox-bg/40 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-medium text-white">Melhorar com Claude</h3>
+                  <span className="rounded-full border border-nox-purple/40 bg-nox-purple/10 px-2 py-0.5 text-xs text-purple-200">
+                    Opcional · usa a API da Anthropic
+                  </span>
+                </div>
+                <p className="mt-1 max-w-2xl text-sm text-nox-muted">
+                  Reescreve apenas títulos, textos, benefícios, etapas, FAQ, chamadas e cores.
+                  Telefone, endereço, mapa, redes sociais, fotos, endereço da página e validade
+                  não são tocados. O resultado volta como rascunho para a sua revisão.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={aiBusy || busy || dirty || !aiConfigured || landing.status === "EXPIRED"}
+                onClick={() => void improveWithClaude()}
+                className="rounded-lg border border-nox-purple/50 bg-nox-purple/10 px-4 py-2 text-sm font-medium text-purple-100 hover:border-nox-purple disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {aiBusy ? "Consultando o Claude…" : "Melhorar com Claude"}
+              </button>
+            </div>
+
+            {aiConfigured && dirty && (
+              <p className="mt-3 text-xs text-amber-200">
+                Salve as alterações do rascunho antes de pedir a melhoria — o Claude parte do
+                conteúdo já salvo.
+              </p>
+            )}
+
+            {!aiConfigured && (
+              <p className="mt-3 rounded-lg border border-nox-border bg-nox-surface p-3 text-xs leading-5 text-nox-muted">
+                A melhoria com Claude não está configurada. Defina{" "}
+                <code className="text-nox-cyan">ANTHROPIC_API_KEY</code> nas variáveis de ambiente
+                da Vercel. O gerador automático gratuito continua funcionando normalmente.
+              </p>
+            )}
+
+            {aiError && (
+              <p role="alert" className="mt-3 text-sm text-red-300">
+                {aiError}
+              </p>
+            )}
+
+            {suggestion && (
+              <div className="mt-4 rounded-lg border border-nox-purple/30 bg-nox-surface p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="text-sm font-medium text-white">
+                    Sugestão do Claude · {suggestion.changedFields.length}{" "}
+                    {suggestion.changedFields.length === 1 ? "campo" : "campos"}
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={applySuggestion}
+                      className="rounded-lg bg-nox-purple px-3 py-2 text-sm font-medium text-white"
+                    >
+                      Aplicar ao rascunho
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSuggestion(null)}
+                      className="rounded-lg border border-nox-border px-3 py-2 text-sm text-nox-muted hover:border-nox-cyan"
+                    >
+                      Descartar
+                    </button>
+                  </div>
+                </div>
+
+                {suggestion.droppedServices.length > 0 && (
+                  <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 text-xs text-amber-100">
+                    {suggestion.droppedServices.length} serviço(s) sugerido(s) foram descartados
+                    porque não estão confirmados na ficha. Só entram serviços já cadastrados.
+                  </p>
+                )}
+
+                <p className="mt-3 text-xs text-nox-muted">
+                  Aplicar substitui o rascunho atual. Nada é publicado: você ainda precisa salvar e
+                  aprovar.
+                </p>
+
+                <ul className="mt-3 space-y-3">
+                  {suggestion.changedFields.map((field) => (
+                    <li key={field} className="rounded-lg border border-nox-border bg-nox-bg/50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-nox-cyan">
+                        {AI_FIELD_LABELS[field] ?? field}
+                      </p>
+                      <div className="mt-2 grid gap-3 md:grid-cols-2">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-nox-muted">Atual</p>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-sm text-nox-muted">
+                            {describeFieldValue(
+                              (landing.content as Record<string, unknown>)[field],
+                            )}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-emerald-300">
+                            Sugerido
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-sm text-white">
+                            {describeFieldValue(
+                              (suggestion.content as unknown as Record<string, unknown>)[field],
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">

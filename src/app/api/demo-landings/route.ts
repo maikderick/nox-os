@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getDemoAiConfig } from "@/lib/anthropic";
 import { toDemoLandingDto } from "@/lib/demo-landing";
 import { createDemoLandingSchema } from "@/lib/demo-landing-schema";
 import {
@@ -54,11 +55,15 @@ export async function GET(req: Request) {
       },
     },
   });
-  if (!stored) return NextResponse.json({ landing: null });
+  // Exposes only whether the optional Claude step is available — never the key.
+  const aiConfig = getDemoAiConfig();
+  const ai = { configured: aiConfig.configured, hourlyLimit: aiConfig.hourlyLimit };
+
+  if (!stored) return NextResponse.json({ landing: null, ai });
 
   const snapshotted = await captureLegacyDemoBusinessSnapshot(stored, stored.business);
   const landing = await markExpiredIfNeeded(snapshotted);
-  return NextResponse.json({ landing: toDemoLandingDto(landing, requestOrigin(req)) });
+  return NextResponse.json({ landing: toDemoLandingDto(landing, requestOrigin(req)), ai });
 }
 
 export async function POST(req: Request) {

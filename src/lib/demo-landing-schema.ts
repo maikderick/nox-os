@@ -48,6 +48,15 @@ const faqItemSchema = z
     answer: plainText(600),
   })
   .strict();
+
+/**
+ * Building blocks shared with the Claude improvement contract. Exporting them
+ * keeps the assisted draft bound to the exact same limits as the public content.
+ */
+export const demoPlainText = plainText;
+export const demoListItemSchema = listItem;
+export const demoFaqItemSchema = faqItemSchema;
+export const demoHexColorSchema = hexColor;
 const galleryImageSchema = z
   .object({
     url: httpsUrl,
