@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { FUNNEL_LABELS, FUNNEL_STAGES } from "@/lib/funnel";
 import { cn, opportunityBand } from "@/lib/utils";
+import { hasOwnWebsite } from "@/lib/website";
 
 type Stats = {
   total: number;
@@ -42,6 +43,7 @@ type LeadItem = {
   opportunityScore: number;
   confidenceScore: number;
   websiteStatus: string;
+  website: string | null;
   phoneE164: string | null;
   funnelStage: string;
   source: string;
@@ -58,6 +60,7 @@ export default function LeadsDashboardPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [view, setView] = useState<"table" | "cards">("table");
+  const [includeWithWebsite, setIncludeWithWebsite] = useState(false);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     q: "",
@@ -78,13 +81,18 @@ export default function LeadsDashboardPage() {
     Object.entries(filters).forEach(([k, v]) => {
       if (v) sp.set(k, v);
     });
+    if (includeWithWebsite) sp.set("includeWithWebsite", "true");
     return sp.toString();
-  }, [filters, page]);
+  }, [filters, includeWithWebsite, page]);
 
   const load = useCallback(async () => {
     setLoading(true);
     const [sRes, lRes] = await Promise.all([
-      fetch("/api/leads/stats"),
+      fetch(
+        includeWithWebsite
+          ? "/api/leads/stats?includeWithWebsite=true"
+          : "/api/leads/stats",
+      ),
       fetch(`/api/leads?${query}`),
     ]);
     const s = (await sRes.json()) as Stats;
@@ -93,7 +101,7 @@ export default function LeadsDashboardPage() {
     setTotal(l.total);
     setItems(l.items);
     setLoading(false);
-  }, [query]);
+  }, [includeWithWebsite, query]);
 
   useEffect(() => {
     void load();
@@ -111,6 +119,9 @@ export default function LeadsDashboardPage() {
               ? `${stats.realTotal} empresas reais encontradas · meta ${stats.goal}`
               : "Carregando…"}
             {stats?.demoMode ? " · Dados de demonstração ativos" : ""}
+          </p>
+          <p className="mt-1 text-xs text-emerald-300">
+            Fila padrão: somente empresas sem site próprio
           </p>
         </div>
         <Link
@@ -158,6 +169,52 @@ export default function LeadsDashboardPage() {
       )}
 
       <div className="rounded-xl border border-nox-border bg-nox-surface p-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-nox-border bg-nox-bg/50 p-3">
+          <div>
+            <p className="text-sm font-medium text-white">Presença de site</p>
+            <p className="text-xs text-nox-muted">
+              Redes sociais e páginas de diretórios não contam como site próprio.
+            </p>
+          </div>
+          <div
+            className="inline-flex rounded-lg border border-nox-border p-1"
+            role="group"
+            aria-label="Filtrar empresas pela presença de site"
+          >
+            <button
+              type="button"
+              aria-pressed={!includeWithWebsite}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                !includeWithWebsite
+                  ? "bg-emerald-400/15 text-emerald-200"
+                  : "text-nox-muted hover:text-white",
+              )}
+              onClick={() => {
+                setPage(1);
+                setIncludeWithWebsite(false);
+              }}
+            >
+              Somente sem site
+            </button>
+            <button
+              type="button"
+              aria-pressed={includeWithWebsite}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                includeWithWebsite
+                  ? "bg-nox-purple text-white"
+                  : "text-nox-muted hover:text-white",
+              )}
+              onClick={() => {
+                setPage(1);
+                setIncludeWithWebsite(true);
+              }}
+            >
+              Incluir leads com site
+            </button>
+          </div>
+        </div>
         <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
           <input
             placeholder="Buscar nome…"
@@ -265,7 +322,11 @@ export default function LeadsDashboardPage() {
 
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm text-nox-muted">
-            {loading ? "Carregando…" : `${total} resultados · página ${page}/${pageCount}`}
+            {loading
+              ? "Carregando…"
+              : `${total} resultados ${
+                  includeWithWebsite ? "com e sem site" : "sem site próprio"
+                } · página ${page}/${pageCount}`}
           </p>
           <div className="flex gap-2">
             <button
@@ -303,10 +364,18 @@ export default function LeadsDashboardPage() {
                   <th className="p-2">Score</th>
                   <th className="p-2">Conf.</th>
                   <th className="p-2">Funil</th>
+                  <th className="p-2">Site</th>
                   <th className="p-2">Opt-in</th>
                 </tr>
               </thead>
               <tbody>
+                {!loading && items.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-nox-muted">
+                      Nenhum lead encontrado com os filtros atuais.
+                    </td>
+                  </tr>
+                )}
                 {items.map((item) => (
                   <tr key={item.id} className="border-t border-nox-border/70 hover:bg-nox-panel/50">
                     <td className="p-2">
@@ -328,6 +397,9 @@ export default function LeadsDashboardPage() {
                       {FUNNEL_LABELS[item.funnelStage as keyof typeof FUNNEL_LABELS] ??
                         item.funnelStage}
                     </td>
+                    <td className="p-2">
+                      <WebsiteBadge item={item} />
+                    </td>
                     <td className="p-2">{item.optInStatus}</td>
                   </tr>
                 ))}
@@ -336,6 +408,11 @@ export default function LeadsDashboardPage() {
           </div>
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {!loading && items.length === 0 && (
+              <p className="py-8 text-center text-sm text-nox-muted md:col-span-2 xl:col-span-3">
+                Nenhum lead encontrado com os filtros atuais.
+              </p>
+            )}
             {items.map((item) => (
               <Link
                 key={item.id}
@@ -349,6 +426,9 @@ export default function LeadsDashboardPage() {
                 <p className="mt-1 text-xs text-nox-muted">
                   {item.category} · {item.city ?? "—"} · {item.distanceKm ?? "?"} km
                 </p>
+                <div className="mt-2">
+                  <WebsiteBadge item={item} />
+                </div>
                 <div className="mt-3 flex flex-wrap gap-1">
                   {item.scoreReasons.slice(0, 3).map((r) => (
                     <span
@@ -392,6 +472,22 @@ function ScorePill({ score }: { score: number }) {
   const color =
     band === "alta" ? "text-emerald-300" : band === "media" ? "text-amber-300" : "text-nox-muted";
   return <span className={cn("font-mono font-semibold", color)}>{score}</span>;
+}
+
+function WebsiteBadge({ item }: { item: LeadItem }) {
+  const hasWebsite = hasOwnWebsite(item.website);
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full border px-2 py-0.5 text-[11px]",
+        hasWebsite
+          ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+          : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
+      )}
+    >
+      {hasWebsite ? "Com site" : "Sem site próprio"}
+    </span>
+  );
 }
 
 function ChartCard({

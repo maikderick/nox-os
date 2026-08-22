@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { FUNNEL_LABELS, FUNNEL_STAGES } from "@/lib/funnel";
+import { DemoLandingPanel } from "@/components/leads/demo-landing-panel";
+import { hasOwnWebsite } from "@/lib/website";
 
 type LeadDetail = {
   id: string;
@@ -98,6 +100,7 @@ export default function LeadDetailPage() {
     lead.suppressions.length > 0 ||
     optIn !== "verified" ||
     !lead.phoneE164;
+  const demoEligible = !hasOwnWebsite(lead.website);
 
   async function patch(body: Record<string, unknown>) {
     const res = await fetch(`/api/leads/${lead!.id}`, {
@@ -243,6 +246,15 @@ export default function LeadDetailPage() {
           </label>
         </section>
       </div>
+
+      <DemoLandingPanel
+        leadId={lead.id}
+        leadName={lead.name}
+        eligible={demoEligible}
+        whatsappBlocked={waBlocked}
+        message={message}
+        onMessageChange={setMessage}
+      />
 
       <section className="rounded-xl border border-nox-border bg-nox-surface p-4">
         <h2 className="font-medium text-white">Opt-in WhatsApp</h2>

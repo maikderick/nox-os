@@ -6,6 +6,7 @@ import { findDuplicate, mergePreferringNonEmpty } from "./dedupe";
 import { scoreOpportunity } from "./score";
 import type { PlaceRecord } from "./places/types";
 import { DEFAULT_RADII_KM } from "./funnel";
+import { classifyWebsite, hasOwnWebsite } from "./website";
 
 const FRANCHISE_HINTS = [
   "mcdonald",
@@ -22,6 +23,37 @@ const FRANCHISE_HINTS = [
 function looksLikeFranchise(name: string): boolean {
   const n = name.toLowerCase();
   return FRANCHISE_HINTS.some((h) => n.includes(h));
+}
+
+function websiteStatusFor(website?: string | null, socialLinks?: string[]): string {
+  const classification = classifyWebsite(website);
+  if (classification.hasOwnWebsite) return "unknown";
+  if (
+    classification.kind === "social" ||
+    classification.kind === "directory" ||
+    classification.kind === "link_hub" ||
+    (socialLinks?.length ?? 0) > 0
+  ) {
+    return "social_only";
+  }
+  return "not_reported";
+}
+
+function parseSocialLinks(value: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((link): link is string => typeof link === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function countEligibleRealLeads(): Promise<number> {
+  const businesses = await prisma.business.findMany({
+    where: { isDemo: false },
+    select: { website: true },
+  });
+  return businesses.filter((business) => !hasOwnWebsite(business.website)).length;
 }
 
 export type ImportStats = {
@@ -76,6 +108,7 @@ export async function upsertPlaces(
     latitude: e.latitude,
     longitude: e.longitude,
   }));
+  const currentById = new Map(existing.map((business) => [business.id, business]));
 
   for (const place of places) {
     if (!place.name?.trim()) {
@@ -84,6 +117,13 @@ export async function upsertPlaces(
     }
 
     const phoneE164 = normalizePhoneE164(place.phoneRaw);
+    const websiteClassification = classifyWebsite(place.website);
+    const scoreSocialLinks = [
+      ...(place.socialLinks ?? []),
+      ...(websiteClassification.hasOwnWebsite || !websiteClassification.normalizedUrl
+        ? []
+        : [websiteClassification.normalizedUrl]),
+    ];
     const dist =
       origin && place.latitude != null && place.longitude != null
         ? roundDistance(distanceKm(origin.lat, origin.lng, place.latitude, place.longitude))
@@ -105,13 +145,9 @@ export async function upsertPlaces(
 
     const scored = scoreOpportunity(
       {
-        website: place.website,
-        websiteStatus: place.website
-          ? "unknown"
-          : (place.socialLinks?.length ?? 0) > 0
-            ? "social_only"
-            : "not_reported",
-        socialLinks: place.socialLinks,
+        website: websiteClassification.hasOwnWebsite ? place.website : null,
+        websiteStatus: websiteStatusFor(place.website, scoreSocialLinks),
+        socialLinks: scoreSocialLinks,
         category: place.category,
         phoneE164,
         distanceKm: dist,
@@ -130,7 +166,7 @@ export async function upsertPlaces(
 
     if (dup?.match.id) {
       stats.duplicate += 1;
-      const current = existing.find((e) => e.id === dup.match.id);
+      const current = currentById.get(dup.match.id);
       if (!current) continue;
 
       const { merged, conflicts } = mergePreferringNonEmpty(
@@ -157,10 +193,22 @@ export async function upsertPlaces(
         place.source,
       );
 
-      await prisma.business.update({
+      // A newly discovered own website must retire an existing lead from the
+      // default queue, even when its previous website field held a social page.
+      if (websiteClassification.hasOwnWebsite && !hasOwnWebsite(current.website)) {
+        merged.website = place.website ?? null;
+      }
+      const mergedSocialLinks = [...parseSocialLinks(current.socialLinks), ...scoreSocialLinks];
+      const mergedWebsiteStatus = websiteStatusFor(
+        typeof merged.website === "string" ? merged.website : null,
+        mergedSocialLinks,
+      );
+
+      const updated = await prisma.business.update({
         where: { id: dup.match.id },
         data: {
           ...merged,
+          websiteStatus: mergedWebsiteStatus,
           lastVerifiedAt: new Date(),
           distanceKm: dist ?? undefined,
           opportunityScore: scored.opportunityScore,
@@ -168,6 +216,13 @@ export async function upsertPlaces(
           scoreReasons: JSON.stringify(scored.reasons),
         },
       });
+      currentById.set(updated.id, updated);
+      const workingMatch = working.find((business) => business.id === updated.id);
+      if (workingMatch) {
+        workingMatch.website = updated.website;
+        workingMatch.phoneE164 = updated.phoneE164;
+        workingMatch.address = updated.address;
+      }
 
       await prisma.businessSource.create({
         data: {
@@ -179,6 +234,11 @@ export async function upsertPlaces(
           rawPayload: JSON.stringify(place.raw ?? null),
         },
       });
+      continue;
+    }
+
+    if (websiteClassification.hasOwnWebsite) {
+      stats.rejected += 1;
       continue;
     }
 
@@ -200,11 +260,7 @@ export async function upsertPlaces(
         phoneRaw: place.phoneRaw,
         phoneE164,
         website: place.website,
-        websiteStatus: place.website
-          ? "unknown"
-          : (place.socialLinks?.length ?? 0) > 0
-            ? "social_only"
-            : "not_reported",
+        websiteStatus: websiteStatusFor(place.website, scoreSocialLinks),
         socialLinks: JSON.stringify(place.socialLinks ?? []),
         sourceUrl: place.sourceUrl,
         opportunityScore: scored.opportunityScore,
@@ -254,6 +310,7 @@ export async function upsertPlaces(
       latitude: created.latitude,
       longitude: created.longitude,
     });
+    currentById.set(created.id, created);
     stats.accepted += 1;
   }
 
@@ -297,7 +354,7 @@ export async function runOverpassImportJob(jobId: string): Promise<void> {
         categoryIds: categories,
       });
 
-      const realCount = await prisma.business.count({ where: { isDemo: false } });
+      const realCount = await countEligibleRealLeads();
       if (realCount >= goal) break;
 
       const stats = await upsertPlaces(
@@ -334,7 +391,7 @@ export async function runOverpassImportJob(jobId: string): Promise<void> {
         },
       });
 
-      const after = await prisma.business.count({ where: { isDemo: false } });
+      const after = await countEligibleRealLeads();
       if (after >= goal) break;
     }
 

@@ -9,6 +9,8 @@ Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior
 - Fontes: OpenStreetMap/Overpass + importação CSV + stub para provedor comercial licenciado (`PlacesProvider`)
 - Score explicável + confiança
 - Funil comercial
+- Fila padrão somente com empresas sem site próprio
+- Landings demonstrativas gratuitas por categoria, sem API de IA
 - WhatsApp **manual** somente com opt-in `verified` (sem disparo automático/massa)
 - Deduplicação idempotente
 - Política de privacidade e retenção
@@ -91,7 +93,27 @@ npm run import:csv -- ./arquivo.csv
 
 **Limitações Overpass:** rate limits públicos, cobertura irregular do OSM, timeouts. Se a fonte devolver 638 empresas, a UI mostra **638 empresas reais** — nunca inventamos registros para completar a meta.
 
+Novos registros com domínio próprio são descartados da fila. Instagram, Facebook,
+WhatsApp, Linktree, marketplaces e diretórios não contam como site próprio. Se uma
+nova coleta descobrir o site de um lead já salvo, o cadastro é preservado e deixa de
+aparecer na fila padrão.
+
 Atribuição: © OpenStreetMap contributors (ODbL).
+
+## Landings demonstrativas
+
+Na ficha de um lead elegível, use **Gerar landing demonstrativa**. O NOX OS cria a
+prévia com templates locais por categoria, sem Claude ou outra API paga. A página:
+
+- usa endereço aleatório em `/demo/[slug]` e validade configurável;
+- exibe permanentemente **Demonstração não oficial**;
+- usa `noindex`/`nofollow` e deixa de abrir após expirar;
+- não gera avaliações, preços, horários ou serviços não confirmados;
+- não publica telefone na página;
+- só libera o link para WhatsApp após revisão e aprovação humana.
+
+O conteúdo e o estado ficam na tabela `DemoLanding`; aplique as migrations antes de
+usar o recurso em um ambiente já existente.
 
 ## WhatsApp e consentimento
 

@@ -49,6 +49,90 @@ describe("import idempotent + pagination perf", () => {
     expect(count).toBe(1);
   });
 
+  it("rejects a new business with its own website", async () => {
+    const stats = await upsertPlaces(
+      [
+        {
+          externalId: "owned-site/new",
+          source: "test",
+          name: "Empresa Com Site Próprio",
+          category: "Serviços",
+          website: "https://empresa-com-site.com.br",
+        },
+      ],
+      null,
+      {
+        franchisePenalty: 15,
+        modernSitePenalty: 20,
+        staleDataPenalty: 10,
+        maxRadiusKm: 80,
+      },
+    );
+
+    expect(stats).toMatchObject({ found: 1, accepted: 0, duplicate: 0, rejected: 1 });
+    expect(
+      await prisma.business.count({ where: { source: "test", externalId: "owned-site/new" } }),
+    ).toBe(0);
+  });
+
+  it("accepts social pages because they are not an owned website", async () => {
+    const stats = await upsertPlaces(
+      [
+        {
+          externalId: "social-only/new",
+          source: "test",
+          name: "Empresa Somente Instagram",
+          category: "Serviços",
+          website: "https://instagram.com/empresa-somente-instagram",
+        },
+      ],
+      null,
+      {
+        franchisePenalty: 15,
+        modernSitePenalty: 20,
+        staleDataPenalty: 10,
+        maxRadiusKm: 80,
+      },
+    );
+
+    expect(stats).toMatchObject({ found: 1, accepted: 1, duplicate: 0, rejected: 0 });
+    const created = await prisma.business.findUnique({
+      where: { source_externalId: { source: "test", externalId: "social-only/new" } },
+    });
+    expect(created?.websiteStatus).toBe("social_only");
+  });
+
+  it("updates a duplicate when an owned website is discovered", async () => {
+    const settings = {
+      franchisePenalty: 15,
+      modernSitePenalty: 20,
+      staleDataPenalty: 10,
+      maxRadiusKm: 80,
+    };
+    const base: PlaceRecord = {
+      externalId: "owned-site/discovered",
+      source: "test",
+      name: "Empresa Site Descoberto",
+      category: "Serviços",
+    };
+
+    const first = await upsertPlaces([base], null, settings);
+    const second = await upsertPlaces(
+      [{ ...base, website: "https://site-descoberto.com.br" }],
+      null,
+      settings,
+    );
+
+    expect(first.accepted).toBe(1);
+    expect(second).toMatchObject({ accepted: 0, duplicate: 1, rejected: 0 });
+    const updated = await prisma.business.findUnique({
+      where: {
+        source_externalId: { source: "test", externalId: "owned-site/discovered" },
+      },
+    });
+    expect(updated?.website).toBe("https://site-descoberto.com.br");
+  });
+
   it("filters/paginates quickly with many records", async () => {
     const batch: PlaceRecord[] = [];
     for (let i = 0; i < 200; i++) {

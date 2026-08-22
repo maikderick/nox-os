@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { FUNNEL_STAGES } from "@/lib/funnel";
 import { Prisma } from "@prisma/client";
+import { isLeadEligibleByWebsite } from "@/lib/website";
 
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -33,7 +34,22 @@ const querySchema = z.object({
     ])
     .default("score_desc"),
   includeDemo: z.enum(["true", "false"]).optional(),
+  includeWithWebsite: z.enum(["true", "false"]).optional(),
 });
+
+type LeadWithConsents = Prisma.BusinessGetPayload<{
+  include: { consents: true };
+}>;
+
+function serializeLead(b: LeadWithConsents) {
+  return {
+    ...b,
+    scoreReasons: JSON.parse(b.scoreReasons || "[]"),
+    socialLinks: JSON.parse(b.socialLinks || "[]"),
+    optInStatus: b.consents[0]?.optInStatus ?? "unknown",
+    consents: undefined,
+  };
+}
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -99,29 +115,55 @@ export async function GET(req: Request) {
                 ? { confidenceScore: "desc" }
                 : { opportunityScore: "desc" };
 
-  const [total, items] = await Promise.all([
-    prisma.business.count({ where }),
-    prisma.business.findMany({
+  let total: number;
+  let items: LeadWithConsents[];
+  const consents = { orderBy: { createdAt: "desc" as const }, take: 1 };
+
+  if (p.includeWithWebsite === "true") {
+    [total, items] = await Promise.all([
+      prisma.business.count({ where }),
+      prisma.business.findMany({
+        where,
+        orderBy,
+        skip: (p.page - 1) * p.pageSize,
+        take: p.pageSize,
+        include: { consents },
+      }),
+    ]);
+  } else {
+    // Website classification includes platform/path rules which cannot be
+    // represented reliably as a portable Prisma predicate. Select only the two
+    // required columns first, then load the current page with its relations.
+    const candidates = await prisma.business.findMany({
       where,
       orderBy,
-      skip: (p.page - 1) * p.pageSize,
-      take: p.pageSize,
-      include: {
-        consents: { orderBy: { createdAt: "desc" }, take: 1 },
-      },
-    }),
-  ]);
+      select: { id: true, website: true },
+    });
+    const eligibleIds = candidates
+      .filter((business) => isLeadEligibleByWebsite(business.website))
+      .map((business) => business.id);
+
+    total = eligibleIds.length;
+    const pageIds = eligibleIds.slice((p.page - 1) * p.pageSize, p.page * p.pageSize);
+    if (pageIds.length === 0) {
+      items = [];
+    } else {
+      const pageItems = await prisma.business.findMany({
+        where: { id: { in: pageIds } },
+        include: { consents },
+      });
+      const itemById = new Map(pageItems.map((business) => [business.id, business]));
+      items = pageIds.flatMap((id) => {
+        const business = itemById.get(id);
+        return business ? [business] : [];
+      });
+    }
+  }
 
   return NextResponse.json({
     total,
     page: p.page,
     pageSize: p.pageSize,
-    items: items.map((b) => ({
-      ...b,
-      scoreReasons: JSON.parse(b.scoreReasons || "[]"),
-      socialLinks: JSON.parse(b.socialLinks || "[]"),
-      optInStatus: b.consents[0]?.optInStatus ?? "unknown",
-      consents: undefined,
-    })),
+    items: items.map(serializeLead),
   });
 }

@@ -1,4 +1,5 @@
 import { distanceKm } from "./distance";
+import { normalizeWebsiteDomain } from "./website";
 
 export type DedupeCandidate = {
   id?: string;
@@ -36,17 +37,7 @@ export function normalizeAddress(address?: string | null): string {
 }
 
 export function normalizeDomain(website?: string | null): string | null {
-  if (!website) return null;
-  try {
-    const withProto = website.startsWith("http") ? website : `https://${website}`;
-    const host = new URL(withProto).hostname.toLowerCase().replace(/^www\./, "");
-    if (!host || host.includes("instagram.com") || host.includes("facebook.com") || host.includes("linktr.ee")) {
-      return null;
-    }
-    return host;
-  } catch {
-    return null;
-  }
+  return normalizeWebsiteDomain(website);
 }
 
 /** Dice coefficient on character bigrams for name similarity (0–1). */
