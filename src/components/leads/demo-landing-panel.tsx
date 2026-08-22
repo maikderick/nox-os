@@ -324,7 +324,7 @@ export function DemoLandingPanel({
     );
   }
 
-  async function createLanding() {
+  async function createLanding(options: { regenerate?: boolean } = {}) {
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -339,12 +339,27 @@ export function DemoLandingPanel({
       }
       const payload = (await response.json()) as { landing: DemoLanding };
       applyLanding(payload.landing);
-      setNotice("Demonstração criada. Revise os textos antes de aprovar.");
+      setNotice(
+        options.regenerate
+          ? "Demonstração gerada novamente com o endereço e o conteúdo atualizados. Revise antes de aprovar."
+          : "Demonstração criada. Revise os textos antes de aprovar.",
+      );
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * Regeneration replaces every edited text and mints a new address, so the old
+   * link stops working. Worth a confirmation before discarding reviewed copy.
+   */
+  function confirmRegenerate() {
+    const confirmed = window.confirm(
+      "Gerar novamente substitui todos os textos e imagens desta demonstração pelo conteúdo automático, cria um novo endereço e devolve a página para rascunho. O link atual deixa de funcionar. Deseja continuar?",
+    );
+    if (confirmed) void createLanding({ regenerate: true });
   }
 
   async function improveWithClaude() {
@@ -831,7 +846,9 @@ export function DemoLandingPanel({
                 {draft.galleryImages.length === 0 && (
                   <p className="rounded-lg border border-dashed border-nox-border p-4 text-sm text-nox-muted">
                     Nenhuma imagem cadastrada. A demonstração usará composições visuais
-                    identificadas como ilustrativas até você adicionar fotos oficiais.
+                    identificadas como ilustrativas até você adicionar fotos oficiais. Use
+                    “Buscar fotos ilustrativas” abaixo, ou “Gerar novamente” para recriar a
+                    demonstração já com fotos da categoria.
                   </p>
                 )}
                 {draft.galleryImages.map((galleryImage, index) => (
@@ -1077,6 +1094,14 @@ export function DemoLandingPanel({
               className="rounded-lg border border-nox-border px-4 py-2 text-sm font-medium text-white hover:border-nox-cyan disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busy ? "Salvando…" : "Salvar alterações"}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={confirmRegenerate}
+              className="rounded-lg border border-nox-border px-4 py-2 text-sm text-nox-muted hover:border-nox-cyan disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Gerar novamente
             </button>
             {landing.status !== "APPROVED" && (
               <button
