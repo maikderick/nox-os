@@ -1,11 +1,16 @@
 import { randomBytes } from "node:crypto";
 import type { DemoLanding } from "@prisma/client";
 import {
+  demoBusinessSnapshotSchema,
   demoLandingContentSchema,
   demoLandingStatusSchema,
+  isSafeDemoHttpsUrl,
   parseDemoLandingContent,
+  type DemoBusinessSnapshot,
   type DemoLandingContent,
 } from "./demo-landing-schema";
+import { isValidPhoneE164 } from "./phone";
+import { classifyWebsite } from "./website";
 
 export type DemoLeadInput = {
   name: string;
@@ -14,7 +19,12 @@ export type DemoLeadInput = {
   neighborhood?: string | null;
   city?: string | null;
   state?: string | null;
+  postalCode?: string | null;
   phoneE164?: string | null;
+  socialLinks?: string | string[] | null;
+  website?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 type CategoryTemplate = {
@@ -126,6 +136,126 @@ function displayLocation(lead: DemoLeadInput): string | null {
   return cityAndState || safeLeadText(lead.neighborhood, 96) || null;
 }
 
+function nullableLeadText(value: string | null | undefined, max: number): string | null {
+  return safeLeadText(value, max) || null;
+}
+
+function socialLinkCandidates(value: DemoLeadInput["socialLinks"]): string[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === "string");
+    }
+    return typeof parsed === "string" ? [parsed] : [];
+  } catch {
+    return [value];
+  }
+}
+
+function safeSnapshotSocialLinks(lead: DemoLeadInput): string[] {
+  const website = classifyWebsite(lead.website);
+  const candidates = [
+    ...socialLinkCandidates(lead.socialLinks),
+    ...(website.kind === "social" && website.normalizedUrl ? [website.normalizedUrl] : []),
+  ];
+
+  const safeLinks = candidates.flatMap((candidate) => {
+    const value = candidate.trim();
+    if (value.length > 2_000 || !isSafeDemoHttpsUrl(value)) return [];
+    return [new URL(value).href];
+  });
+
+  return Array.from(new Set(safeLinks)).slice(0, 12);
+}
+
+function validCoordinatePair(lead: DemoLeadInput): {
+  latitude: number | null;
+  longitude: number | null;
+} {
+  const latitude = lead.latitude;
+  const longitude = lead.longitude;
+  const valid =
+    typeof latitude === "number" &&
+    Number.isFinite(latitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    typeof longitude === "number" &&
+    Number.isFinite(longitude) &&
+    longitude >= -180 &&
+    longitude <= 180;
+
+  return valid ? { latitude, longitude } : { latitude: null, longitude: null };
+}
+
+/** Captures only provider facts that pass the public-content validation rules. */
+export function createDemoBusinessSnapshot(lead: DemoLeadInput): DemoBusinessSnapshot {
+  const coordinates = validCoordinatePair(lead);
+
+  return demoBusinessSnapshotSchema.parse({
+    name: safeLeadText(lead.name, 120, "Negócio local"),
+    category: safeLeadText(lead.category, 120, "Serviços locais"),
+    address: nullableLeadText(lead.address, 500),
+    neighborhood: nullableLeadText(lead.neighborhood, 160),
+    city: nullableLeadText(lead.city, 120),
+    state: nullableLeadText(lead.state, 64),
+    postalCode: nullableLeadText(lead.postalCode, 32),
+    phoneE164: isValidPhoneE164(lead.phoneE164) ? lead.phoneE164 : null,
+    socialLinks: safeSnapshotSocialLinks(lead),
+    ...coordinates,
+  });
+}
+
+export function hasDemoBusinessSnapshot(rawContent: string): boolean {
+  try {
+    const raw: unknown = JSON.parse(rawContent);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+    return demoBusinessSnapshotSchema.safeParse(
+      (raw as Record<string, unknown>).businessSnapshot,
+    ).success;
+  } catch {
+    return false;
+  }
+}
+
+export function ensureDemoBusinessSnapshot(
+  rawContent: string,
+  business: DemoLeadInput,
+): { content: DemoLandingContent; contentJson: string; captured: boolean } {
+  const content = parseDemoLandingContent(rawContent);
+  if (content.businessSnapshot) {
+    return { content, contentJson: rawContent, captured: false };
+  }
+
+  const nextContent = demoLandingContentSchema.parse({
+    ...content,
+    businessSnapshot: createDemoBusinessSnapshot(business),
+  });
+  return {
+    content: nextContent,
+    contentJson: JSON.stringify(nextContent),
+    captured: true,
+  };
+}
+
+/** Ignores any snapshot supplied by an editor and keeps the first captured facts. */
+export function preserveDemoBusinessSnapshot(params: {
+  currentContentJson: string;
+  requestedContent: DemoLandingContent;
+  business: DemoLeadInput;
+}): { content: DemoLandingContent; captured: boolean } {
+  const current = ensureDemoBusinessSnapshot(params.currentContentJson, params.business);
+  return {
+    content: demoLandingContentSchema.parse({
+      ...params.requestedContent,
+      businessSnapshot: current.content.businessSnapshot,
+    }),
+    captured: current.captured,
+  };
+}
+
 /**
  * Produces only copy grounded in fields that are present on the lead. In
  * particular, services starts empty and the generator has no reviews, prices or
@@ -197,6 +327,13 @@ export function generateDemoLandingContent(lead: DemoLeadInput): DemoLandingCont
     finalCtaTitle: `Conheça melhor ${name}`,
     finalCtaText:
       "Use as informações disponíveis nesta prévia como ponto de partida e valide os detalhes diretamente com o estabelecimento.",
+    heroImageUrl: "",
+    galleryTitle: `Uma visão mais completa de ${name}`,
+    galleryIntro: `Esta seção foi preparada para apresentar ${name}, da categoria ${category}${location ? ` em ${location}` : ""}, com fotos oficiais ou autorizadas. Enquanto não houver imagens, a demonstração exibirá composições visuais claramente identificadas como ilustrativas.`,
+    galleryImages: [],
+    contactTitle: `Informações de contato de ${name}`,
+    contactText: `Consulte as informações disponíveis de ${name}${location ? ` em ${location}` : ""} e valide os canais informados diretamente com o estabelecimento antes de entrar em contato.`,
+    businessSnapshot: createDemoBusinessSnapshot(lead),
     ctaLabel: "Ver informações",
     primaryColor: template.primaryColor,
     accentColor: template.accentColor,

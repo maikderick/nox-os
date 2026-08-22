@@ -2,7 +2,12 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { isDemoLandingExpired, toDemoLandingDto } from "@/lib/demo-landing";
+import {
+  ensureDemoBusinessSnapshot,
+  isDemoLandingExpired,
+  preserveDemoBusinessSnapshot,
+  toDemoLandingDto,
+} from "@/lib/demo-landing";
 import { updateDemoLandingSchema } from "@/lib/demo-landing-schema";
 import { writeAudit } from "@/lib/settings";
 
@@ -27,7 +32,27 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
 
   const { id } = await ctx.params;
-  const current = await prisma.demoLanding.findUnique({ where: { id } });
+  const current = await prisma.demoLanding.findUnique({
+    where: { id },
+    include: {
+      business: {
+        select: {
+          name: true,
+          category: true,
+          address: true,
+          neighborhood: true,
+          city: true,
+          state: true,
+          postalCode: true,
+          phoneE164: true,
+          socialLinks: true,
+          website: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
+    },
+  });
   if (!current) {
     return NextResponse.json({ error: "Demonstração não encontrada" }, { status: 404 });
   }
@@ -51,10 +76,19 @@ export async function PATCH(req: Request, ctx: Ctx) {
         ? null
         : current.approvedAt;
 
+  const snapshot = body.data.content
+    ? preserveDemoBusinessSnapshot({
+        currentContentJson: current.contentJson,
+        requestedContent: body.data.content,
+        business: current.business,
+      })
+    : ensureDemoBusinessSnapshot(current.contentJson, current.business);
+  const shouldWriteContent = body.data.content !== undefined || snapshot.captured;
+
   const landing = await prisma.demoLanding.update({
     where: { id },
     data: {
-      contentJson: body.data.content ? JSON.stringify(body.data.content) : undefined,
+      contentJson: shouldWriteContent ? JSON.stringify(snapshot.content) : undefined,
       status: effectiveStatus,
       expiresAt: body.data.expiresAt ? requestedExpiry : undefined,
       approvedAt,
@@ -68,6 +102,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     entityId: landing.id,
     meta: {
       changedContent: body.data.content !== undefined,
+      capturedBusinessSnapshot: snapshot.captured,
       status: landing.status,
       expiresAt: landing.expiresAt.toISOString(),
     },

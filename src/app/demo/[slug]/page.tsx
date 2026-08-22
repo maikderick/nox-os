@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element -- demo images come from user-provided, runtime URLs */
 import type { CSSProperties } from "react";
 import { cache } from "react";
 import type { Metadata } from "next";
@@ -6,26 +7,189 @@ import {
   ArrowDownRight,
   ArrowRight,
   BadgeCheck,
+  BedDouble,
   Building2,
   Check,
   ChevronRight,
-  Compass,
+  Coffee,
+  Dumbbell,
+  ExternalLink,
+  HeartPulse,
   Info,
   MapPin,
+  MessageCircle,
+  Palette,
+  PawPrint,
+  Phone,
+  Scissors,
+  Share2,
   ShieldCheck,
+  ShoppingBag,
   Sparkles,
+  UtensilsCrossed,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { prisma } from "@/lib/db";
 import { isDemoLandingExpired } from "@/lib/demo-landing";
+import { captureLegacyDemoBusinessSnapshot } from "@/lib/demo-landing-store";
 import {
+  isSafeDemoImageUrl,
   normalizeDemoCtaLabel,
   parseDemoLandingContent,
 } from "@/lib/demo-landing-schema";
-import { hasOwnWebsite } from "@/lib/website";
+import { isValidPhoneE164 } from "@/lib/phone";
+import { classifyWebsite, hasOwnWebsite } from "@/lib/website";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = { params: Promise<{ slug: string }> };
+
+type CategoryVisual = {
+  icon: LucideIcon;
+  eyebrow: string;
+  detail: string;
+};
+
+type SafeSocialLink = {
+  href: string;
+  label: string;
+};
+
+const SOCIAL_PLATFORM_LABELS: Record<string, string> = {
+  "instagram.com": "Instagram",
+  "facebook.com": "Facebook",
+  "fb.com": "Facebook",
+  "fb.me": "Facebook",
+  "messenger.com": "Messenger",
+  "whatsapp.com": "WhatsApp",
+  "wa.me": "WhatsApp",
+  "tiktok.com": "TikTok",
+  "linkedin.com": "LinkedIn",
+  "twitter.com": "X / Twitter",
+  "x.com": "X",
+  "youtube.com": "YouTube",
+  "youtu.be": "YouTube",
+  "threads.net": "Threads",
+  "pinterest.com": "Pinterest",
+  "pin.it": "Pinterest",
+  "snapchat.com": "Snapchat",
+  "t.me": "Telegram",
+  "telegram.me": "Telegram",
+  "discord.com": "Discord",
+  "discord.gg": "Discord",
+  "kwai.com": "Kwai",
+  "twitch.tv": "Twitch",
+  "vimeo.com": "Vimeo",
+  "reddit.com": "Reddit",
+  "tumblr.com": "Tumblr",
+  "medium.com": "Medium",
+  "substack.com": "Substack",
+  "behance.net": "Behance",
+  "dribbble.com": "Dribbble",
+  "github.com": "GitHub",
+  "soundcloud.com": "SoundCloud",
+  "spotify.com": "Spotify",
+  "bsky.app": "Bluesky",
+  "bluesky.app": "Bluesky",
+  "vk.com": "VK",
+};
+
+function safeDemoImageUrl(value: string | null | undefined): string | null {
+  if (!value || !isSafeDemoImageUrl(value)) return null;
+
+  try {
+    return new URL(value).href;
+  } catch {
+    return null;
+  }
+}
+
+function parseSafeSocialLinks(candidates: string[]): SafeSocialLink[] {
+  const links = candidates.flatMap((candidate): SafeSocialLink[] => {
+    const classification = classifyWebsite(candidate);
+    if (classification.kind !== "social" || !classification.normalizedUrl) return [];
+
+    try {
+      const url = new URL(classification.normalizedUrl);
+      if (url.protocol !== "https:" || url.username || url.password) return [];
+
+      const platform = classification.platform ?? classification.hostname ?? "";
+      return [{ href: url.href, label: SOCIAL_PLATFORM_LABELS[platform] ?? "Rede social" }];
+    } catch {
+      return [];
+    }
+  });
+
+  return Array.from(new Map(links.map((link) => [link.href, link])).values()).slice(0, 8);
+}
+
+function categoryVisualFor(category: string): CategoryVisual {
+  const normalized = category.toLocaleLowerCase("pt-BR");
+
+  if (/sal[aã]o|beleza|barbear|est[eé]tica|cabelo/.test(normalized)) {
+    return { icon: Scissors, eyebrow: "Estilo em primeiro plano", detail: "Cuidado e identidade" };
+  }
+  if (/caf[eé]/.test(normalized)) {
+    return { icon: Coffee, eyebrow: "Experiência em foco", detail: "Sabor e encontro" };
+  }
+  if (/restaurante|comida|lanch|pizz|\bbar\b|padaria|confeitaria/.test(normalized)) {
+    return { icon: UtensilsCrossed, eyebrow: "Sabores em evidência", detail: "Identidade e presença" };
+  }
+  if (/hotel|pousada|hosped|hostel/.test(normalized)) {
+    return { icon: BedDouble, eyebrow: "Hospitalidade em foco", detail: "Conforto e descoberta" };
+  }
+  if (/cl[ií]nica|m[eé]dic|sa[uú]de|dent|odonto|fisi/.test(normalized)) {
+    return { icon: HeartPulse, eyebrow: "Informação com cuidado", detail: "Clareza e confiança" };
+  }
+  if (/academia|fitness|crossfit|pilates|esporte/.test(normalized)) {
+    return { icon: Dumbbell, eyebrow: "Movimento em destaque", detail: "Energia e presença" };
+  }
+  if (/pet|veterin|animal/.test(normalized)) {
+    return { icon: PawPrint, eyebrow: "Cuidado em evidência", detail: "Proximidade e atenção" };
+  }
+  if (/loja|varejo|moda|boutique|mercado|com[eé]rcio/.test(normalized)) {
+    return { icon: ShoppingBag, eyebrow: "Marca em destaque", detail: "Produtos e descoberta" };
+  }
+  return { icon: Building2, eyebrow: "Presença em destaque", detail: "Informação e descoberta" };
+}
+
+function buildOsmLinks(latitude: number | null, longitude: number | null) {
+  if (
+    latitude === null ||
+    longitude === null ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
+
+  const latitudeDelta = 0.006;
+  const longitudeDelta = 0.009;
+  const params = new URLSearchParams({
+    bbox: [
+      longitude - longitudeDelta,
+      latitude - latitudeDelta,
+      longitude + longitudeDelta,
+      latitude + latitudeDelta,
+    ].join(","),
+    layer: "mapnik",
+    marker: `${latitude},${longitude}`,
+  });
+
+  return {
+    embed: `https://www.openstreetmap.org/export/embed.html?${params.toString()}`,
+    external: `https://www.openstreetmap.org/?mlat=${encodeURIComponent(latitude)}&mlon=${encodeURIComponent(longitude)}#map=17/${encodeURIComponent(latitude)}/${encodeURIComponent(longitude)}`,
+  };
+}
+
+function formatSafePhone(value: string): string {
+  return parsePhoneNumberFromString(value)?.formatInternational() ?? value;
+}
 
 function relativeLuminance(hex: string): number {
   const channels = [0, 2, 4].map((offset) =>
@@ -57,7 +221,15 @@ const getDemo = cache(async (slug: string) =>
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const landing = await getDemo(slug);
-  const title = landing ? `Demonstração — ${landing.business.name}` : "Demonstração indisponível";
+  let businessName = landing?.business.name;
+  if (landing) {
+    try {
+      businessName = parseDemoLandingContent(landing.contentJson).businessSnapshot?.name ?? businessName;
+    } catch {
+      // The page itself will render the safe unavailable state for malformed content.
+    }
+  }
+  const title = businessName ? `Demonstração — ${businessName}` : "Demonstração indisponível";
 
   return {
     title,
@@ -84,7 +256,7 @@ function UnavailableDemo({ expired = false }: { expired?: boolean }) {
         <p className="mt-4 text-sm leading-7 text-slate-400 sm:text-base">
           Este endereço era uma prévia temporária e não representa um site oficial do estabelecimento.
         </p>
-        <p className="mt-8 text-xs uppercase tracking-[0.16em] text-slate-600">Criado com NOX OS</p>
+        <p className="mt-8 text-xs uppercase tracking-[0.16em] text-slate-400">Criado com NOX OS</p>
       </section>
     </main>
   );
@@ -112,31 +284,53 @@ export default async function DemoLandingPage({ params }: PageProps) {
 
   let content;
   try {
-    content = parseDemoLandingContent(landing.contentJson);
+    const snapshottedLanding = await captureLegacyDemoBusinessSnapshot(
+      landing,
+      landing.business,
+    );
+    content = parseDemoLandingContent(snapshottedLanding.contentJson);
   } catch {
     return <UnavailableDemo />;
   }
 
-  const business = landing.business;
+  const business = content.businessSnapshot;
+  if (!business) return <UnavailableDemo />;
   const location = [business.city, business.state].filter(Boolean).join(" — ");
   const locationSummary = [business.neighborhood, location].filter(Boolean).join(", ");
+  const fullAddress = [
+    business.address,
+    business.neighborhood,
+    business.city,
+    business.state,
+    business.postalCode,
+  ]
+    .filter(Boolean)
+    .join(", ");
   const hasLocationDetails = Boolean(
     locationSummary || business.address || business.postalCode,
   );
   const locationHeadline = locationSummary || business.address || business.name;
   const businessInitial = business.name.trim().charAt(0).toUpperCase() || "N";
+  const categoryVisual = categoryVisualFor(business.category);
+  const CategoryIcon = categoryVisual.icon;
   const accentTextColor = readableAccentColor(content.accentColor);
   const ctaLabel = normalizeDemoCtaLabel(content.ctaLabel);
+  const safePhone = isValidPhoneE164(business.phoneE164)
+    ? {
+        href: `tel:${business.phoneE164}`,
+        display: formatSafePhone(business.phoneE164),
+      }
+    : null;
+  const socialLinks = parseSafeSocialLinks(business.socialLinks);
+  const osmLinks = buildOsmLinks(business.latitude, business.longitude);
+  const heroImageUrl = safeDemoImageUrl(content.heroImageUrl);
+  const galleryImages = content.galleryImages.flatMap((image) => {
+    const url = safeDemoImageUrl(image.url);
+    return url ? [{ ...image, url }] : [];
+  });
+  const mainCtaHref = "#contato";
+  const mainCtaLabel = ctaLabel;
   const accessibleGradient = `linear-gradient(rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.58)), linear-gradient(135deg, ${content.primaryColor}, ${content.accentColor})`;
-  const availableData = [
-    { label: "Categoria", value: business.category, icon: Building2 },
-    location ? { label: "Cidade e estado", value: location, icon: Compass } : null,
-    business.neighborhood
-      ? { label: "Bairro", value: business.neighborhood, icon: MapPin }
-      : null,
-    business.address ? { label: "Endereço", value: business.address, icon: MapPin } : null,
-    business.postalCode ? { label: "CEP", value: business.postalCode, icon: MapPin } : null,
-  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
   const theme = {
     "--demo-primary": content.primaryColor,
     "--demo-accent": content.accentColor,
@@ -144,7 +338,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
 
   return (
     <main
-      className="min-h-screen overflow-hidden bg-[#07070a] text-slate-50 selection:bg-white/20"
+      className="min-h-screen overflow-x-clip bg-[#07070a] pb-24 text-slate-50 selection:bg-white/20 md:pb-0"
       style={theme}
     >
       <div
@@ -164,15 +358,15 @@ export default async function DemoLandingPage({ params }: PageProps) {
         }}
       />
 
-      <div className="relative z-50 border-b border-amber-200/15 bg-amber-100/[0.07] px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.17em] text-amber-100 sm:text-[11px]">
-        <span className="inline-flex items-center justify-center gap-2">
+      <div className="sticky top-0 z-[60] flex h-9 items-center justify-center border-b border-amber-200/15 bg-[#17130d]/95 px-3 text-center text-[9px] font-semibold uppercase tracking-[0.13em] text-amber-100 backdrop-blur-2xl sm:text-[10px] sm:tracking-[0.17em]">
+        <span className="inline-flex min-w-0 items-center justify-center gap-2">
           <Info aria-hidden="true" className="h-3.5 w-3.5" />
-          Demonstração não oficial · Esta página é uma prévia temporária
+          <span className="truncate">Demonstração não oficial · Prévia temporária</span>
         </span>
       </div>
 
       <div className="relative z-10">
-        <nav className="sticky top-0 z-40 border-b border-white/[0.07] bg-[#07070a]/80 backdrop-blur-2xl">
+        <nav className="sticky top-9 z-40 border-b border-white/[0.07] bg-[#07070a]/88 backdrop-blur-2xl">
           <div className="mx-auto flex h-[4.75rem] max-w-7xl items-center justify-between gap-5 px-5 sm:px-8 lg:px-10">
             <a href="#inicio" className="flex min-w-0 items-center gap-3" aria-label="Voltar ao início">
               <span
@@ -193,6 +387,9 @@ export default async function DemoLandingPage({ params }: PageProps) {
               <a className="transition hover:text-white" href="#sobre">
                 Sobre
               </a>
+              <a className="transition hover:text-white" href="#galeria">
+                Galeria
+              </a>
               {content.services.length ? (
                 <a className="transition hover:text-white" href="#servicos">
                   Serviços
@@ -206,8 +403,8 @@ export default async function DemoLandingPage({ params }: PageProps) {
               <a className="transition hover:text-white" href="#processo">
                 Como funciona
               </a>
-              <a className="transition hover:text-white" href="#localizacao">
-                Localização
+              <a className="transition hover:text-white" href="#contato">
+                Contato
               </a>
               {content.faqs.length ? (
                 <a className="transition hover:text-white" href="#duvidas">
@@ -217,10 +414,10 @@ export default async function DemoLandingPage({ params }: PageProps) {
             </div>
 
             <a
-              href="#localizacao"
+              href={mainCtaHref}
               className="group inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-4 py-2.5 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.11] sm:px-5 sm:text-sm"
             >
-              {ctaLabel}
+              {mainCtaLabel}
               <ArrowDownRight
                 aria-hidden="true"
                 className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:translate-y-0.5"
@@ -233,7 +430,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
           id="inicio"
           className="mx-auto grid min-h-[calc(100vh-7.5rem)] max-w-7xl scroll-mt-24 items-center gap-14 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[1.08fr_0.92fr] lg:px-10 lg:py-24"
         >
-          <div className="max-w-3xl">
+          <div className="min-w-0 max-w-3xl">
             <div
               className="mb-7 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.17em]"
               style={{
@@ -253,14 +450,14 @@ export default async function DemoLandingPage({ params }: PageProps) {
             </p>
             <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
               <a
-                href="#localizacao"
+                href={mainCtaHref}
                 className="group inline-flex min-h-14 items-center justify-center gap-2 rounded-full px-7 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5"
                 style={{
                   backgroundImage: accessibleGradient,
                   boxShadow: `0 20px 55px ${content.primaryColor}30`,
                 }}
               >
-                {ctaLabel}
+                {mainCtaLabel}
                 <ArrowRight
                   aria-hidden="true"
                   className="h-4 w-4 transition-transform group-hover:translate-x-1"
@@ -274,7 +471,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
               </a>
             </div>
 
-            <div className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-xs font-medium text-slate-500">
+            <div className="mt-9 grid gap-3 text-xs font-medium text-slate-400 sm:flex sm:flex-wrap sm:gap-x-6 sm:gap-y-3">
               <span className="inline-flex items-center gap-2">
                 <ShieldCheck aria-hidden="true" className="h-4 w-4 text-slate-400" />
                 Informações disponíveis
@@ -286,62 +483,120 @@ export default async function DemoLandingPage({ params }: PageProps) {
             </div>
           </div>
 
-          <aside className="relative mx-auto w-full max-w-xl lg:ml-auto">
+          <aside className="relative mx-auto min-w-0 w-full max-w-xl lg:ml-auto">
             <div
               aria-hidden="true"
               className="absolute -inset-8 -z-10 rounded-full opacity-25 blur-3xl"
               style={{ backgroundColor: content.primaryColor }}
             />
-            <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#101016]/90 shadow-2xl shadow-black/50 backdrop-blur-2xl sm:rounded-[2.5rem]">
-              <div className="flex items-center justify-between border-b border-white/[0.08] px-6 py-5 sm:px-8">
-                <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,.7)]" />
-                  Perfil do estabelecimento
-                </span>
-                <span className="rounded-full bg-white/[0.06] px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Prévia
-                </span>
-              </div>
-
-              <div className="p-6 sm:p-8">
-                <div className="flex items-center gap-4">
-                  <span
-                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-bold text-white"
-                    style={{ backgroundImage: accessibleGradient }}
-                  >
-                    {businessInitial}
+            <div className="relative min-w-0 overflow-hidden rounded-[2rem] border border-white/10 bg-[#101016] shadow-2xl shadow-black/50 sm:rounded-[2.5rem]">
+              {heroImageUrl ? (
+                <div className="relative min-h-[31rem] min-w-0 w-full sm:aspect-[4/5]">
+                  <img
+                    src={heroImageUrl}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover"
+                    decoding="async"
+                    loading="eager"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-0 bg-gradient-to-b from-black/15 via-transparent to-black/90"
+                  />
+                  <span className="absolute left-5 top-5 rounded-full border border-white/20 bg-black/45 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur-xl">
+                    Imagem fornecida
                   </span>
-                  <div className="min-w-0">
-                    <h2 className="truncate text-xl font-semibold tracking-tight text-white sm:text-2xl">
+                  <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/60">
+                      {business.category}
+                    </p>
+                    <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
                       {business.name}
                     </h2>
-                    <p className="mt-1 truncate text-sm text-slate-400">{business.category}</p>
+                    {locationSummary ? (
+                      <p className="mt-3 flex items-center gap-2 text-sm text-white/70">
+                        <MapPin aria-hidden="true" className="h-4 w-4" />
+                        {locationSummary}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
-
-                <dl className="mt-8 grid gap-3">
-                  {availableData.slice(0, 4).map(({ label, value, icon: Icon }) => (
-                    <div
-                      key={label}
-                      className="flex items-start gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.035] p-4"
-                    >
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-slate-300">
-                        <Icon aria-hidden="true" className="h-4 w-4" />
+              ) : (
+                <div
+                  className="relative min-h-[31rem] min-w-0 w-full overflow-hidden p-6 sm:aspect-[4/5] sm:p-8"
+                  role="img"
+                  aria-label={`Composição visual ilustrativa para a categoria ${business.category}`}
+                  style={{
+                    backgroundImage: `radial-gradient(circle at 82% 14%, ${content.accentColor}46, transparent 14rem), radial-gradient(circle at 18% 88%, ${content.primaryColor}4f, transparent 18rem), linear-gradient(145deg, #15151d, #09090d)`,
+                  }}
+                >
+                  <div
+                    aria-hidden="true"
+                    className="absolute -right-24 top-20 h-72 w-72 rounded-full border border-white/10"
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="absolute -right-10 top-36 h-44 w-44 rounded-full border border-white/10"
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="absolute -left-20 bottom-16 h-64 w-64 rotate-12 rounded-[4rem] border border-white/[0.08]"
+                  />
+                  <div className="relative flex h-full min-h-[27rem] flex-col justify-between">
+                    <div className="flex items-start justify-between gap-5">
+                      <span className="rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/75 backdrop-blur-xl">
+                        Imagem ilustrativa
                       </span>
-                      <div className="min-w-0">
-                        <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-                          {label}
-                        </dt>
-                        <dd className="mt-1 text-sm leading-6 text-slate-200">{value}</dd>
+                      <span
+                        className="flex h-16 w-16 items-center justify-center rounded-[1.4rem] border border-white/10 shadow-2xl"
+                        style={{ backgroundImage: accessibleGradient }}
+                      >
+                        <CategoryIcon aria-hidden="true" className="h-7 w-7 text-white" />
+                      </span>
+                    </div>
+
+                    <div className="relative">
+                      <p
+                        className="text-[10px] font-semibold uppercase tracking-[0.22em]"
+                        style={{ color: accentTextColor }}
+                      >
+                        {categoryVisual.eyebrow}
+                      </p>
+                      <p className="mt-5 text-[clamp(3.5rem,11vw,6rem)] font-semibold leading-[0.82] tracking-[-0.075em] text-white/95">
+                        {businessInitial}
+                      </p>
+                      <div className="mt-7 grid grid-cols-[1fr_auto] items-end gap-4 border-t border-white/10 pt-5">
+                        <div>
+                          <h2 className="text-2xl font-semibold tracking-[-0.035em] text-white">
+                            {business.name}
+                          </h2>
+                          <p className="mt-2 text-sm text-slate-400">{categoryVisual.detail}</p>
+                        </div>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          Conceito visual
+                        </span>
                       </div>
                     </div>
-                  ))}
-                </dl>
-
-                <div className="mt-6 flex items-start gap-3 rounded-2xl border border-emerald-300/10 bg-emerald-300/[0.055] p-4 text-xs leading-5 text-emerald-100/70">
-                  <Check aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                  As informações acima foram organizadas a partir dos dados disponíveis sobre o estabelecimento.
+                  </div>
                 </div>
+              )}
+            </div>
+
+            <div className="relative z-10 mx-4 -mt-5 grid grid-cols-2 overflow-hidden rounded-2xl border border-white/10 bg-[#111118]/95 shadow-xl shadow-black/40 backdrop-blur-2xl sm:mx-7">
+              <div className="border-r border-white/[0.07] p-4 sm:p-5">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  Categoria
+                </p>
+                <p className="mt-2 truncate text-sm font-medium text-slate-200">{business.category}</p>
+              </div>
+              <div className="p-4 sm:p-5">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  Localização
+                </p>
+                <p className="mt-2 truncate text-sm font-medium text-slate-200">
+                  {locationSummary || "Consulte os dados"}
+                </p>
               </div>
             </div>
           </aside>
@@ -371,10 +626,158 @@ export default async function DemoLandingPage({ params }: PageProps) {
             <p className="max-w-3xl text-lg leading-9 text-slate-300 sm:text-xl sm:leading-10">
               {content.about}
             </p>
-            <div className="mt-9 flex items-center gap-3 text-sm text-slate-500">
+            <div className="mt-9 flex items-center gap-3 text-sm text-slate-400">
               <span className="h-px w-10 bg-white/15" />
               {business.category}{location ? ` em ${location}` : ""}
             </div>
+          </div>
+        </section>
+
+        <section
+          id="galeria"
+          className="scroll-mt-28 border-y border-white/[0.07] bg-white/[0.018] py-24 sm:py-28"
+        >
+          <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+            <div className="grid gap-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
+              <div>
+                <p
+                  className="text-xs font-semibold uppercase tracking-[0.2em]"
+                  style={{ color: accentTextColor }}
+                >
+                  Visão geral
+                </p>
+                <h2 className="mt-5 text-3xl font-semibold tracking-[-0.04em] text-white sm:text-5xl">
+                  {content.galleryTitle}
+                </h2>
+              </div>
+              <p className="max-w-2xl text-base leading-8 text-slate-400 lg:justify-self-end lg:text-lg">
+                {content.galleryIntro}
+              </p>
+            </div>
+
+            {galleryImages.length ? (
+              <div
+                className={`mt-12 grid auto-rows-[16rem] gap-4 md:auto-rows-[19rem] ${
+                  galleryImages.length === 1
+                    ? "grid-cols-1"
+                    : galleryImages.length === 2
+                      ? "md:grid-cols-2"
+                      : "md:grid-cols-2 lg:grid-cols-3"
+                }`}
+              >
+                {galleryImages.map((image, index) => (
+                  <figure
+                    key={`${index}-${image.url}`}
+                    className={`group relative overflow-hidden rounded-[1.75rem] border border-white/[0.09] bg-[#101016] ${
+                      galleryImages.length >= 3 && index === 0
+                        ? "md:row-span-2 lg:col-span-2"
+                        : ""
+                    }`}
+                  >
+                    <img
+                      src={image.url}
+                      alt=""
+                      className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.025]"
+                      decoding="async"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/10"
+                    />
+                    <figcaption className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-5 sm:p-6">
+                      <span className="max-w-md text-sm font-medium leading-6 text-white/90">
+                        {image.alt}
+                      </span>
+                      <span className="shrink-0 rounded-full border border-white/15 bg-black/40 px-3 py-1.5 text-[8px] font-semibold uppercase tracking-[0.15em] text-white/70 backdrop-blur-xl">
+                        Imagem fornecida
+                      </span>
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-12 grid gap-4 md:grid-cols-3">
+                {[
+                  {
+                    icon: CategoryIcon,
+                    eyebrow: categoryVisual.eyebrow,
+                    title: business.category,
+                    detail: "Direção visual conceitual",
+                  },
+                  {
+                    icon: Palette,
+                    eyebrow: "Identidade digital",
+                    title: business.name,
+                    detail: "Marca em primeiro plano",
+                  },
+                  {
+                    icon: MessageCircle,
+                    eyebrow: "Informação acessível",
+                    title: locationSummary || "Presença local",
+                    detail: "Conteúdo organizado",
+                  },
+                ].map(({ icon: VisualIcon, eyebrow, title, detail }, index) => (
+                  <figure
+                    key={`${index}-${title}`}
+                    className={`group relative min-h-[25rem] overflow-hidden rounded-[1.75rem] border border-white/[0.09] p-6 ${
+                      index === 1 ? "md:-translate-y-5" : ""
+                    }`}
+                    role="img"
+                    aria-label={`Imagem ilustrativa: ${eyebrow}`}
+                    style={{
+                      backgroundImage:
+                        index === 0
+                          ? `radial-gradient(circle at 80% 18%, ${content.primaryColor}55, transparent 12rem), linear-gradient(150deg, #15151d, #09090d)`
+                          : index === 1
+                            ? `radial-gradient(circle at 18% 82%, ${content.accentColor}42, transparent 13rem), linear-gradient(25deg, #0b0b10, #191922)`
+                            : `linear-gradient(135deg, ${content.primaryColor}25, transparent 48%), radial-gradient(circle at 72% 72%, ${content.accentColor}35, transparent 12rem), #0d0d13`,
+                    }}
+                  >
+                    <div
+                      aria-hidden="true"
+                      className={`absolute border border-white/[0.09] ${
+                        index === 0
+                          ? "-right-16 top-20 h-64 w-64 rotate-12 rounded-[4rem]"
+                          : index === 1
+                            ? "-left-20 bottom-12 h-72 w-72 rounded-full"
+                            : "right-8 top-24 h-48 w-32 -rotate-12 rounded-full"
+                      }`}
+                    />
+                    <div className="relative flex h-full min-h-[22rem] flex-col justify-between">
+                      <div className="flex items-start justify-between gap-4">
+                        <span className="rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-[8px] font-semibold uppercase tracking-[0.15em] text-white/70 backdrop-blur-xl">
+                          Imagem ilustrativa
+                        </span>
+                        <span
+                          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10"
+                          style={{ backgroundColor: `${content.accentColor}18`, color: accentTextColor }}
+                        >
+                          <VisualIcon aria-hidden="true" className="h-5 w-5" />
+                        </span>
+                      </div>
+                      <figcaption>
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          {eyebrow}
+                        </p>
+                        <p className="mt-4 text-2xl font-semibold leading-tight tracking-[-0.035em] text-white">
+                          {title}
+                        </p>
+                        <p className="mt-3 text-sm text-slate-400">{detail}</p>
+                      </figcaption>
+                    </div>
+                  </figure>
+                ))}
+              </div>
+            )}
+
+            {!galleryImages.length ? (
+              <p className="mt-6 text-center text-xs leading-6 text-slate-400">
+                As composições acima são apenas ilustrativas e não representam fotos reais do estabelecimento,
+                de produtos ou de serviços.
+              </p>
+            ) : null}
           </div>
         </section>
 
@@ -421,7 +824,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
                       </span>
                       <ArrowDownRight
                         aria-hidden="true"
-                        className="h-5 w-5 text-slate-700 transition group-hover:text-slate-400"
+                        className="h-5 w-5 text-slate-400 transition group-hover:text-white"
                       />
                     </div>
                     <h3 className="mt-9 text-lg font-semibold leading-7 text-slate-100">{service}</h3>
@@ -462,7 +865,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
                     >
                       <Check aria-hidden="true" className="h-4 w-4" />
                     </span>
-                    <span className="text-[10px] font-semibold tracking-[0.18em] text-slate-700">
+                    <span className="text-[10px] font-semibold tracking-[0.18em] text-slate-400">
                       {String(index + 1).padStart(2, "0")}
                     </span>
                   </div>
@@ -513,7 +916,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
                       <p className="text-base leading-7 text-slate-200 sm:text-lg">{step}</p>
                       <ChevronRight
                         aria-hidden="true"
-                        className="hidden h-5 w-5 shrink-0 text-slate-700 transition group-hover:translate-x-1 group-hover:text-slate-400 sm:block"
+                        className="hidden h-5 w-5 shrink-0 text-slate-400 transition group-hover:translate-x-1 group-hover:text-white sm:block"
                       />
                     </div>
                   </li>
@@ -524,76 +927,207 @@ export default async function DemoLandingPage({ params }: PageProps) {
         </section>
 
         <section
-          id="localizacao"
-          className="mx-auto grid max-w-7xl scroll-mt-28 gap-10 px-5 py-24 sm:px-8 sm:py-28 lg:grid-cols-[1.05fr_0.95fr] lg:px-10 lg:py-36"
+          id="contato"
+          className="scroll-mt-28 border-t border-white/[0.07] bg-white/[0.018] py-24 sm:py-28 lg:py-36"
         >
-          <div
-            className="relative min-h-[27rem] overflow-hidden rounded-[2rem] border border-white/[0.08] bg-white/[0.025] p-7 sm:p-10"
-            style={{
-              backgroundImage: `radial-gradient(circle at 70% 30%, ${content.primaryColor}24, transparent 18rem), linear-gradient(135deg, rgba(255,255,255,.025), transparent)`,
-            }}
-          >
-            <div
-              aria-hidden="true"
-              className="absolute inset-0 opacity-[0.09]"
-              style={{
-                backgroundImage:
-                  "linear-gradient(rgba(255,255,255,.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.8) 1px, transparent 1px)",
-                backgroundSize: "42px 42px",
-                transform: "perspective(500px) rotateX(55deg) scale(1.45)",
-                transformOrigin: "center bottom",
-              }}
-            />
-            <div className="relative flex h-full min-h-[21rem] flex-col justify-between">
+          <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+            <div className="grid gap-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  {hasLocationDetails ? "Onde estamos" : "Sobre o estabelecimento"}
+                <p
+                  className="text-xs font-semibold uppercase tracking-[0.2em]"
+                  style={{ color: accentTextColor }}
+                >
+                  Contato e localização
                 </p>
-                <h2 className="mt-5 max-w-lg text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
-                  {locationHeadline}
+                <h2 className="mt-5 text-3xl font-semibold tracking-[-0.04em] text-white sm:text-5xl">
+                  {content.contactTitle}
                 </h2>
               </div>
+              <p className="max-w-2xl text-base leading-8 text-slate-400 lg:justify-self-end lg:text-lg">
+                {content.contactText}
+              </p>
+            </div>
 
-              <div className="flex items-end justify-between gap-6">
-                <div
-                  className="flex h-16 w-16 items-center justify-center rounded-full text-white shadow-2xl"
-                  style={{
-                    backgroundImage: accessibleGradient,
-                    boxShadow: `0 16px 50px ${content.primaryColor}45`,
-                  }}
-                >
-                  <MapPin aria-hidden="true" className="h-6 w-6" />
+            <div className="mt-12 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+              <div className="flex min-w-0 flex-col gap-4">
+                {safePhone ? (
+                  <a
+                    href={safePhone.href}
+                    className="group flex min-w-0 items-center justify-between gap-3 overflow-hidden rounded-[1.6rem] border border-white/[0.09] bg-[#101016] p-5 transition hover:-translate-y-0.5 hover:border-white/20 sm:gap-5 sm:p-6"
+                  >
+                    <span className="flex min-w-0 items-center gap-4">
+                      <span
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl"
+                        style={{ backgroundColor: `${content.accentColor}18`, color: accentTextColor }}
+                      >
+                        <Phone aria-hidden="true" className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[9px] font-semibold uppercase tracking-[0.17em] text-slate-400">
+                          Telefone informado
+                        </span>
+                        <span className="mt-2 block truncate text-base font-semibold text-white">
+                          {safePhone.display}
+                        </span>
+                      </span>
+                    </span>
+                    <ArrowRight
+                      aria-hidden="true"
+                      className="h-5 w-5 shrink-0 text-slate-400 transition group-hover:translate-x-1 group-hover:text-white"
+                    />
+                  </a>
+                ) : null}
+
+                {hasLocationDetails ? (
+                  <div className="flex min-w-0 gap-4 overflow-hidden rounded-[1.6rem] border border-white/[0.09] bg-[#101016] p-5 sm:p-6">
+                    <span
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl"
+                      style={{ backgroundColor: `${content.primaryColor}1f`, color: accentTextColor }}
+                    >
+                      <MapPin aria-hidden="true" className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.17em] text-slate-400">
+                        Endereço informado
+                      </p>
+                      <p className="mt-2 break-words text-sm leading-7 text-slate-200">{fullAddress}</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="min-w-0 overflow-hidden rounded-[1.6rem] border border-white/[0.09] bg-[#101016] p-5 sm:p-6">
+                  <div className="flex items-center gap-4">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/[0.05] text-slate-300">
+                      <Share2 aria-hidden="true" className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.17em] text-slate-400">
+                        {socialLinks.length ? "Canais encontrados" : "Canais sociais"}
+                      </p>
+                      <p className="mt-2 text-sm text-slate-400">
+                        {socialLinks.length
+                          ? "Acesse os perfis informados para conferir detalhes."
+                          : "Nenhum canal social seguro está disponível para exibição nesta prévia."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {socialLinks.length ? (
+                    <div className="mt-5 flex flex-wrap gap-2 border-t border-white/[0.07] pt-5">
+                      {socialLinks.map((link) => (
+                        <a
+                          key={link.href}
+                          href={link.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 rounded-full border border-white/[0.09] bg-white/[0.04] px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+                          aria-label={`Abrir ${link.label} de ${business.name} em nova aba`}
+                        >
+                          {link.label}
+                          <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-                <span className="max-w-xs text-right text-xs leading-5 text-slate-500">
-                  Exibição ilustrativa baseada apenas nas informações disponíveis.
-                </span>
+
+                {!safePhone && !hasLocationDetails && !socialLinks.length ? (
+                  <div className="rounded-2xl border border-amber-200/10 bg-amber-100/[0.04] p-5 text-sm leading-7 text-amber-100/65">
+                    Nenhum canal de contato seguro está disponível para exibição nesta prévia.
+                    Confirme os dados diretamente com o estabelecimento antes de publicar a versão oficial.
+                  </div>
+                ) : null}
+              </div>
+
+              <div
+                id="localizacao"
+                className="relative min-h-[31rem] min-w-0 scroll-mt-28 overflow-hidden rounded-[2rem] border border-white/[0.09] bg-[#101016]"
+              >
+                {osmLinks ? (
+                  <>
+                    <iframe
+                      src={osmLinks.embed}
+                      title={`Mapa da localização informada de ${business.name}`}
+                      className="absolute inset-0 h-full w-full border-0 opacity-90 [filter:grayscale(.7)_contrast(.9)]"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      sandbox="allow-popups allow-same-origin allow-scripts"
+                    />
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/65 to-transparent" />
+                    <div className="absolute left-5 top-5 rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/80 backdrop-blur-xl">
+                      Localização informada
+                    </div>
+                    <a
+                      href={osmLinks.external}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute bottom-5 right-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/70 px-4 py-2.5 text-xs font-semibold text-white shadow-xl backdrop-blur-xl transition hover:bg-black/85"
+                    >
+                      Abrir mapa
+                      <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+                    </a>
+                    <a
+                      href="https://www.openstreetmap.org/copyright"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute bottom-5 left-5 rounded-full border border-white/15 bg-black/70 px-3 py-2 text-[9px] font-medium text-white/70 backdrop-blur-xl transition hover:text-white"
+                    >
+                      © OpenStreetMap contributors
+                    </a>
+                  </>
+                ) : (
+                  <div
+                    className="absolute inset-0 p-7 sm:p-10"
+                    style={{
+                      backgroundImage: `radial-gradient(circle at 70% 30%, ${content.primaryColor}24, transparent 18rem), linear-gradient(135deg, rgba(255,255,255,.025), transparent)`,
+                    }}
+                  >
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0 opacity-[0.09]"
+                      style={{
+                        backgroundImage:
+                          "linear-gradient(rgba(255,255,255,.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.8) 1px, transparent 1px)",
+                        backgroundSize: "42px 42px",
+                        transform: "perspective(500px) rotateX(55deg) scale(1.45)",
+                        transformOrigin: "center bottom",
+                      }}
+                    />
+                    <div className="relative flex h-full min-h-[25rem] flex-col justify-between">
+                      <div>
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          Visual de localização · Imagem ilustrativa
+                        </p>
+                        <h3 className="mt-5 max-w-lg text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
+                          {locationHeadline}
+                        </h3>
+                      </div>
+
+                      <div className="flex items-end justify-between gap-6">
+                        <span
+                          className="flex h-16 w-16 items-center justify-center rounded-full text-white shadow-2xl"
+                          style={{
+                            backgroundImage: accessibleGradient,
+                            boxShadow: `0 16px 50px ${content.primaryColor}45`,
+                          }}
+                        >
+                          <MapPin aria-hidden="true" className="h-6 w-6" />
+                        </span>
+                        <span className="max-w-xs text-right text-xs leading-5 text-slate-400">
+                          Um mapa real será exibido somente quando houver coordenadas válidas.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
 
-          <div className="flex flex-col justify-center">
-            <p
-              className="text-xs font-semibold uppercase tracking-[0.2em]"
-              style={{ color: accentTextColor }}
-            >
-              Dados do estabelecimento
-            </p>
-            <h2 className="mt-5 text-3xl font-semibold tracking-[-0.035em] text-white sm:text-5xl">
-              {hasLocationDetails
-                ? `Informações para encontrar ${business.name}`
-                : `Informações disponíveis sobre ${business.name}`}
-            </h2>
-            <dl className="mt-10 divide-y divide-white/[0.07] border-y border-white/[0.07]">
-              {availableData.map(({ label, value, icon: Icon }) => (
-                <div key={label} className="grid gap-2 py-5 sm:grid-cols-[9rem_1fr] sm:gap-5">
-                  <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                    <Icon aria-hidden="true" className="h-3.5 w-3.5" />
-                    {label}
-                  </dt>
-                  <dd className="text-sm leading-7 text-slate-200">{value}</dd>
-                </div>
-              ))}
-            </dl>
+            <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-300/10 bg-emerald-300/[0.045] p-4 text-xs leading-6 text-emerald-100/65">
+              <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+              Telefone, endereço, coordenadas e redes sociais aparecem somente quando estão presentes e
+              passam pelas validações de segurança desta demonstração.
+            </div>
           </div>
         </section>
 
@@ -618,7 +1152,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
               <div className="divide-y divide-white/[0.08] border-y border-white/[0.08]">
                 {content.faqs.map((faq, index) => (
                   <article key={`${index}-${faq.question}`} className="grid gap-3 py-7 sm:grid-cols-[2.5rem_1fr] sm:gap-5">
-                    <span className="pt-1 text-[10px] font-semibold tracking-[0.16em] text-slate-700">
+                    <span className="pt-1 text-[10px] font-semibold tracking-[0.16em] text-slate-400">
                       {String(index + 1).padStart(2, "0")}
                     </span>
                     <div>
@@ -657,14 +1191,14 @@ export default async function DemoLandingPage({ params }: PageProps) {
                 {content.finalCtaText}
               </p>
               <a
-                href="#localizacao"
+                href={mainCtaHref}
                 className="group mt-9 inline-flex min-h-14 items-center justify-center gap-2 rounded-full px-8 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5"
                 style={{
                   backgroundImage: accessibleGradient,
                   boxShadow: `0 20px 55px ${content.primaryColor}30`,
                 }}
               >
-                {ctaLabel}
+                {mainCtaLabel}
                 <ArrowRight
                   aria-hidden="true"
                   className="h-4 w-4 transition-transform group-hover:translate-x-1"
@@ -674,23 +1208,61 @@ export default async function DemoLandingPage({ params }: PageProps) {
           </div>
         </section>
 
-        <footer className="border-t border-white/[0.07]">
-          <div className="mx-auto grid max-w-7xl gap-8 px-5 py-10 text-center sm:px-8 md:grid-cols-[1fr_auto] md:items-center md:text-left lg:px-10">
-            <div>
-              <p className="text-sm font-semibold text-slate-300">{business.name}</p>
-              <p className="mt-2 max-w-2xl text-xs leading-6 text-slate-600">
-                Demonstração não oficial criada para apresentação visual. Esta página não constitui
-                o site oficial do estabelecimento.
-              </p>
+        <footer className="border-t border-white/[0.07] bg-black/15">
+          <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8 lg:px-10">
+            <div className="grid gap-8 border-b border-white/[0.07] pb-9 md:grid-cols-[1fr_auto] md:items-end">
+              <div>
+                <div className="flex items-center gap-3">
+                  <span
+                    className="flex h-10 w-10 items-center justify-center rounded-2xl text-sm font-bold text-white"
+                    style={{ backgroundImage: accessibleGradient }}
+                  >
+                    {businessInitial}
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-200">{business.name}</p>
+                    <p className="mt-1 text-xs text-slate-400">{business.category}</p>
+                  </div>
+                </div>
+              </div>
+              <nav
+                aria-label="Navegação do rodapé"
+                className="flex flex-wrap gap-x-5 gap-y-3 text-xs font-medium text-slate-400 md:justify-end"
+              >
+                <a href="#inicio" className="transition hover:text-white">Início</a>
+                <a href="#sobre" className="transition hover:text-white">Sobre</a>
+                <a href="#galeria" className="transition hover:text-white">Galeria</a>
+                {content.services.length ? (
+                  <a href="#servicos" className="transition hover:text-white">Serviços</a>
+                ) : null}
+                <a href="#contato" className="transition hover:text-white">Contato</a>
+              </nav>
             </div>
-            <div className="md:text-right">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">
-                NOX OS · Demonstração temporária
+            <div className="grid gap-5 pt-8 text-center md:grid-cols-[1fr_auto] md:items-center md:text-left">
+              <p className="max-w-2xl text-xs leading-6 text-slate-400">
+                Demonstração não oficial criada para apresentação visual. Esta página não constitui
+                o site oficial do estabelecimento. Conteúdo sujeito à validação.
               </p>
-              <p className="mt-2 text-[10px] text-slate-700">Conteúdo sujeito à validação do estabelecimento</p>
+              <div className="md:text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  NOX OS · Demonstração temporária
+                </p>
+                <p className="mt-2 text-[10px] text-slate-400">Não indexada por mecanismos de busca</p>
+              </div>
             </div>
           </div>
         </footer>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#09090d]/95 p-3 pb-[calc(.75rem+env(safe-area-inset-bottom))] shadow-[0_-16px_45px_rgba(0,0,0,.45)] backdrop-blur-2xl md:hidden">
+        <a
+          href={safePhone?.href ?? mainCtaHref}
+          className="flex min-h-13 items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white"
+          style={{ backgroundImage: accessibleGradient }}
+        >
+          {safePhone ? <Phone aria-hidden="true" className="h-4 w-4" /> : <Info aria-hidden="true" className="h-4 w-4" />}
+          {safePhone ? `Ligar · ${safePhone.display}` : "Ver contato e localização"}
+        </a>
       </div>
     </main>
   );

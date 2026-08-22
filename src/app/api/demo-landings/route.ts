@@ -6,7 +6,11 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { toDemoLandingDto } from "@/lib/demo-landing";
 import { createDemoLandingSchema } from "@/lib/demo-landing-schema";
-import { markExpiredIfNeeded, regenerateDemoLanding } from "@/lib/demo-landing-store";
+import {
+  captureLegacyDemoBusinessSnapshot,
+  markExpiredIfNeeded,
+  regenerateDemoLanding,
+} from "@/lib/demo-landing-store";
 import { writeAudit } from "@/lib/settings";
 import { hasOwnWebsite } from "@/lib/website";
 
@@ -31,10 +35,29 @@ export async function GET(req: Request) {
 
   const stored = await prisma.demoLanding.findUnique({
     where: { businessId: query.data.leadId },
+    include: {
+      business: {
+        select: {
+          name: true,
+          category: true,
+          address: true,
+          neighborhood: true,
+          city: true,
+          state: true,
+          postalCode: true,
+          phoneE164: true,
+          socialLinks: true,
+          website: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
+    },
   });
   if (!stored) return NextResponse.json({ landing: null });
 
-  const landing = await markExpiredIfNeeded(stored);
+  const snapshotted = await captureLegacyDemoBusinessSnapshot(stored, stored.business);
+  const landing = await markExpiredIfNeeded(snapshotted);
   return NextResponse.json({ landing: toDemoLandingDto(landing, requestOrigin(req)) });
 }
 
@@ -66,7 +89,11 @@ export async function POST(req: Request) {
       neighborhood: true,
       city: true,
       state: true,
+      postalCode: true,
       phoneE164: true,
+      socialLinks: true,
+      latitude: true,
+      longitude: true,
       website: true,
     },
   });

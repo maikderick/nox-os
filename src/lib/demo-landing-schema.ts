@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidPhoneE164 } from "./phone";
 
 const plainText = (max: number) =>
   z
@@ -11,13 +12,79 @@ const plainText = (max: number) =>
     });
 
 const listItem = plainText(180);
+const nullablePlainText = (max: number) => plainText(max).nullable();
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use uma cor no formato #RRGGBB");
+export const isSafeDemoHttpsUrl = (value: string): boolean => {
+  if (!/^https:\/\//i.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      Boolean(url.hostname) &&
+      !url.username &&
+      !url.password
+    );
+  } catch {
+    return false;
+  }
+};
+export const isSafeDemoImageUrl = isSafeDemoHttpsUrl;
+const httpsUrl = z
+  .string()
+  .trim()
+  .min(1, "Informe a URL da imagem")
+  .max(2_000, "Use no máximo 2000 caracteres")
+  .refine(isSafeDemoHttpsUrl, { message: "Use uma URL HTTPS válida e sem credenciais" });
+const optionalHttpsUrl = z
+  .string()
+  .trim()
+  .max(2_000, "Use no máximo 2000 caracteres")
+  .refine((value) => value === "" || isSafeDemoHttpsUrl(value), {
+    message: "Use uma URL HTTPS válida e sem credenciais",
+  });
 const faqItemSchema = z
   .object({
     question: plainText(180),
     answer: plainText(600),
   })
   .strict();
+const galleryImageSchema = z
+  .object({
+    url: httpsUrl,
+    alt: plainText(180),
+  })
+  .strict();
+const phoneE164Schema = z
+  .string()
+  .trim()
+  .refine(isValidPhoneE164, { message: "Use um telefone E.164 válido" });
+
+export const demoBusinessSnapshotSchema = z
+  .object({
+    name: plainText(120),
+    category: plainText(120),
+    address: nullablePlainText(500),
+    neighborhood: nullablePlainText(160),
+    city: nullablePlainText(120),
+    state: nullablePlainText(64),
+    postalCode: nullablePlainText(32),
+    phoneE164: phoneE164Schema.nullable(),
+    socialLinks: z.array(httpsUrl).max(12),
+    latitude: z.number().finite().min(-90).max(90).nullable(),
+    longitude: z.number().finite().min(-180).max(180).nullable(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.latitude === null) !== (value.longitude === null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [value.latitude === null ? "latitude" : "longitude"],
+        message: "Informe latitude e longitude juntas",
+      });
+    }
+  });
+
+export type DemoBusinessSnapshot = z.infer<typeof demoBusinessSnapshotSchema>;
 
 const DEFAULT_PROCESS_STEPS = [
   "Encontre as informações essenciais apresentadas nesta página.",
@@ -77,13 +144,29 @@ export const demoLandingContentSchema = z
     finalCtaText: plainText(600).default(
       "Encontre as informações disponíveis e confirme os detalhes diretamente com o estabelecimento.",
     ),
+    heroImageUrl: optionalHttpsUrl.default(""),
+    galleryTitle: plainText(120).default("Uma presença digital mais completa"),
+    galleryIntro: plainText(600).default(
+      "Esta seção está pronta para receber fotos oficiais ou autorizadas. Enquanto não houver imagens, a demonstração exibirá composições visuais claramente identificadas como ilustrativas.",
+    ),
+    galleryImages: z.array(galleryImageSchema).max(6).default([]),
+    contactTitle: plainText(120).default("Informações de contato"),
+    contactText: plainText(600).default(
+      "Valide os canais informados diretamente com o estabelecimento antes de entrar em contato.",
+    ),
+    businessSnapshot: demoBusinessSnapshotSchema.nullable().default(null),
     ctaLabel: plainText(60),
     primaryColor: hexColor,
     accentColor: hexColor,
   })
   .strict();
 
-export type DemoLandingContent = z.infer<typeof demoLandingContentSchema>;
+type ParsedDemoLandingContent = z.infer<typeof demoLandingContentSchema>;
+
+/** The snapshot is server-managed, so editor clients may omit it from their payload. */
+export type DemoLandingContent = Omit<ParsedDemoLandingContent, "businessSnapshot"> & {
+  businessSnapshot?: DemoBusinessSnapshot | null;
+};
 
 export const DEMO_LANDING_STATUSES = ["DRAFT", "APPROVED", "EXPIRED"] as const;
 export const demoLandingStatusSchema = z.enum(DEMO_LANDING_STATUSES);

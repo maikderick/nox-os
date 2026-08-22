@@ -4,6 +4,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react
 import {
   DEMO_CTA_LABELS,
   demoLandingContentSchema,
+  isSafeDemoImageUrl,
   normalizeDemoCtaLabel,
   type DemoLandingContent,
 } from "@/lib/demo-landing-schema";
@@ -21,16 +22,18 @@ type DemoLanding = {
 };
 
 type DemoFaq = DemoLandingContent["faqs"][number];
+type DemoGalleryImage = DemoLandingContent["galleryImages"][number];
 type EditableLandingContent = DemoLandingContent;
 
 type Draft = Omit<
   EditableLandingContent,
-  "benefits" | "services" | "processSteps" | "faqs"
+  "benefits" | "services" | "processSteps" | "faqs" | "galleryImages"
 > & {
   benefits: string;
   services: string;
   processSteps: string;
   faqs: DemoFaq[];
+  galleryImages: DemoGalleryImage[];
 };
 
 type Props = {
@@ -42,9 +45,17 @@ type Props = {
   onMessageChange: (message: string) => void;
 };
 
+const DEFAULT_GALLERY_TITLE = "Uma presença digital mais completa";
+const DEFAULT_GALLERY_INTRO =
+  "Esta seção está pronta para receber fotos oficiais ou autorizadas. Enquanto não houver imagens, a demonstração exibirá composições visuais claramente identificadas como ilustrativas.";
+const DEFAULT_CONTACT_TITLE = "Informações de contato";
+const DEFAULT_CONTACT_TEXT =
+  "Valide os canais informados diretamente com o estabelecimento antes de entrar em contato.";
+
 const EMPTY_DRAFT: Draft = {
   headline: "",
   subheadline: "",
+  heroImageUrl: "",
   aboutTitle: "Sobre",
   about: "",
   factsTitle: "Destaques",
@@ -52,11 +63,16 @@ const EMPTY_DRAFT: Draft = {
   servicesTitle: "Serviços",
   servicesIntro: "",
   services: "",
+  galleryTitle: DEFAULT_GALLERY_TITLE,
+  galleryIntro: DEFAULT_GALLERY_INTRO,
+  galleryImages: [],
   processTitle: "Como funciona",
   processIntro: "",
   processSteps: "",
   faqTitle: "Perguntas frequentes",
   faqs: [],
+  contactTitle: DEFAULT_CONTACT_TITLE,
+  contactText: DEFAULT_CONTACT_TEXT,
   finalCtaTitle: "Vamos conversar?",
   finalCtaText: "",
   ctaLabel: "Ver informações",
@@ -170,6 +186,30 @@ export function DemoLandingPanel({
     updateDraft(
       "faqs",
       draft.faqs.filter((_, faqIndex) => faqIndex !== index),
+    );
+  }
+
+  function updateGalleryImage(index: number, key: keyof DemoGalleryImage, value: string) {
+    setDraft((current) => ({
+      ...current,
+      galleryImages: current.galleryImages.map((galleryImage, imageIndex) =>
+        imageIndex === index ? { ...galleryImage, [key]: value } : galleryImage,
+      ),
+    }));
+    setDirty(true);
+    setNotice(null);
+    setError(null);
+  }
+
+  function addGalleryImage() {
+    if (draft.galleryImages.length >= 6) return;
+    updateDraft("galleryImages", [...draft.galleryImages, { url: "", alt: "" }]);
+  }
+
+  function removeGalleryImage(index: number) {
+    updateDraft(
+      "galleryImages",
+      draft.galleryImages.filter((_, imageIndex) => imageIndex !== index),
     );
   }
 
@@ -354,8 +394,8 @@ export function DemoLandingPanel({
 
           <div className="space-y-3">
             <EditorSection
-              title="1. Topo e identidade"
-              description="Título, texto inicial, botão e cores."
+              title="1. Topo e identidade visual"
+              description="Título, texto inicial, imagem principal, botão e cores."
               defaultOpen
             >
               <div className="grid gap-4 lg:grid-cols-2">
@@ -396,6 +436,14 @@ export function DemoLandingPanel({
                     label="Cor de destaque"
                     value={draft.accentColor}
                     onChange={(value) => updateDraft("accentColor", value)}
+                  />
+                </div>
+                <div className="lg:col-span-2">
+                  <UrlField
+                    label="Imagem principal (opcional)"
+                    hint="Use uma imagem oficial ou autorizada, com URL iniciada por https://."
+                    value={draft.heroImageUrl}
+                    onChange={(value) => updateDraft("heroImageUrl", value)}
                   />
                 </div>
               </div>
@@ -465,7 +513,112 @@ export function DemoLandingPanel({
             </EditorSection>
 
             <EditorSection
-              title="4. Como funciona"
+              title="4. Galeria"
+              description={`${draft.galleryImages.length}/6 imagens cadastradas.`}
+              defaultOpen={
+                !draft.galleryTitle.trim() ||
+                !draft.galleryIntro.trim() ||
+                draft.galleryImages.some(
+                  (galleryImage) =>
+                    !galleryImage.url.trim() ||
+                    !isSafeDemoImageUrl(galleryImage.url) ||
+                    !galleryImage.alt.trim(),
+                )
+              }
+            >
+              <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3 text-xs text-cyan-100">
+                Use apenas imagens oficiais, próprias ou autorizadas. Se uma imagem for meramente
+                ilustrativa, identifique-a como “Imagem ilustrativa” no texto alternativo. Todas as
+                URLs devem começar com https://.
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <TextField
+                  label="Título da galeria"
+                  value={draft.galleryTitle}
+                  maxLength={120}
+                  onChange={(value) => updateDraft("galleryTitle", value)}
+                />
+                <TextAreaField
+                  label="Introdução da galeria"
+                  value={draft.galleryIntro}
+                  maxLength={600}
+                  onChange={(value) => updateDraft("galleryIntro", value)}
+                />
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {draft.galleryImages.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-nox-border p-4 text-sm text-nox-muted">
+                    Nenhuma imagem cadastrada. A demonstração usará composições visuais
+                    identificadas como ilustrativas até você adicionar fotos oficiais.
+                  </p>
+                )}
+                {draft.galleryImages.map((galleryImage, index) => (
+                  <div
+                    key={index}
+                    className="rounded-lg border border-nox-border bg-nox-bg/50 p-4"
+                  >
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                      <h4 className="text-sm font-medium text-white">Imagem {index + 1}</h4>
+                      <div className="flex items-center gap-2">
+                        {isSafeDemoImageUrl(galleryImage.url) && (
+                          <a
+                            href={galleryImage.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-md border border-nox-border px-2.5 py-1 text-xs text-nox-cyan hover:border-nox-cyan"
+                          >
+                            Conferir imagem ↗
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeGalleryImage(index)}
+                          className="rounded-md border border-red-400/30 px-2.5 py-1 text-xs text-red-200 hover:border-red-400"
+                          aria-label={`Remover imagem ${index + 1}`}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <UrlField
+                        label="URL da imagem"
+                        hint="Obrigatoriamente HTTPS."
+                        value={galleryImage.url}
+                        onChange={(value) => updateGalleryImage(index, "url", value)}
+                        required
+                      />
+                      <TextField
+                        label="Texto alternativo"
+                        value={galleryImage.alt}
+                        maxLength={180}
+                        onChange={(value) => updateGalleryImage(index, "alt", value)}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-nox-muted">
+                      Descreva o que aparece na imagem. Se ela não for oficial, inclua “Imagem
+                      ilustrativa”.
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                disabled={draft.galleryImages.length >= 6}
+                onClick={addGalleryImage}
+                className="mt-3 rounded-lg border border-nox-border px-3 py-2 text-sm text-nox-cyan hover:border-nox-cyan disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {draft.galleryImages.length >= 6
+                  ? "Limite de 6 imagens"
+                  : "+ Adicionar imagem"}
+              </button>
+            </EditorSection>
+
+            <EditorSection
+              title="5. Como funciona"
               description="Explique o processo sem prometer resultados."
               defaultOpen={
                 toLines(draft.processSteps).length < 3 ||
@@ -498,7 +651,7 @@ export function DemoLandingPanel({
             </EditorSection>
 
             <EditorSection
-              title="5. Perguntas frequentes"
+              title="6. Perguntas frequentes"
               description={`${draft.faqs.length}/6 perguntas cadastradas.`}
               defaultOpen={draft.faqs.some(
                 (faq) => !faq.question.trim() || !faq.answer.trim(),
@@ -563,8 +716,35 @@ export function DemoLandingPanel({
             </EditorSection>
 
             <EditorSection
-              title="6. Chamada final"
-              description="Fechamento da página antes do contato."
+              title="7. Contato"
+              description="Oriente o visitante a confirmar os detalhes com o estabelecimento."
+              defaultOpen={!draft.contactTitle.trim() || !draft.contactText.trim()}
+            >
+              <div className="mb-4 rounded-lg border border-nox-cyan/20 bg-nox-cyan/5 p-3 text-xs leading-5 text-nox-muted">
+                Telefone, endereço, redes sociais e mapa são copiados da ficha quando a demonstração
+                é gerada. Para atualizar esses dados, corrija a ficha e gere novamente; uma página
+                aprovada não muda sozinha.
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <TextField
+                  label="Título da seção de contato"
+                  value={draft.contactTitle}
+                  maxLength={120}
+                  onChange={(value) => updateDraft("contactTitle", value)}
+                />
+                <TextAreaField
+                  label="Texto de contato"
+                  hint="Não inclua telefone, horário ou canal que não esteja confirmado."
+                  value={draft.contactText}
+                  maxLength={600}
+                  onChange={(value) => updateDraft("contactText", value)}
+                />
+              </div>
+            </EditorSection>
+
+            <EditorSection
+              title="8. Chamada final"
+              description="Fechamento final da página."
             >
               <div className="grid gap-4 lg:grid-cols-2">
                 <TextField
@@ -764,6 +944,49 @@ function TextAreaField({
   );
 }
 
+function UrlField({
+  label,
+  hint,
+  value,
+  required = false,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  required?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const invalid =
+    (required || value.trim().length > 0) && !isSafeDemoImageUrl(value);
+
+  return (
+    <label className="text-sm text-nox-muted">
+      {label}
+      {hint && <span className="ml-1 text-xs">· {hint}</span>}
+      <input
+        type="url"
+        inputMode="url"
+        value={value}
+        maxLength={2_000}
+        placeholder="https://exemplo.com/imagem.jpg"
+        aria-invalid={invalid || undefined}
+        onChange={(event) => onChange(event.target.value)}
+        className={`mt-1 block w-full rounded-lg border bg-nox-bg px-3 py-2 text-white ${
+          invalid ? "border-red-400/70" : "border-nox-border"
+        }`}
+      />
+      {invalid && (
+        <span className="mt-1 block text-xs text-red-300">
+          {value.trim()
+            ? "Use uma URL completa iniciada por https://."
+            : "Informe a URL HTTPS da imagem ou remova este item."}
+        </span>
+      )}
+    </label>
+  );
+}
+
 function ColorField({
   label,
   value,
@@ -793,6 +1016,7 @@ function toDraft(content: EditableLandingContent): Draft {
   return {
     headline: content.headline ?? "",
     subheadline: content.subheadline ?? "",
+    heroImageUrl: content.heroImageUrl ?? "",
     aboutTitle: content.aboutTitle ?? "Sobre",
     about: content.about ?? "",
     factsTitle: content.factsTitle ?? "Destaques",
@@ -800,6 +1024,14 @@ function toDraft(content: EditableLandingContent): Draft {
     servicesTitle: content.servicesTitle ?? "Serviços",
     servicesIntro: content.servicesIntro ?? "",
     services: Array.isArray(content.services) ? content.services.join("\n") : "",
+    galleryTitle: content.galleryTitle ?? DEFAULT_GALLERY_TITLE,
+    galleryIntro: content.galleryIntro ?? DEFAULT_GALLERY_INTRO,
+    galleryImages: Array.isArray(content.galleryImages)
+      ? content.galleryImages.slice(0, 6).map((galleryImage) => ({
+          url: galleryImage.url ?? "",
+          alt: galleryImage.alt ?? "",
+        }))
+      : [],
     processTitle: content.processTitle ?? "Como funciona",
     processIntro: content.processIntro ?? "",
     processSteps: Array.isArray(content.processSteps) ? content.processSteps.join("\n") : "",
@@ -810,6 +1042,8 @@ function toDraft(content: EditableLandingContent): Draft {
           answer: faq.answer ?? "",
         }))
       : [],
+    contactTitle: content.contactTitle ?? DEFAULT_CONTACT_TITLE,
+    contactText: content.contactText ?? DEFAULT_CONTACT_TEXT,
     finalCtaTitle: content.finalCtaTitle ?? "Vamos conversar?",
     finalCtaText: content.finalCtaText ?? "",
     ctaLabel: normalizeDemoCtaLabel(content.ctaLabel ?? ""),
@@ -823,6 +1057,7 @@ function toContent(draft: Draft): EditableLandingContent {
     ...draft,
     headline: draft.headline.trim(),
     subheadline: draft.subheadline.trim(),
+    heroImageUrl: draft.heroImageUrl.trim(),
     aboutTitle: draft.aboutTitle.trim(),
     about: draft.about.trim(),
     factsTitle: draft.factsTitle.trim(),
@@ -830,6 +1065,12 @@ function toContent(draft: Draft): EditableLandingContent {
     servicesTitle: draft.servicesTitle.trim(),
     servicesIntro: draft.servicesIntro.trim(),
     services: toLines(draft.services),
+    galleryTitle: draft.galleryTitle.trim(),
+    galleryIntro: draft.galleryIntro.trim(),
+    galleryImages: draft.galleryImages.map((galleryImage) => ({
+      url: galleryImage.url.trim(),
+      alt: galleryImage.alt.trim(),
+    })),
     processTitle: draft.processTitle.trim(),
     processIntro: draft.processIntro.trim(),
     processSteps: toLines(draft.processSteps),
@@ -838,6 +1079,8 @@ function toContent(draft: Draft): EditableLandingContent {
       question: faq.question.trim(),
       answer: faq.answer.trim(),
     })),
+    contactTitle: draft.contactTitle.trim(),
+    contactText: draft.contactText.trim(),
     finalCtaTitle: draft.finalCtaTitle.trim(),
     finalCtaText: draft.finalCtaText.trim(),
     ctaLabel: draft.ctaLabel.trim(),
@@ -862,6 +1105,11 @@ function validationFieldLabel(path: readonly PropertyKey[]): string {
     const part = path[2] === "question" ? "a pergunta" : "a resposta";
     return position ? `${part} da FAQ ${position}` : "as perguntas frequentes";
   }
+  if (root === "galleryImages") {
+    const position = typeof path[1] === "number" ? path[1] + 1 : null;
+    const part = path[2] === "url" ? "a URL" : "o texto alternativo";
+    return position ? `${part} da imagem ${position}` : "as imagens da galeria";
+  }
   if (root === "processSteps") return "as etapas de como funciona";
   if (root === "benefits") return "as informações disponíveis";
   if (root === "services") return "os serviços";
@@ -869,14 +1117,19 @@ function validationFieldLabel(path: readonly PropertyKey[]): string {
   const labels: Record<string, string> = {
     headline: "o título principal",
     subheadline: "o subtítulo",
+    heroImageUrl: "a URL da imagem principal",
     aboutTitle: "o título da seção Sobre",
     about: "o texto Sobre a empresa",
     factsTitle: "o título das informações",
     servicesTitle: "o título dos serviços",
     servicesIntro: "a introdução dos serviços",
+    galleryTitle: "o título da galeria",
+    galleryIntro: "a introdução da galeria",
     processTitle: "o título de Como funciona",
     processIntro: "a introdução de Como funciona",
     faqTitle: "o título das perguntas frequentes",
+    contactTitle: "o título da seção de contato",
+    contactText: "o texto da seção de contato",
     finalCtaTitle: "o título da chamada final",
     finalCtaText: "o texto da chamada final",
     ctaLabel: "a chamada do botão",

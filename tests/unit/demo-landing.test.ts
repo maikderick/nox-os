@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   createDemoSlug,
+  createDemoBusinessSnapshot,
   demoExpiryDate,
+  ensureDemoBusinessSnapshot,
   generateDemoLandingContent,
+  hasDemoBusinessSnapshot,
   isDemoLandingExpired,
+  preserveDemoBusinessSnapshot,
 } from "../../src/lib/demo-landing";
 import {
   demoLandingContentSchema,
+  isSafeDemoImageUrl,
   normalizeDemoCtaLabel,
   parseDemoLandingContent,
   updateDemoLandingSchema,
@@ -19,7 +24,16 @@ const lead = {
   neighborhood: "Centro",
   city: "Fortaleza",
   state: "CE",
+  postalCode: "60000-000",
   phoneE164: "+5585999999999",
+  socialLinks: JSON.stringify([
+    "https://instagram.com/restaurante-dom-pedro",
+    "http://facebook.com/restaurante-dom-pedro",
+    "https://usuario:senha@tiktok.com/@dompedro",
+  ]),
+  website: "https://threads.net/@restaurante-dom-pedro",
+  latitude: -3.7319,
+  longitude: -38.5267,
 };
 
 describe("automatic demo landing generator", () => {
@@ -41,7 +55,33 @@ describe("automatic demo landing generator", () => {
     expect(content.faqs).toHaveLength(4);
     expect(content.faqs.some((item) => item.answer.includes(lead.city))).toBe(true);
     expect(content.finalCtaTitle).toContain(lead.name);
-    expect(JSON.stringify(content)).not.toContain(lead.phoneE164);
+    expect(content.heroImageUrl).toBe("");
+    expect(content.galleryTitle).toContain(lead.name);
+    expect(content.galleryIntro).toContain(lead.category);
+    expect(content.galleryIntro).toContain(lead.city);
+    expect(content.galleryImages).toEqual([]);
+    expect(content.contactTitle).toContain(lead.name);
+    expect(content.contactText).toContain(lead.city);
+    expect(content.contactText).toContain("valide os canais informados");
+    expect(content.businessSnapshot).toMatchObject({
+      name: lead.name,
+      category: lead.category,
+      address: lead.address,
+      neighborhood: lead.neighborhood,
+      city: lead.city,
+      state: lead.state,
+      postalCode: lead.postalCode,
+      phoneE164: lead.phoneE164,
+      latitude: lead.latitude,
+      longitude: lead.longitude,
+    });
+    expect(content.businessSnapshot?.socialLinks).toEqual([
+      "https://instagram.com/restaurante-dom-pedro",
+      "https://threads.net/@restaurante-dom-pedro",
+    ]);
+    expect(JSON.stringify({ ...content, businessSnapshot: undefined })).not.toContain(
+      lead.phoneE164,
+    );
     expect(demoLandingContentSchema.safeParse(content).success).toBe(true);
   });
 
@@ -57,6 +97,29 @@ describe("automatic demo landing generator", () => {
     expect(content.faqs.some((item) => item.answer.includes("Recife"))).toBe(true);
     expect(generatedText).not.toMatch(/avaliaç|estrela|r\$|preço|horário|segunda a sexta/);
     expect(generatedText).not.toContain("fortaleza");
+  });
+
+  it("drops invalid contact facts instead of manufacturing replacements", () => {
+    const content = generateDemoLandingContent({
+      name: "Clínica Exemplo",
+      category: "Clínicas",
+      phoneE164: "+55123",
+      latitude: 91,
+      longitude: -38.5,
+      socialLinks: [
+        "http://instagram.com/clinica",
+        "https://usuario:senha@facebook.com/clinica",
+        "https://linkedin.com/company/clinica",
+      ],
+      website: "https://clinica.example.com",
+    });
+
+    expect(content.businessSnapshot?.phoneE164).toBeNull();
+    expect(content.businessSnapshot?.latitude).toBeNull();
+    expect(content.businessSnapshot?.longitude).toBeNull();
+    expect(content.businessSnapshot?.socialLinks).toEqual([
+      "https://linkedin.com/company/clinica",
+    ]);
   });
 
   it("selects a deterministic visual preset from the category", () => {
@@ -131,6 +194,139 @@ describe("demo content validation", () => {
     expect(parsed.faqs[0]?.answer).toContain("Consulte diretamente");
     expect(parsed.faqs[1]?.answer).toContain("demonstração não oficial");
     expect(parsed.finalCtaTitle).toBe("Próximo passo");
+    expect(parsed.heroImageUrl).toBe("");
+    expect(parsed.galleryTitle).toBe("Uma presença digital mais completa");
+    expect(parsed.galleryIntro).toContain("fotos oficiais ou autorizadas");
+    expect(parsed.galleryIntro).toContain("composições visuais");
+    expect(parsed.galleryImages).toEqual([]);
+    expect(parsed.contactTitle).toBe("Informações de contato");
+    expect(parsed.contactText).toContain("Valide os canais informados diretamente");
+    expect(parsed.businessSnapshot).toBeNull();
+  });
+
+  it("captures a legacy snapshot once and preserves it across content edits", () => {
+    const generated = generateDemoLandingContent(lead);
+    const legacyJson = JSON.stringify({ ...generated, businessSnapshot: undefined });
+
+    expect(hasDemoBusinessSnapshot(legacyJson)).toBe(false);
+    const firstCapture = ensureDemoBusinessSnapshot(legacyJson, lead);
+    expect(firstCapture.captured).toBe(true);
+    expect(firstCapture.content.businessSnapshot?.name).toBe(lead.name);
+    expect(hasDemoBusinessSnapshot(firstCapture.contentJson)).toBe(true);
+
+    const changedBusiness = {
+      ...lead,
+      name: "Nome alterado depois",
+      category: "Outra categoria",
+      phoneE164: "+5585988888888",
+    };
+    const secondCapture = ensureDemoBusinessSnapshot(firstCapture.contentJson, changedBusiness);
+    expect(secondCapture.captured).toBe(false);
+    expect(secondCapture.content.businessSnapshot).toEqual(
+      firstCapture.content.businessSnapshot,
+    );
+
+    const requestedContent = demoLandingContentSchema.parse({
+      ...generated,
+      headline: "Título editado",
+      businessSnapshot: createDemoBusinessSnapshot(changedBusiness),
+    });
+    const preserved = preserveDemoBusinessSnapshot({
+      currentContentJson: firstCapture.contentJson,
+      requestedContent,
+      business: changedBusiness,
+    });
+
+    expect(preserved.content.headline).toBe("Título editado");
+    expect(preserved.content.businessSnapshot).toEqual(firstCapture.content.businessSnapshot);
+  });
+
+  it("validates every factual snapshot field", () => {
+    const content = generateDemoLandingContent(lead);
+    const snapshot = content.businessSnapshot!;
+
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        businessSnapshot: { ...snapshot, phoneE164: "+55123" },
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        businessSnapshot: { ...snapshot, socialLinks: ["http://instagram.com/empresa"] },
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        businessSnapshot: { ...snapshot, latitude: 91 },
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        businessSnapshot: { ...snapshot, longitude: null },
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        businessSnapshot: { ...snapshot, sourceUrl: "https://example.com" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts only HTTPS image URLs", () => {
+    const content = generateDemoLandingContent(lead);
+    const validImage = {
+      url: "https://images.example.com/estabelecimento/fachada.webp",
+      alt: "Fachada oficial do estabelecimento",
+    };
+
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        heroImageUrl: validImage.url,
+        galleryImages: [validImage],
+      }).success,
+    ).toBe(true);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        heroImageUrl: "http://images.example.com/fachada.webp",
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        heroImageUrl: "data:image/png;base64,AAAA",
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        heroImageUrl: "https:images.example.com/fachada.webp",
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        heroImageUrl: "https://usuario:senha@images.example.com/fachada.webp",
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        galleryImages: [{ ...validImage, url: "http://images.example.com/fachada.webp" }],
+      }).success,
+    ).toBe(false);
+
+    expect(isSafeDemoImageUrl(validImage.url)).toBe(true);
+    expect(isSafeDemoImageUrl("https:images.example.com/fachada.webp")).toBe(false);
+    expect(isSafeDemoImageUrl("https://usuario:senha@images.example.com/fachada.webp")).toBe(
+      false,
+    );
   });
 
   it("rejects invalid colors and extra content fields", () => {
@@ -175,13 +371,21 @@ describe("demo content validation", () => {
       "processTitle",
       "faqTitle",
       "finalCtaTitle",
+      "galleryTitle",
+      "contactTitle",
     ] as const) {
       expect(
         demoLandingContentSchema.safeParse({ ...content, [field]: "x".repeat(121) }).success,
       ).toBe(false);
     }
 
-    for (const field of ["servicesIntro", "processIntro", "finalCtaText"] as const) {
+    for (const field of [
+      "servicesIntro",
+      "processIntro",
+      "finalCtaText",
+      "galleryIntro",
+      "contactText",
+    ] as const) {
       expect(
         demoLandingContentSchema.safeParse({ ...content, [field]: "x".repeat(601) }).success,
       ).toBe(false);
@@ -203,6 +407,43 @@ describe("demo content validation", () => {
       demoLandingContentSchema.safeParse({
         ...content,
         faqs: [{ question: "Pergunta", answer: "x".repeat(601) }],
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        heroImageUrl: `https://images.example.com/${"x".repeat(2_000)}`,
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        galleryImages: Array.from({ length: 7 }, (_, index) => ({
+          url: `https://images.example.com/foto-${index + 1}.webp`,
+          alt: `Foto ${index + 1}`,
+        })),
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        galleryImages: [
+          {
+            url: `https://images.example.com/${"x".repeat(2_000)}`,
+            alt: "Foto oficial",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      demoLandingContentSchema.safeParse({
+        ...content,
+        galleryImages: [
+          {
+            url: "https://images.example.com/foto.webp",
+            alt: "x".repeat(181),
+          },
+        ],
       }).success,
     ).toBe(false);
   });

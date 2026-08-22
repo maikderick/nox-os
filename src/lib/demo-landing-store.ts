@@ -3,19 +3,14 @@ import { prisma } from "./db";
 import {
   createDemoSlug,
   demoExpiryDate,
+  ensureDemoBusinessSnapshot,
   generateDemoLandingContent,
   isDemoLandingExpired,
+  type DemoLeadInput,
 } from "./demo-landing";
 
-type DemoBusiness = {
+export type DemoBusiness = DemoLeadInput & {
   id: string;
-  name: string;
-  category: string;
-  address: string | null;
-  neighborhood: string | null;
-  city: string | null;
-  state: string | null;
-  phoneE164: string | null;
 };
 
 /** Creates or regenerates the one active demo record associated with a lead. */
@@ -59,6 +54,26 @@ export async function regenerateDemoLanding(params: {
 
   throw new Error("Não foi possível gerar um endereço exclusivo para a demonstração");
 }
+
+/**
+ * Captures facts for a legacy record exactly once. The conditional update avoids
+ * overwriting a concurrent content edit with an older JSON payload.
+ */
+export async function captureLegacyDemoBusinessSnapshot(
+  landing: DemoLanding,
+  business: DemoLeadInput,
+): Promise<DemoLanding> {
+  const ensured = ensureDemoBusinessSnapshot(landing.contentJson, business);
+  if (!ensured.captured) return landing;
+
+  await prisma.demoLanding.updateMany({
+    where: { id: landing.id, contentJson: landing.contentJson },
+    data: { contentJson: ensured.contentJson },
+  });
+
+  return prisma.demoLanding.findUniqueOrThrow({ where: { id: landing.id } });
+}
+
 export async function markExpiredIfNeeded(landing: DemoLanding): Promise<DemoLanding> {
   if (landing.status === "EXPIRED" || !isDemoLandingExpired(landing.expiresAt)) {
     return landing;
