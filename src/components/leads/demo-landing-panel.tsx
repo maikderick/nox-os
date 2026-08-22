@@ -10,6 +10,11 @@ import {
   type DemoLandingContent,
 } from "@/lib/demo-landing-schema";
 import { findInstagramProfile, isInstagramPostUrl } from "@/lib/instagram";
+import {
+  buildLovableBriefing,
+  buildLovableBuildUrl,
+  LOVABLE_PROMPT_MAX,
+} from "@/lib/lovable";
 import { StockPhotoPicker, type PickerPhoto } from "@/components/leads/stock-photo-picker";
 
 type DemoLanding = {
@@ -167,11 +172,14 @@ export function DemoLandingPanel({
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<AiSuggestion | null>(null);
+  /** Null means "follow the generated briefing"; a string is a manual override. */
+  const [lovablePromptOverride, setLovablePromptOverride] = useState<string | null>(null);
 
   const applyLanding = useCallback((next: DemoLanding | null) => {
     setLanding(next);
     setSuggestion(null);
     setAiError(null);
+    setLovablePromptOverride(null);
     if (next) {
       setDraft(toDraft(next.content));
       setExpiresOn(toDateInput(next.expiresAt));
@@ -241,6 +249,17 @@ export function DemoLandingPanel({
     () => instagramPostLines.filter((line) => !isInstagramPostUrl(line)),
     [instagramPostLines],
   );
+
+  // Built from the demo already saved, so the briefing never carries unsaved edits.
+  const lovableBriefing = useMemo(() => {
+    if (!landing) return null;
+    return buildLovableBriefing({
+      content: landing.content,
+      demoUrl: shareUrl && shareUrl.startsWith("https://") ? shareUrl : null,
+    });
+  }, [landing, shareUrl]);
+
+  const lovablePrompt = lovablePromptOverride ?? lovableBriefing?.prompt ?? "";
 
   function updateDraft<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -472,6 +491,29 @@ export function DemoLandingPanel({
     }
   }
 
+  async function copyLovablePrompt() {
+    if (!lovablePrompt.trim()) return;
+    try {
+      await navigator.clipboard.writeText(lovablePrompt);
+      setNotice("Prompt mestre copiado.");
+      setError(null);
+    } catch {
+      setError("Não foi possível copiar automaticamente. Selecione o texto do prompt e copie.");
+    }
+  }
+
+  function openInLovable() {
+    if (!lovableBriefing || !lovablePrompt.trim()) return;
+    const url = buildLovableBuildUrl({
+      prompt: lovablePrompt,
+      images: lovableBriefing.images,
+      htmlRefs: lovableBriefing.htmlRefs,
+    });
+    // The prompt travels in the URL fragment, so it never reaches a server log.
+    window.open(url, "_blank", "noopener,noreferrer");
+    setNotice("Lovable aberto em outra aba com o prompt já preenchido.");
+  }
+
   async function copyPreviewLink() {
     if (!shareUrl) return;
     try {
@@ -700,6 +742,89 @@ export function DemoLandingPanel({
               </div>
             )}
           </div>
+
+          {lovableBriefing && (
+            <div className="rounded-xl border border-nox-border bg-nox-bg/40 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-medium text-white">Criar no Lovable</h3>
+                    <span className="rounded-full border border-nox-border px-2 py-0.5 text-xs text-nox-muted">
+                      {lovablePrompt.length.toLocaleString("pt-BR")}/
+                      {LOVABLE_PROMPT_MAX.toLocaleString("pt-BR")} caracteres
+                    </span>
+                  </div>
+                  <p className="mt-1 max-w-2xl text-sm text-nox-muted">
+                    Monta um prompt mestre com os dados verificados da ficha, os textos já revisados
+                    e as fotos disponíveis, e abre o Lovable já construindo. O prompt proíbe
+                    explicitamente inventar avaliação, preço, horário, prêmio ou serviço.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyLovablePrompt()}
+                    className="rounded-lg border border-nox-border px-3 py-2 text-sm text-nox-cyan hover:border-nox-cyan"
+                  >
+                    Copiar prompt
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!lovablePrompt.trim()}
+                    onClick={openInLovable}
+                    className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Abrir no Lovable ↗
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-nox-muted">
+                <span>
+                  {lovableBriefing.officialPhotoCount} foto(s) real(is) do estabelecimento
+                </span>
+                <span>{lovableBriefing.stockPhotoCount} ilustrativa(s), marcadas como tal</span>
+                <span>
+                  {lovableBriefing.htmlRefs.length
+                    ? "Página da demonstração anexada como referência de layout"
+                    : "Sem referência de layout: a prévia só é anexada por endereço HTTPS"}
+                </span>
+              </div>
+
+              {dirty && (
+                <p className="mt-3 text-xs text-amber-200">
+                  O prompt usa a versão já salva. Salve as alterações para incluí-las.
+                </p>
+              )}
+
+              <details className="mt-3 rounded-lg border border-nox-border bg-nox-surface">
+                <summary className="cursor-pointer px-4 py-3 text-sm text-white marker:text-nox-cyan">
+                  Ver e editar o prompt mestre
+                </summary>
+                <div className="border-t border-nox-border p-4">
+                  <textarea
+                    value={lovablePrompt}
+                    maxLength={LOVABLE_PROMPT_MAX}
+                    rows={16}
+                    onChange={(event) => setLovablePromptOverride(event.target.value)}
+                    className="block w-full resize-y rounded-lg border border-nox-border bg-nox-bg px-3 py-2 font-mono text-xs leading-5 text-white"
+                  />
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setLovablePromptOverride(null)}
+                      className="rounded-lg border border-nox-border px-3 py-2 text-xs text-nox-muted hover:border-nox-cyan"
+                    >
+                      Restaurar prompt original
+                    </button>
+                    <span className="text-xs text-nox-muted">
+                      Editou algo? A edição vale só para este envio.
+                    </span>
+                  </div>
+                </div>
+              </details>
+            </div>
+          )}
 
           <div className="space-y-3">
             <EditorSection
