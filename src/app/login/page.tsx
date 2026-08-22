@@ -44,8 +44,8 @@ export default function LoginPage() {
               name="email"
               type="email"
               required
+              autoComplete="username"
               className="mt-1 w-full rounded-lg border border-nox-border bg-nox-bg px-3 py-2"
-              defaultValue="admin@noxos.local"
             />
           </label>
           <label className="block text-sm">
@@ -54,8 +54,8 @@ export default function LoginPage() {
               name="password"
               type="password"
               required
+              autoComplete="current-password"
               className="mt-1 w-full rounded-lg border border-nox-border bg-nox-bg px-3 py-2"
-              defaultValue="noxos-admin-123"
             />
           </label>
           {error && <p className="text-sm text-red-400">{error}</p>}

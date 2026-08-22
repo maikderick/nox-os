@@ -7,12 +7,21 @@ import { normalizePhoneE164 } from "../src/lib/phone";
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD ?? "noxos-admin-123", 10);
+  const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (!adminEmail || !adminPassword || adminPassword.length < 12) {
+    throw new Error(
+      "Defina ADMIN_EMAIL e ADMIN_PASSWORD (mínimo de 12 caracteres) antes de executar o seed.",
+    );
+  }
+
+  const passwordHash = await bcrypt.hash(adminPassword, 12);
 
   await prisma.user.upsert({
-    where: { email: "admin@noxos.local" },
+    where: { email: adminEmail },
     create: {
-      email: "admin@noxos.local",
+      email: adminEmail,
       name: process.env.SELLER_NAME ?? "Admin NOX OS",
       passwordHash,
       role: "admin",
@@ -132,7 +141,7 @@ async function main() {
     console.log("Seed sem dados demo (DEMO_MODE!=true).");
   }
 
-  console.log("Admin: admin@noxos.local");
+  console.log(`Admin configurado: ${adminEmail}`);
 }
 
 main()

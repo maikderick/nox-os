@@ -29,6 +29,9 @@ export default async function LeadsLayout({ children }: { children: React.ReactN
                 <Link href="/leads" className="hover:text-white">
                   Dashboard
                 </Link>
+                <Link href="/leads/opportunities" className="hover:text-white">
+                  Melhores oportunidades
+                </Link>
                 <Link href="/leads/import" className="hover:text-white">
                   Importação
                 </Link>
@@ -38,10 +41,18 @@ export default async function LeadsLayout({ children }: { children: React.ReactN
                 <Link href="/leads/settings" className="hover:text-white">
                   Configurações
                 </Link>
+                {session.user.role === "admin" && (
+                  <Link href="/leads/users" className="hover:text-white">
+                    Usuários
+                  </Link>
+                )}
               </nav>
             </div>
             <div className="flex items-center gap-3 text-sm text-nox-muted">
               <span>{session.user.email}</span>
+              <Link href="/leads/account" className="hover:text-white">
+                Minha conta
+              </Link>
               <Link href="/" className="hover:text-white">
                 Site
               </Link>

@@ -26,12 +26,18 @@ export const authOptions: NextAuthOptions = {
         const user = await prisma.user.findUnique({
           where: { email: parsed.data.email.toLowerCase() },
         });
-        if (!user) return null;
+        if (!user || !user.active) return null;
 
         const ok = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (!ok) return null;
 
-        return { id: user.id, email: user.email, name: user.name, role: user.role };
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          active: user.active,
+        };
       },
     }),
   ],
@@ -41,12 +47,29 @@ export const authOptions: NextAuthOptions = {
         token.role = (user as { role?: string }).role ?? "admin";
         token.sub = user.id;
       }
+      if (token.sub) {
+        const account = await prisma.user.findUnique({
+          where: { id: token.sub },
+          select: { active: true, role: true, name: true, email: true },
+        });
+        token.accountActive = account?.active ?? false;
+        if (account) {
+          token.role = account.role;
+          token.name = account.name;
+          token.email = account.email;
+        }
+      }
       return token;
     },
     async session({ session, token }) {
+      if (token.accountActive === false) {
+        delete session.user;
+        return session;
+      }
       if (session.user) {
         (session.user as { id?: string }).id = token.sub;
         (session.user as { role?: string }).role = (token.role as string) ?? "admin";
+        (session.user as { active?: boolean }).active = true;
       }
       return session;
     },

@@ -19,37 +19,91 @@ type Settings = {
   franchisePenalty: number;
   modernSitePenalty: number;
   staleDataPenalty: number;
+  enabledCategories: string[];
   retentionDays: number;
 };
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [retentionBusy, setRetentionBusy] = useState(false);
 
   useEffect(() => {
-    void fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => setSettings(d.settings));
+    void (async () => {
+      try {
+        const response = await fetch("/api/settings", { cache: "no-store" });
+        const data = (await response.json().catch(() => null)) as
+          | { settings?: Settings; error?: unknown }
+          | null;
+        if (!response.ok || !data?.settings) {
+          throw new Error(`Não foi possível carregar as configurações (HTTP ${response.status}).`);
+        }
+        setSettings(data.settings);
+      } catch (error) {
+        setMsg(error instanceof Error ? error.message : "Falha ao carregar as configurações.");
+      }
+    })();
   }, []);
+
+  function responseError(error: unknown, status: number): string {
+    if (typeof error === "string") return error;
+    if (error && typeof error === "object") {
+      return `Dados inválidos: ${JSON.stringify(error)}`;
+    }
+    return `Falha ao salvar (HTTP ${status}).`;
+  }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!settings) return;
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(settings),
-    });
-    setMsg(res.ok ? "Configurações salvas." : "Falha ao salvar.");
+    setSaving(true);
+    setMsg("Salvando configurações…");
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { settings?: Settings; error?: unknown }
+        | null;
+      if (!res.ok) {
+        setMsg(responseError(data?.error, res.status));
+        return;
+      }
+      if (data?.settings) setSettings(data.settings);
+      setMsg("Configurações salvas.");
+    } catch {
+      setMsg("Falha de rede ao salvar. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function runRetention() {
-    const res = await fetch("/api/audit/retention", { method: "POST" });
-    const data = await res.json();
-    setMsg(res.ok ? `Retenção: ${data.deleted} registros removidos.` : "Falha na retenção.");
+    setRetentionBusy(true);
+    setMsg("Executando retenção…");
+    try {
+      const res = await fetch("/api/audit/retention", { method: "POST" });
+      const data = (await res.json().catch(() => null)) as
+        | { deleted?: number; error?: unknown }
+        | null;
+      setMsg(
+        res.ok
+          ? `Retenção: ${data?.deleted ?? 0} registros removidos.`
+          : responseError(data?.error, res.status),
+      );
+    } catch {
+      setMsg("Falha de rede ao executar a retenção.");
+    } finally {
+      setRetentionBusy(false);
+    }
   }
 
-  if (!settings) return <p className="text-nox-muted">Carregando…</p>;
+  if (!settings) {
+    return <p className={msg ? "text-red-300" : "text-nox-muted"}>{msg ?? "Carregando…"}</p>;
+  }
 
   function field<K extends keyof Settings>(key: K, label: string, type: "text" | "number" = "text") {
     return (
@@ -81,7 +135,11 @@ export default function SettingsPage() {
           Marca, consultor, meta, raios e mensagens. Segredos ficam apenas no `.env` do servidor.
         </p>
       </div>
-      {msg && <p className="text-sm text-nox-cyan">{msg}</p>}
+      {msg && (
+        <p role="status" aria-live="polite" className="text-sm text-nox-cyan">
+          {msg}
+        </p>
+      )}
       <form onSubmit={onSubmit} className="space-y-4 rounded-xl border border-nox-border bg-nox-surface p-4">
         {field("brandName", "Marca")}
         {field("sellerName", "Consultor")}
@@ -104,16 +162,21 @@ export default function SettingsPage() {
             onChange={(e) => setSettings({ ...settings, whatsappTemplate: e.target.value })}
           />
         </label>
-        <button type="submit" className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium">
-          Salvar
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium disabled:cursor-wait disabled:opacity-60"
+        >
+          {saving ? "Salvando…" : "Salvar"}
         </button>
       </form>
       <button
         type="button"
         onClick={() => void runRetention()}
-        className="rounded-lg border border-nox-border px-4 py-2 text-sm"
+        disabled={retentionBusy}
+        className="rounded-lg border border-nox-border px-4 py-2 text-sm disabled:cursor-wait disabled:opacity-60"
       >
-        Executar retenção/exclusão agora
+        {retentionBusy ? "Executando retenção…" : "Executar retenção/exclusão agora"}
       </button>
       <div className="rounded-xl border border-dashed border-nox-border p-4 text-sm text-nox-muted">
         <p className="font-medium text-white">Variáveis de ambiente (servidor)</p>

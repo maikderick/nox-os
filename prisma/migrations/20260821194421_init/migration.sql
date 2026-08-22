@@ -1,17 +1,19 @@
 -- CreateTable
 CREATE TABLE "User" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
     "role" TEXT NOT NULL DEFAULT 'admin',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "Business" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "externalId" TEXT,
     "source" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -23,17 +25,17 @@ CREATE TABLE "Business" (
     "state" TEXT,
     "postalCode" TEXT,
     "country" TEXT NOT NULL DEFAULT 'BR',
-    "latitude" REAL,
-    "longitude" REAL,
-    "distanceKm" REAL,
+    "latitude" DOUBLE PRECISION,
+    "longitude" DOUBLE PRECISION,
+    "distanceKm" DOUBLE PRECISION,
     "phoneRaw" TEXT,
     "phoneE164" TEXT,
     "website" TEXT,
     "websiteStatus" TEXT NOT NULL DEFAULT 'unknown',
     "socialLinks" TEXT NOT NULL DEFAULT '[]',
     "sourceUrl" TEXT,
-    "collectedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "lastVerifiedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "collectedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastVerifiedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "opportunityScore" INTEGER NOT NULL DEFAULT 0,
     "confidenceScore" INTEGER NOT NULL DEFAULT 0,
     "scoreReasons" TEXT NOT NULL DEFAULT '[]',
@@ -41,33 +43,36 @@ CREATE TABLE "Business" (
     "doNotContact" BOOLEAN NOT NULL DEFAULT false,
     "isDemo" BOOLEAN NOT NULL DEFAULT false,
     "notesText" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Business_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "BusinessSource" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "source" TEXT NOT NULL,
     "externalId" TEXT,
     "fieldName" TEXT NOT NULL,
     "fieldValue" TEXT NOT NULL,
-    "collectedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "collectedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "rawPayload" TEXT,
-    CONSTRAINT "BusinessSource_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+
+    CONSTRAINT "BusinessSource_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "ImportJob" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "provider" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'pending',
-    "originLat" REAL,
-    "originLng" REAL,
+    "originLat" DOUBLE PRECISION,
+    "originLng" DOUBLE PRECISION,
     "originLabel" TEXT,
     "radiiKm" TEXT NOT NULL DEFAULT '[5,10,20,40,80]',
-    "currentRadiusKm" REAL,
+    "currentRadiusKm" DOUBLE PRECISION,
     "categories" TEXT NOT NULL DEFAULT '[]',
     "progressJson" TEXT NOT NULL DEFAULT '{}',
     "foundCount" INTEGER NOT NULL DEFAULT 0,
@@ -75,111 +80,119 @@ CREATE TABLE "ImportJob" (
     "duplicateCount" INTEGER NOT NULL DEFAULT 0,
     "rejectedCount" INTEGER NOT NULL DEFAULT 0,
     "errorMessage" TEXT,
-    "pausedAt" DATETIME,
-    "cancelledAt" DATETIME,
-    "startedAt" DATETIME,
-    "finishedAt" DATETIME,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "pausedAt" TIMESTAMP(3),
+    "cancelledAt" TIMESTAMP(3),
+    "startedAt" TIMESTAMP(3),
+    "finishedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ImportJob_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "ScoreResult" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "opportunityScore" INTEGER NOT NULL,
     "confidenceScore" INTEGER NOT NULL,
     "reasonsJson" TEXT NOT NULL,
     "breakdownJson" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "ScoreResult_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ScoreResult_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "ConsentRecord" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "optInStatus" TEXT NOT NULL DEFAULT 'unknown',
     "source" TEXT,
     "purpose" TEXT,
     "evidence" TEXT,
-    "optedInAt" DATETIME,
-    "refusedAt" DATETIME,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "ConsentRecord_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "optedInAt" TIMESTAMP(3),
+    "refusedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ConsentRecord_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "ContactAttempt" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "userId" TEXT,
     "channel" TEXT NOT NULL DEFAULT 'whatsapp',
     "messagePreview" TEXT,
     "confirmedSent" BOOLEAN NOT NULL DEFAULT false,
     "outcome" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "ContactAttempt_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "ContactAttempt_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ContactAttempt_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "Note" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "businessId" TEXT NOT NULL,
     "userId" TEXT,
     "body" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Note_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Note_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Note_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "SuppressionEntry" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "businessId" TEXT,
     "phoneE164" TEXT,
     "reason" TEXT NOT NULL,
     "evidence" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "SuppressionEntry_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "SuppressionEntry_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "AppSettings" (
-    "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'default',
+    "id" TEXT NOT NULL DEFAULT 'default',
     "brandName" TEXT NOT NULL DEFAULT 'NOX OS',
     "sellerName" TEXT NOT NULL DEFAULT '[SEU NOME]',
     "defaultCity" TEXT NOT NULL DEFAULT '[SUA CIDADE/UF]',
     "leadGoal" INTEGER NOT NULL DEFAULT 1000,
-    "initialRadiusKm" REAL NOT NULL DEFAULT 5,
-    "maxRadiusKm" REAL NOT NULL DEFAULT 80,
+    "initialRadiusKm" DOUBLE PRECISION NOT NULL DEFAULT 5,
+    "maxRadiusKm" DOUBLE PRECISION NOT NULL DEFAULT 80,
     "privacyEmail" TEXT NOT NULL DEFAULT '[SEU E-MAIL]',
     "portfolioUrl" TEXT NOT NULL DEFAULT '[URL DO PORTFÓLIO]',
     "whatsappPhone" TEXT NOT NULL DEFAULT '[SEU WHATSAPP]',
     "whatsappTemplate" TEXT NOT NULL DEFAULT 'Olá, equipe da {{businessName}}! Sou {{sellerName}}, da NOX OS. Conforme sua autorização para contato, gostaria de apresentar uma ideia de site personalizado para fortalecer a presença digital da empresa e gerar mais contatos. Posso te enviar uma proposta inicial sem compromisso? Se preferir não receber novas mensagens, é só me avisar.',
-    "originLat" REAL,
-    "originLng" REAL,
+    "originLat" DOUBLE PRECISION,
+    "originLng" DOUBLE PRECISION,
     "originLabel" TEXT,
     "franchisePenalty" INTEGER NOT NULL DEFAULT 15,
     "modernSitePenalty" INTEGER NOT NULL DEFAULT 20,
     "staleDataPenalty" INTEGER NOT NULL DEFAULT 10,
     "enabledCategories" TEXT NOT NULL DEFAULT '[]',
     "retentionDays" INTEGER NOT NULL DEFAULT 365,
-    "updatedAt" DATETIME NOT NULL
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AppSettings_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "AuditLog" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "userId" TEXT,
     "action" TEXT NOT NULL,
     "entity" TEXT,
     "entityId" TEXT,
     "metaJson" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -253,3 +266,30 @@ CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
 
 -- CreateIndex
 CREATE INDEX "AuditLog_action_idx" ON "AuditLog"("action");
+
+-- AddForeignKey
+ALTER TABLE "BusinessSource" ADD CONSTRAINT "BusinessSource_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ScoreResult" ADD CONSTRAINT "ScoreResult_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ConsentRecord" ADD CONSTRAINT "ConsentRecord_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ContactAttempt" ADD CONSTRAINT "ContactAttempt_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ContactAttempt" ADD CONSTRAINT "ContactAttempt_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Note" ADD CONSTRAINT "Note_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Note" ADD CONSTRAINT "Note_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SuppressionEntry" ADD CONSTRAINT "SuppressionEntry_businessId_fkey" FOREIGN KEY ("businessId") REFERENCES "Business"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

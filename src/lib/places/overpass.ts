@@ -2,10 +2,37 @@ import { CATEGORY_GROUPS, categoryLabelFromOsm } from "../categories";
 import { fetchWithRetry } from "./http";
 import type { PlaceRecord, PlacesProvider, PlacesSearchParams, PlacesSearchResult } from "./types";
 
-const OVERPASS_ENDPOINTS = [
+/**
+ * Public global instances currently listed by the OpenStreetMap community.
+ * Kumi moved to private.coffee, so keeping the old hostname here made the
+ * fallback ineffective when the main instance was overloaded.
+ */
+export const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
-];
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+] as const;
+
+const OVERPASS_REQUEST_TIMEOUT_MS = 35_000;
+
+export class OverpassTemporaryError extends Error {
+  readonly code = "OVERPASS_TEMPORARY_UNAVAILABLE";
+
+  constructor(message = "Os servidores Overpass estão temporariamente indisponíveis.") {
+    super(message);
+    this.name = "OverpassTemporaryError";
+  }
+}
+
+export function isTemporaryOverpassError(error: unknown): boolean {
+  if (error instanceof OverpassTemporaryError) return true;
+  if (!error || typeof error !== "object" || !("code" in error)) return false;
+  return error.code === "OVERPASS_TEMPORARY_UNAVAILABLE";
+}
+
+function isTemporaryStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
 
 function buildQuery(lat: number, lng: number, radiusM: number, categoryIds: string[]): string {
   const groups =
@@ -18,11 +45,11 @@ function buildQuery(lat: number, lng: number, radiusM: number, categoryIds: stri
   const around = unique.map((sel) => `${sel}(around:${radiusM},${lat},${lng});`).join("\n");
 
   return `
-[out:json][timeout:60];
+[out:json][timeout:25];
 (
 ${around}
 );
-out center tags;
+out center tags qt;
 `.trim();
 }
 
@@ -113,6 +140,8 @@ export class OverpassPlacesProvider implements PlacesProvider {
     const cells = splitAreaIntoCells(area.lat, area.lng, area.radiusKm, 12);
     const byId = new Map<string, PlaceRecord>();
     let truncated = false;
+    let successfulCells = 0;
+    let lastFailure: unknown;
 
     for (let i = 0; i < cells.length; i++) {
       if (signal?.aborted) break;
@@ -121,19 +150,31 @@ export class OverpassPlacesProvider implements PlacesProvider {
       const query = buildQuery(cell.lat, cell.lng, Math.round(cell.radiusKm * 1000), categoryIds);
 
       let lastErr: unknown;
+      const failureStatuses: number[] = [];
+      let connectionFailures = 0;
       for (const endpoint of OVERPASS_ENDPOINTS) {
         try {
           const res = await fetchWithRetry(
             endpoint,
             {
               method: "POST",
-              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                Referer: "https://nox-os-pi.vercel.app/",
+                "User-Agent": "NOX-OS-Leads/1.0 (+https://nox-os-pi.vercel.app/privacy)",
+              },
               body: `data=${encodeURIComponent(query)}`,
             },
-            { signal, retries: 3, timeoutMs: 60000 },
+            // Fail over to an independent instance instead of repeatedly
+            // waiting on the same overloaded server inside one invocation.
+            { signal, retries: 0, timeoutMs: OVERPASS_REQUEST_TIMEOUT_MS },
           );
           if (!res.ok) {
-            lastErr = new Error(`Overpass HTTP ${res.status}`);
+            failureStatuses.push(res.status);
+            const httpError = new Error(`Overpass HTTP ${res.status}`);
+            lastErr = httpError;
+            // A 4xx may be specific to one instance (for example, a proxy/WAF
+            // returning 406). Always try the remaining independent servers.
             continue;
           }
           const json = (await res.json()) as {
@@ -152,19 +193,47 @@ export class OverpassPlacesProvider implements PlacesProvider {
             if (place) byId.set(place.externalId, place);
           }
           if (json.remark?.toLowerCase().includes("runtime error")) truncated = true;
+          successfulCells += 1;
           lastErr = null;
           break;
         } catch (err) {
+          connectionFailures += 1;
           lastErr = err;
         }
       }
       if (lastErr) {
+        const statuses = [...new Set(failureStatuses)].join("/");
+        const hasTemporaryFailure =
+          connectionFailures > 0 || failureStatuses.some(isTemporaryStatus);
+        lastFailure = hasTemporaryFailure
+          ? new OverpassTemporaryError(
+              statuses
+                ? `Servidores Overpass temporariamente indisponíveis (HTTP ${statuses}).`
+                : "Falha temporária de conexão com os servidores Overpass.",
+            )
+          : new Error(
+              statuses
+                ? `A consulta foi rejeitada pelos servidores Overpass (HTTP ${statuses}).`
+                : lastErr instanceof Error
+                  ? lastErr.message
+                  : "A consulta Overpass foi rejeitada.",
+            );
         onProgress?.(
-          `Falha em célula ${i + 1}: ${lastErr instanceof Error ? lastErr.message : "erro"}`,
+          `Falha em célula ${i + 1}: ${
+            lastFailure instanceof Error ? lastFailure.message : "erro"
+          }`,
         );
       }
       // polite pacing between cells
-      await new Promise((r) => setTimeout(r, 1200));
+      if (i < cells.length - 1) {
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    }
+
+    if (successfulCells === 0) {
+      throw lastFailure instanceof Error
+        ? lastFailure
+        : new Error("Nenhuma consulta Overpass foi concluída.");
     }
 
     return {
