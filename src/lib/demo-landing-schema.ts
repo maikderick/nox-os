@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isInstagramPostUrl } from "./instagram";
 import { isValidPhoneE164 } from "./phone";
 
 const plainText = (max: number) =>
@@ -87,6 +88,19 @@ const galleryImageSchema = z
     creditUrl: optionalHttpsUrl.default(""),
   })
   .strict();
+/**
+ * Only a real Instagram post address is accepted. The public page rebuilds the
+ * embed URL from the parsed shortcode, so nothing here reaches an iframe raw.
+ */
+const instagramPostUrlSchema = z
+  .string()
+  .trim()
+  .min(1, "Informe o endereço da publicação")
+  .max(2_000, "Use no máximo 2000 caracteres")
+  .refine(isInstagramPostUrl, {
+    message: "Cole o endereço de uma publicação do Instagram (instagram.com/p/... ou /reel/...)",
+  });
+
 const phoneE164Schema = z
   .string()
   .trim()
@@ -186,6 +200,11 @@ export const demoLandingContentSchema = z
       "Esta seção está pronta para receber fotos oficiais ou autorizadas. Enquanto não houver imagens, a demonstração exibirá composições visuais claramente identificadas como ilustrativas.",
     ),
     galleryImages: z.array(galleryImageSchema).max(6).default([]),
+    instagramTitle: plainText(120).default("No Instagram"),
+    instagramIntro: plainText(600).default(
+      "Publicações do perfil informado, exibidas pelo próprio Instagram. O conteúdo é do estabelecimento e pode ser alterado ou removido por ele a qualquer momento.",
+    ),
+    instagramPosts: z.array(instagramPostUrlSchema).max(3).default([]),
     contactTitle: plainText(120).default("Informações de contato"),
     contactText: plainText(600).default(
       "Valide os canais informados diretamente com o estabelecimento antes de entrar em contato.",

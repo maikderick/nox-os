@@ -38,6 +38,12 @@ import {
   normalizeDemoCtaLabel,
   parseDemoLandingContent,
 } from "@/lib/demo-landing-schema";
+import {
+  findInstagramProfile,
+  instagramEmbedUrl,
+  instagramPermalink,
+  parseInstagramPostUrl,
+} from "@/lib/instagram";
 import { isValidPhoneE164 } from "@/lib/phone";
 import { classifyWebsite, hasOwnWebsite } from "@/lib/website";
 
@@ -328,6 +334,14 @@ export default async function DemoLandingPage({ params }: PageProps) {
     const url = safeDemoImageUrl(image.url);
     return url ? [{ ...image, url }] : [];
   });
+  // Rebuilt from the parsed shortcode, never from the stored string.
+  const instagramEmbeds = content.instagramPosts.flatMap((postUrl) => {
+    const ref = parseInstagramPostUrl(postUrl);
+    return ref
+      ? [{ src: instagramEmbedUrl(ref), permalink: instagramPermalink(ref), key: ref.shortcode }]
+      : [];
+  });
+  const instagramProfile = findInstagramProfile(business.socialLinks);
   const heroImageIsStock = Boolean(heroImageUrl) && content.heroImageKind === "stock";
   const hasIllustrativePhotos =
     heroImageIsStock || galleryImages.some((image) => image.kind === "stock");
@@ -402,6 +416,11 @@ export default async function DemoLandingPage({ params }: PageProps) {
               <a className="transition hover:text-white" href="#galeria">
                 Galeria
               </a>
+              {instagramEmbeds.length ? (
+                <a className="transition hover:text-white" href="#instagram">
+                  Instagram
+                </a>
+              ) : null}
               {content.services.length ? (
                 <a className="transition hover:text-white" href="#servicos">
                   Serviços
@@ -812,6 +831,73 @@ export default async function DemoLandingPage({ params }: PageProps) {
             ) : null}
           </div>
         </section>
+
+        {instagramEmbeds.length ? (
+          <section id="instagram" className="scroll-mt-28 py-24 sm:py-28">
+            <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+              <div className="grid gap-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
+                <div>
+                  <p
+                    className="text-xs font-semibold uppercase tracking-[0.2em]"
+                    style={{ color: accentTextColor }}
+                  >
+                    Conteúdo do estabelecimento
+                  </p>
+                  <h2 className="mt-5 text-3xl font-semibold tracking-[-0.04em] text-white sm:text-5xl">
+                    {content.instagramTitle}
+                  </h2>
+                </div>
+                <p className="max-w-2xl text-base leading-8 text-slate-400 lg:justify-self-end lg:text-lg">
+                  {content.instagramIntro}
+                </p>
+              </div>
+
+              <div
+                className={`mt-12 grid gap-5 ${
+                  instagramEmbeds.length === 1
+                    ? "max-w-xl"
+                    : instagramEmbeds.length === 2
+                      ? "md:grid-cols-2"
+                      : "md:grid-cols-2 lg:grid-cols-3"
+                }`}
+              >
+                {instagramEmbeds.map((embed) => (
+                  <div
+                    key={embed.key}
+                    className="overflow-hidden rounded-[1.75rem] border border-white/[0.09] bg-white"
+                  >
+                    <iframe
+                      src={embed.src}
+                      title="Publicação do Instagram do estabelecimento"
+                      loading="lazy"
+                      scrolling="no"
+                      allowFullScreen
+                      className="h-[34rem] w-full border-0"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-center text-xs leading-6 text-slate-400">
+                <span>
+                  Publicações exibidas pelo próprio Instagram. O conteúdo pertence ao
+                  estabelecimento.
+                </span>
+                {instagramProfile ? (
+                  <a
+                    href={instagramProfile.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1.5 text-slate-300 underline decoration-white/25 underline-offset-4 transition hover:text-white"
+                  >
+                    @{instagramProfile.username}
+                    <ExternalLink aria-hidden="true" className="h-3 w-3" />
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {content.services.length ? (
           <section

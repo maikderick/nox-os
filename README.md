@@ -13,6 +13,7 @@ Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior
 - Landings demonstrativas gratuitas por categoria, sem API de IA
 - Melhoria editorial opcional com Claude (server-side, sempre como rascunho)
 - Fotos ilustrativas licenciadas por categoria, sempre rotuladas como ilustrativas
+- Publicações reais do Instagram do estabelecimento via embed oficial
 - WhatsApp **manual** somente com opt-in `verified` (sem disparo automático/massa)
 - Alteração da própria senha e gestão administrativa de usuários
 - Deduplicação idempotente
@@ -120,6 +121,23 @@ prévia com templates locais por categoria, sem Claude ou outra API paga. A pág
 
 O conteúdo e o estado ficam na tabela `DemoLanding`; aplique as migrations antes de
 usar o recurso em um ambiente já existente.
+
+### Instagram do estabelecimento
+
+Quando a ficha do lead tem um perfil do Instagram, o editor mostra o perfil e um campo para
+colar o endereço de até 3 publicações públicas. A demonstração passa a exibir essas
+publicações usando o **embed oficial do Instagram**.
+
+- Nenhuma imagem é copiada: o post continua sendo servido pelo Instagram, com o nome do
+  perfil e o link. Se o estabelecimento apagar ou tornar privado, some da página.
+- Só o endereço de um post ou reel público é aceito. A URL do embed é reconstruída a
+  partir do código da publicação, então parâmetros de rastreio colados junto são
+  descartados e nada chega ao `iframe` sem validação.
+- O Claude não pode alterar esse campo.
+
+Não existe busca automática de fotos no Instagram, e isso é deliberado: desde dezembro de
+2024 toda a API exige que o dono da conta autorize o aplicativo, e raspar o perfil violaria
+os termos do Meta além de republicar obra de terceiro sem licença.
 
 ### Fotos ilustrativas licenciadas (opcional)
 
