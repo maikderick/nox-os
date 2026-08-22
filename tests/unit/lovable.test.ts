@@ -162,11 +162,40 @@ describe("build with url", () => {
       htmlRefs: ["https://nox.example.com/demo/abc"],
     });
 
-    expect(url.startsWith("https://lovable.dev/?autosubmit=true#")).toBe(true);
+    expect(url.startsWith("https://lovable.dev/en?autosubmit=true#")).toBe(true);
     const fragment = url.slice(url.indexOf("#") + 1);
     expect(fragment).toContain("prompt=Crie%20uma%20landing%20page");
     expect(fragment).toContain("images=https%3A%2F%2Fcdn.exemplo.com%2Fa.jpg");
     expect(fragment).toContain("html=https%3A%2F%2Fnox.example.com%2Fdemo%2Fabc");
+  });
+
+  /**
+   * A Portuguese browser makes lovable.dev redirect "/" to "/pt-br/pt-br", which
+   * 404s and swallows the captured prompt. The explicit /en path skips the
+   * locale redirect entirely.
+   */
+  it("uses the locale-neutral path so a pt-BR browser is not redirected into a 404", () => {
+    const url = buildLovableBuildUrl({ prompt: "x" });
+
+    expect(new URL(url).pathname).toBe("/en");
+  });
+
+  /** Lovable reads repeated keys; a comma-joined list is dropped as invalid. */
+  it("repeats the key for each image instead of joining them", () => {
+    const url = buildLovableBuildUrl({
+      prompt: "x",
+      images: ["https://cdn.exemplo.com/a.jpg", "https://cdn.exemplo.com/b.jpg"],
+      htmlRefs: ["https://nox.example.com/demo/abc"],
+    });
+    const fragment = url.slice(url.indexOf("#") + 1);
+    const params = new URLSearchParams(fragment);
+
+    expect(params.getAll("images")).toEqual([
+      "https://cdn.exemplo.com/a.jpg",
+      "https://cdn.exemplo.com/b.jpg",
+    ]);
+    expect(params.getAll("html")).toEqual(["https://nox.example.com/demo/abc"]);
+    expect(fragment).not.toContain(",");
   });
 
   it("refuses references that are not safe HTTPS addresses", () => {
@@ -189,8 +218,8 @@ describe("build with url", () => {
       htmlRefs: ["https://nox.example.com/demo/abc"],
     });
 
-    const images = url.match(/images=([^&]*)/)?.[1]?.split(",") ?? [];
-    expect(images).toHaveLength(LOVABLE_REFERENCE_MAX - 1);
+    const params = new URLSearchParams(url.slice(url.indexOf("#") + 1));
+    expect(params.getAll("images")).toHaveLength(LOVABLE_REFERENCE_MAX - 1);
   });
 
   it("truncates a prompt beyond the provider limit", () => {

@@ -5,8 +5,13 @@ import {
 } from "./demo-landing-schema";
 import { instagramPermalink, parseInstagramPostUrl } from "./instagram";
 
-/** Documented limits of Lovable's Build with URL feature. */
-export const LOVABLE_BUILD_BASE = "https://lovable.dev/?autosubmit=true";
+/**
+ * The explicit /en path is deliberate. On the bare domain, Lovable's locale
+ * redirect doubles the prefix for a Portuguese browser — "/" becomes
+ * "/pt-br/pt-br", which 404s and strands the captured prompt. The /en path skips
+ * that redirect and lands on the builder (or on sign-in, carrying the prompt).
+ */
+export const LOVABLE_BUILD_BASE = "https://lovable.dev/en?autosubmit=true";
 export const LOVABLE_PROMPT_MAX = 50_000;
 export const LOVABLE_REFERENCE_MAX = 10;
 
@@ -210,10 +215,12 @@ export function buildLovableBuildUrl(params: {
     .filter(isSafeDemoHttpsUrl)
     .slice(0, Math.max(0, LOVABLE_REFERENCE_MAX - htmlRefs.length));
 
+  // Lovable reads repeated keys (images=A&images=B); a joined list is discarded
+  // as a single invalid reference.
   const fragment = [
     `prompt=${encodeURIComponent(prompt)}`,
-    ...(images.length ? [`images=${images.map(encodeURIComponent).join(",")}`] : []),
-    ...(htmlRefs.length ? [`html=${htmlRefs.map(encodeURIComponent).join(",")}`] : []),
+    ...images.map((image) => `images=${encodeURIComponent(image)}`),
+    ...htmlRefs.map((ref) => `html=${encodeURIComponent(ref)}`),
   ].join("&");
 
   return `${LOVABLE_BUILD_BASE}#${fragment}`;
