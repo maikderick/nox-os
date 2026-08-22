@@ -47,6 +47,9 @@ export type DemoAiEditorialField = (typeof DEMO_AI_EDITORIAL_FIELDS)[number];
 export const DEMO_AI_PROTECTED_FIELDS = [
   "businessSnapshot",
   "heroImageUrl",
+  "heroImageKind",
+  "heroImageCredit",
+  "heroImageCreditUrl",
   "galleryImages",
 ] as const;
 
@@ -331,6 +334,9 @@ export function mergeDemoAiDraft(params: {
     accentColor: draft.accentColor,
     // Protected: never taken from the model.
     heroImageUrl: current.heroImageUrl,
+    heroImageKind: current.heroImageKind,
+    heroImageCredit: current.heroImageCredit,
+    heroImageCreditUrl: current.heroImageCreditUrl,
     galleryImages: current.galleryImages,
     businessSnapshot: current.businessSnapshot ?? null,
   });

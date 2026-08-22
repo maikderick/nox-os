@@ -299,6 +299,7 @@ export default function LeadDetailPage() {
       <DemoLandingPanel
         leadId={lead.id}
         leadName={lead.name}
+        leadCategory={lead.category}
         eligible={demoEligible}
         whatsappBlocked={waBlocked}
         message={message}

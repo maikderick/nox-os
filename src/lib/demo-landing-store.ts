@@ -1,5 +1,6 @@
 import { Prisma, type DemoLanding } from "@prisma/client";
 import { prisma } from "./db";
+import { applyStockPhotos, fetchDemoStockPhotos } from "./demo-landing-photos";
 import {
   createDemoSlug,
   demoExpiryDate,
@@ -19,7 +20,11 @@ export async function regenerateDemoLanding(params: {
   createdById?: string | null;
   expiresInDays: number;
 }): Promise<DemoLanding> {
-  const contentJson = JSON.stringify(generateDemoLandingContent(params.business));
+  // Photos are a separate, failure-tolerant step: the generator itself stays
+  // pure and offline so a provider outage can never block a demo.
+  const photos = await fetchDemoStockPhotos(params.business.category);
+  const content = applyStockPhotos(generateDemoLandingContent(params.business), photos);
+  const contentJson = JSON.stringify(content);
   const expiresAt = demoExpiryDate(params.expiresInDays);
 
   // A unique collision is extraordinarily unlikely (96 random bits), but retry

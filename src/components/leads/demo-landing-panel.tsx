@@ -4,10 +4,12 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react
 import {
   DEMO_CTA_LABELS,
   demoLandingContentSchema,
+  isDemoStockPhotoUrl as isStockPhotoUrl,
   isSafeDemoImageUrl,
   normalizeDemoCtaLabel,
   type DemoLandingContent,
 } from "@/lib/demo-landing-schema";
+import { StockPhotoPicker, type PickerPhoto } from "@/components/leads/stock-photo-picker";
 
 type DemoLanding = {
   id: string;
@@ -39,6 +41,7 @@ type Draft = Omit<
 type Props = {
   leadId: string;
   leadName: string;
+  leadCategory: string;
   eligible: boolean;
   whatsappBlocked: boolean;
   message: string;
@@ -56,6 +59,9 @@ const EMPTY_DRAFT: Draft = {
   headline: "",
   subheadline: "",
   heroImageUrl: "",
+  heroImageKind: "official",
+  heroImageCredit: null,
+  heroImageCreditUrl: "",
   aboutTitle: "Sobre",
   about: "",
   factsTitle: "Destaques",
@@ -135,6 +141,7 @@ function describeFieldValue(value: unknown): string {
 export function DemoLandingPanel({
   leadId,
   leadName,
+  leadCategory,
   eligible,
   whatsappBlocked,
   message,
@@ -245,12 +252,18 @@ export function DemoLandingPanel({
     );
   }
 
-  function updateGalleryImage(index: number, key: keyof DemoGalleryImage, value: string) {
+  function updateGalleryImage(index: number, key: "url" | "alt", value: string) {
     setDraft((current) => ({
       ...current,
-      galleryImages: current.galleryImages.map((galleryImage, imageIndex) =>
-        imageIndex === index ? { ...galleryImage, [key]: value } : galleryImage,
-      ),
+      galleryImages: current.galleryImages.map((galleryImage, imageIndex) => {
+        if (imageIndex !== index) return galleryImage;
+        // A hand-typed URL is a photo the reviewer supplied, so the stock credit
+        // and the "illustrative" label must not stay attached to it.
+        if (key === "url" && !isStockPhotoUrl(value)) {
+          return { ...galleryImage, url: value, kind: "official", credit: null, creditUrl: "" };
+        }
+        return { ...galleryImage, [key]: value };
+      }),
     }));
     setDirty(true);
     setNotice(null);
@@ -259,7 +272,49 @@ export function DemoLandingPanel({
 
   function addGalleryImage() {
     if (draft.galleryImages.length >= 6) return;
-    updateDraft("galleryImages", [...draft.galleryImages, { url: "", alt: "" }]);
+    updateDraft("galleryImages", [
+      ...draft.galleryImages,
+      { url: "", alt: "", kind: "official", credit: null, creditUrl: "" },
+    ]);
+  }
+
+  function addStockPhotoToGallery(photo: PickerPhoto) {
+    if (draft.galleryImages.length >= 6) return;
+    if (draft.galleryImages.some((galleryImage) => galleryImage.url === photo.url)) {
+      setNotice("Esta foto já está na galeria.");
+      return;
+    }
+    updateDraft("galleryImages", [
+      ...draft.galleryImages,
+      { ...photo, kind: "stock" as const },
+    ]);
+    setNotice("Foto ilustrativa adicionada. Salve para atualizar a prévia.");
+  }
+
+  function useStockPhotoAsHero(photo: PickerPhoto) {
+    setDraft((current) => ({
+      ...current,
+      heroImageUrl: photo.url,
+      heroImageKind: "stock",
+      heroImageCredit: photo.credit,
+      heroImageCreditUrl: photo.creditUrl,
+    }));
+    setDirty(true);
+    setError(null);
+    setNotice("Foto definida como imagem do topo. Salve para atualizar a prévia.");
+  }
+
+  function updateHeroImageUrl(value: string) {
+    setDraft((current) => ({
+      ...current,
+      heroImageUrl: value,
+      ...(isStockPhotoUrl(value)
+        ? {}
+        : { heroImageKind: "official" as const, heroImageCredit: null, heroImageCreditUrl: "" }),
+    }));
+    setDirty(true);
+    setNotice(null);
+    setError(null);
   }
 
   function removeGalleryImage(index: number) {
@@ -659,10 +714,17 @@ export function DemoLandingPanel({
                 <div className="lg:col-span-2">
                   <UrlField
                     label="Imagem principal (opcional)"
-                    hint="Use uma imagem oficial ou autorizada, com URL iniciada por https://."
+                    hint="Foto oficial, autorizada ou ilustrativa, com URL iniciada por https://."
                     value={draft.heroImageUrl}
-                    onChange={(value) => updateDraft("heroImageUrl", value)}
+                    onChange={updateHeroImageUrl}
                   />
+                  {draft.heroImageUrl.trim() && (
+                    <p className="mt-2 text-xs text-nox-muted">
+                      {draft.heroImageKind === "stock"
+                        ? `Foto ilustrativa licenciada · ${draft.heroImageCredit ?? "crédito no rodapé"}`
+                        : "Tratada como foto oficial do estabelecimento."}
+                    </p>
+                  )}
                 </div>
               </div>
             </EditorSection>
@@ -833,6 +895,13 @@ export function DemoLandingPanel({
                   ? "Limite de 6 imagens"
                   : "+ Adicionar imagem"}
               </button>
+
+              <StockPhotoPicker
+                category={leadCategory}
+                galleryFull={draft.galleryImages.length >= 6}
+                onAddToGallery={addStockPhotoToGallery}
+                onUseAsHero={useStockPhotoAsHero}
+              />
             </EditorSection>
 
             <EditorSection
@@ -1235,6 +1304,9 @@ function toDraft(content: EditableLandingContent): Draft {
     headline: content.headline ?? "",
     subheadline: content.subheadline ?? "",
     heroImageUrl: content.heroImageUrl ?? "",
+    heroImageKind: content.heroImageKind ?? "official",
+    heroImageCredit: content.heroImageCredit ?? null,
+    heroImageCreditUrl: content.heroImageCreditUrl ?? "",
     aboutTitle: content.aboutTitle ?? "Sobre",
     about: content.about ?? "",
     factsTitle: content.factsTitle ?? "Destaques",
@@ -1248,6 +1320,9 @@ function toDraft(content: EditableLandingContent): Draft {
       ? content.galleryImages.slice(0, 6).map((galleryImage) => ({
           url: galleryImage.url ?? "",
           alt: galleryImage.alt ?? "",
+          kind: galleryImage.kind ?? "official",
+          credit: galleryImage.credit ?? null,
+          creditUrl: galleryImage.creditUrl ?? "",
         }))
       : [],
     processTitle: content.processTitle ?? "Como funciona",
@@ -1276,6 +1351,9 @@ function toContent(draft: Draft): EditableLandingContent {
     headline: draft.headline.trim(),
     subheadline: draft.subheadline.trim(),
     heroImageUrl: draft.heroImageUrl.trim(),
+    heroImageKind: draft.heroImageKind,
+    heroImageCredit: draft.heroImageCredit,
+    heroImageCreditUrl: draft.heroImageCreditUrl,
     aboutTitle: draft.aboutTitle.trim(),
     about: draft.about.trim(),
     factsTitle: draft.factsTitle.trim(),
@@ -1288,6 +1366,9 @@ function toContent(draft: Draft): EditableLandingContent {
     galleryImages: draft.galleryImages.map((galleryImage) => ({
       url: galleryImage.url.trim(),
       alt: galleryImage.alt.trim(),
+      kind: galleryImage.kind,
+      credit: galleryImage.credit,
+      creditUrl: galleryImage.creditUrl,
     })),
     processTitle: draft.processTitle.trim(),
     processIntro: draft.processIntro.trim(),

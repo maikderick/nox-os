@@ -12,6 +12,7 @@ Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior
 - Fila padrão somente com empresas sem site próprio
 - Landings demonstrativas gratuitas por categoria, sem API de IA
 - Melhoria editorial opcional com Claude (server-side, sempre como rascunho)
+- Fotos ilustrativas licenciadas por categoria, sempre rotuladas como ilustrativas
 - WhatsApp **manual** somente com opt-in `verified` (sem disparo automático/massa)
 - Alteração da própria senha e gestão administrativa de usuários
 - Deduplicação idempotente
@@ -119,6 +120,32 @@ prévia com templates locais por categoria, sem Claude ou outra API paga. A pág
 
 O conteúdo e o estado ficam na tabela `DemoLanding`; aplique as migrations antes de
 usar o recurso em um ambiente já existente.
+
+### Fotos ilustrativas licenciadas (opcional)
+
+Com `PEXELS_API_KEY` configurada, **Gerar demonstração automática** também traz uma foto
+de topo e três de galeria, buscadas por categoria do lead em banco de imagens com licença
+aberta. No editor, **Buscar fotos ilustrativas** abre uma grade para trocar as fotos ou
+definir outra imagem de topo.
+
+- Toda foto de banco aparece na página com o rótulo **Imagem ilustrativa** e o crédito do
+  fotógrafo no rodapé. Ela nunca é apresentada como foto do estabelecimento.
+- Foto que você cadastrou é tratada como **Imagem fornecida** e nunca é sobrescrita pela
+  busca automática. Colar uma URL própria sobre uma foto de banco converte o item para
+  foto fornecida e limpa o crédito.
+- Só são aceitas URLs HTTPS em `images.pexels.com`; qualquer outro host vindo da resposta
+  do provedor é descartado.
+- Sem chave, com o provedor fora do ar ou com resposta inválida, a demonstração é gerada
+  exatamente como antes, com as composições visuais.
+
+| Variável | Padrão | Função |
+| --- | --- | --- |
+| `PEXELS_API_KEY` | — | Habilita as fotos ilustrativas. |
+| `PEXELS_TIMEOUT_MS` | `8000` | Timeout de cada busca. |
+| `PEXELS_API_URL` | API oficial | Só para apontar a um mock local em desenvolvimento. |
+
+Crédito obrigatório pela licença: as fotos vêm do Pexels e a página exibe o link e o nome
+de cada fotógrafo.
 
 ### Melhorar com Claude (opcional)
 
