@@ -14,6 +14,7 @@ Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior
 - Melhoria editorial opcional com Claude (server-side, sempre como rascunho)
 - Fotos ilustrativas licenciadas por categoria, sempre rotuladas como ilustrativas
 - Publicações reais do Instagram do estabelecimento via embed oficial
+- Prompt mestre pronto para o Lovable, só com dados confirmados
 - WhatsApp **manual** somente com opt-in `verified` (sem disparo automático/massa)
 - Alteração da própria senha e gestão administrativa de usuários
 - Deduplicação idempotente
@@ -121,6 +122,29 @@ prévia com templates locais por categoria, sem Claude ou outra API paga. A pág
 
 O conteúdo e o estado ficam na tabela `DemoLanding`; aplique as migrations antes de
 usar o recurso em um ambiente já existente.
+
+### Criar no Lovable
+
+Na ficha, **Criar no Lovable** monta um prompt mestre a partir do que já está confirmado —
+snapshot do cadastro, textos revisados, serviços confirmados, FAQ e fotos — e abre o
+[Build with URL](https://docs.lovable.dev/integrations/build-with-url) do Lovable já
+construindo. Não exige chave de API.
+
+- O prompt proíbe explicitamente inventar avaliações, notas, depoimentos, prêmios, preços,
+  promoções, horários, tempo de mercado, garantias e serviços não confirmados. Onde não há
+  dado, ele manda **não criar a seção**.
+- Fotos reais do estabelecimento e imagens ilustrativas licenciadas vão em blocos separados,
+  e as ilustrativas levam a instrução de serem identificadas como tal.
+- Sem telefone no cadastro, o prompt diz para não criar botão de ligar nem inventar número.
+- A prévia aprovada é anexada como referência de layout quando o endereço é HTTPS.
+- O prompt viaja no fragmento da URL, então não passa por nenhum servidor. Dá para revisar e
+  editar antes de enviar, e a edição vale só para aquele envio.
+
+Limites do provedor respeitados em código: 50.000 caracteres de prompt e 10 referências no
+total, com as fotos reais na frente da fila caso o orçamento acabe.
+
+Isso **não substitui** o gerador gratuito: a demonstração continua dinâmica, no PostgreSQL,
+sem deploy por empresa. O Lovable é um caminho paralelo para construir o site definitivo.
 
 ### Instagram do estabelecimento
 
