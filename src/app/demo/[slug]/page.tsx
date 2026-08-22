@@ -328,6 +328,18 @@ export default async function DemoLandingPage({ params }: PageProps) {
     const url = safeDemoImageUrl(image.url);
     return url ? [{ ...image, url }] : [];
   });
+  const heroImageIsStock = Boolean(heroImageUrl) && content.heroImageKind === "stock";
+  const hasIllustrativePhotos =
+    heroImageIsStock || galleryImages.some((image) => image.kind === "stock");
+  // One credit line per photographer, as the provider licence requires.
+  const photoCredits = Array.from(
+    new Set(
+      [
+        heroImageIsStock ? content.heroImageCredit : null,
+        ...galleryImages.map((image) => (image.kind === "stock" ? image.credit : null)),
+      ].filter((credit): credit is string => Boolean(credit)),
+    ),
+  ).slice(0, 8);
   const mainCtaHref = "#contato";
   const mainCtaLabel = ctaLabel;
   const accessibleGradient = `linear-gradient(rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.58)), linear-gradient(135deg, ${content.primaryColor}, ${content.accentColor})`;
@@ -426,10 +438,24 @@ export default async function DemoLandingPage({ params }: PageProps) {
           </div>
         </nav>
 
-        <section
-          id="inicio"
-          className="mx-auto grid min-h-[calc(100vh-7.5rem)] max-w-7xl scroll-mt-24 items-center gap-14 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[1.08fr_0.92fr] lg:px-10 lg:py-24"
-        >
+        <section id="inicio" className="relative scroll-mt-24">
+          {heroImageUrl ? (
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+              <img
+                src={heroImageUrl}
+                alt=""
+                className="h-full w-full scale-105 object-cover opacity-25"
+                decoding="async"
+                loading="eager"
+                referrerPolicy="no-referrer"
+              />
+              {/* Heavy scrim: the headline must keep its contrast over any photo. */}
+              <div className="absolute inset-0 bg-[#07070a]/80" />
+              <div className="absolute inset-0 bg-gradient-to-b from-[#07070a] via-[#07070a]/55 to-[#07070a]" />
+            </div>
+          ) : null}
+
+          <div className="relative mx-auto grid min-h-[calc(100vh-7.5rem)] max-w-7xl items-center gap-14 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[1.08fr_0.92fr] lg:px-10 lg:py-24">
           <div className="min-w-0 max-w-3xl">
             <div
               className="mb-7 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.17em]"
@@ -505,7 +531,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
                     className="absolute inset-0 bg-gradient-to-b from-black/15 via-transparent to-black/90"
                   />
                   <span className="absolute left-5 top-5 rounded-full border border-white/20 bg-black/45 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur-xl">
-                    Imagem fornecida
+                    {heroImageIsStock ? "Imagem ilustrativa" : "Imagem fornecida"}
                   </span>
                   <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/60">
@@ -600,6 +626,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
               </div>
             </div>
           </aside>
+          </div>
         </section>
 
         <section
@@ -691,7 +718,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
                         {image.alt}
                       </span>
                       <span className="shrink-0 rounded-full border border-white/15 bg-black/40 px-3 py-1.5 text-[8px] font-semibold uppercase tracking-[0.15em] text-white/70 backdrop-blur-xl">
-                        Imagem fornecida
+                        {image.kind === "stock" ? "Imagem ilustrativa" : "Imagem fornecida"}
                       </span>
                     </figcaption>
                   </figure>
@@ -776,6 +803,11 @@ export default async function DemoLandingPage({ params }: PageProps) {
               <p className="mt-6 text-center text-xs leading-6 text-slate-400">
                 As composições acima são apenas ilustrativas e não representam fotos reais do estabelecimento,
                 de produtos ou de serviços.
+              </p>
+            ) : galleryImages.some((image) => image.kind === "stock") ? (
+              <p className="mt-6 text-center text-xs leading-6 text-slate-400">
+                As imagens marcadas como ilustrativas são fotos de banco licenciadas e não retratam o
+                estabelecimento, seus produtos ou seus serviços.
               </p>
             ) : null}
           </div>
@@ -1242,6 +1274,9 @@ export default async function DemoLandingPage({ params }: PageProps) {
               <p className="max-w-2xl text-xs leading-6 text-slate-400">
                 Demonstração não oficial criada para apresentação visual. Esta página não constitui
                 o site oficial do estabelecimento. Conteúdo sujeito à validação.
+                {hasIllustrativePhotos
+                  ? " As fotografias marcadas como ilustrativas são de banco de imagens licenciado e não retratam o estabelecimento."
+                  : ""}
               </p>
               <div className="md:text-right">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
@@ -1250,6 +1285,28 @@ export default async function DemoLandingPage({ params }: PageProps) {
                 <p className="mt-2 text-[10px] text-slate-400">Não indexada por mecanismos de busca</p>
               </div>
             </div>
+
+            {photoCredits.length ? (
+              <div className="mt-8 border-t border-white/[0.07] pt-6">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Créditos das imagens ilustrativas
+                </p>
+                <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-[11px] leading-5 text-slate-400">
+                  {photoCredits.map((credit) => (
+                    <li key={credit}>{credit}</li>
+                  ))}
+                </ul>
+                <a
+                  href="https://www.pexels.com"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-slate-300 underline decoration-white/25 underline-offset-4 transition hover:text-white"
+                >
+                  Fotos via Pexels
+                  <ExternalLink aria-hidden="true" className="h-3 w-3" />
+                </a>
+              </div>
+            ) : null}
           </div>
         </footer>
       </div>

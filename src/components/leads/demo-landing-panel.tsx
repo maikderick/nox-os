@@ -4,10 +4,12 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react
 import {
   DEMO_CTA_LABELS,
   demoLandingContentSchema,
+  isDemoStockPhotoUrl as isStockPhotoUrl,
   isSafeDemoImageUrl,
   normalizeDemoCtaLabel,
   type DemoLandingContent,
 } from "@/lib/demo-landing-schema";
+import { StockPhotoPicker, type PickerPhoto } from "@/components/leads/stock-photo-picker";
 
 type DemoLanding = {
   id: string;
@@ -39,6 +41,7 @@ type Draft = Omit<
 type Props = {
   leadId: string;
   leadName: string;
+  leadCategory: string;
   eligible: boolean;
   whatsappBlocked: boolean;
   message: string;
@@ -56,6 +59,9 @@ const EMPTY_DRAFT: Draft = {
   headline: "",
   subheadline: "",
   heroImageUrl: "",
+  heroImageKind: "official",
+  heroImageCredit: null,
+  heroImageCreditUrl: "",
   aboutTitle: "Sobre",
   about: "",
   factsTitle: "Destaques",
@@ -86,9 +92,56 @@ const STATUS_LABELS: Record<DemoLanding["status"], string> = {
   EXPIRED: "Expirada",
 };
 
+type AiSuggestion = {
+  content: EditableLandingContent;
+  changedFields: string[];
+  droppedServices: string[];
+  model: string;
+};
+
+const AI_FIELD_LABELS: Record<string, string> = {
+  headline: "Título principal",
+  subheadline: "Subtítulo",
+  aboutTitle: "Título da seção Sobre",
+  about: "Sobre a empresa",
+  factsTitle: "Título dos destaques",
+  benefits: "Informações disponíveis",
+  servicesTitle: "Título dos serviços",
+  servicesIntro: "Introdução dos serviços",
+  services: "Serviços confirmados",
+  galleryTitle: "Título da galeria",
+  galleryIntro: "Introdução da galeria",
+  processTitle: "Título de Como funciona",
+  processIntro: "Introdução de Como funciona",
+  processSteps: "Etapas",
+  faqTitle: "Título das perguntas frequentes",
+  faqs: "Perguntas frequentes",
+  contactTitle: "Título da seção de contato",
+  contactText: "Texto de contato",
+  finalCtaTitle: "Título da chamada final",
+  finalCtaText: "Texto da chamada final",
+  ctaLabel: "Chamada do botão",
+  primaryColor: "Cor principal",
+  accentColor: "Cor de destaque",
+};
+
+function describeFieldValue(value: unknown): string {
+  if (typeof value === "string") return value || "—";
+  if (!Array.isArray(value)) return "—";
+  if (value.length === 0) return "— (vazio)";
+  return value
+    .map((item) =>
+      typeof item === "string"
+        ? `• ${item}`
+        : `• ${(item as DemoFaq).question} → ${(item as DemoFaq).answer}`,
+    )
+    .join("\n");
+}
+
 export function DemoLandingPanel({
   leadId,
   leadName,
+  leadCategory,
   eligible,
   whatsappBlocked,
   message,
@@ -103,9 +156,15 @@ export function DemoLandingPanel({
   const [dirty, setDirty] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [aiConfigured, setAiConfigured] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<AiSuggestion | null>(null);
 
   const applyLanding = useCallback((next: DemoLanding | null) => {
     setLanding(next);
+    setSuggestion(null);
+    setAiError(null);
     if (next) {
       setDraft(toDraft(next.content));
       setExpiresOn(toDateInput(next.expiresAt));
@@ -132,7 +191,11 @@ export function DemoLandingPanel({
       if (!response.ok) {
         throw new Error(await readApiError(response, "Não foi possível carregar a demonstração."));
       }
-      const payload = (await response.json()) as { landing: DemoLanding | null };
+      const payload = (await response.json()) as {
+        landing: DemoLanding | null;
+        ai?: { configured?: boolean };
+      };
+      setAiConfigured(Boolean(payload.ai?.configured));
       applyLanding(payload.landing ?? null);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -189,12 +252,18 @@ export function DemoLandingPanel({
     );
   }
 
-  function updateGalleryImage(index: number, key: keyof DemoGalleryImage, value: string) {
+  function updateGalleryImage(index: number, key: "url" | "alt", value: string) {
     setDraft((current) => ({
       ...current,
-      galleryImages: current.galleryImages.map((galleryImage, imageIndex) =>
-        imageIndex === index ? { ...galleryImage, [key]: value } : galleryImage,
-      ),
+      galleryImages: current.galleryImages.map((galleryImage, imageIndex) => {
+        if (imageIndex !== index) return galleryImage;
+        // A hand-typed URL is a photo the reviewer supplied, so the stock credit
+        // and the "illustrative" label must not stay attached to it.
+        if (key === "url" && !isStockPhotoUrl(value)) {
+          return { ...galleryImage, url: value, kind: "official", credit: null, creditUrl: "" };
+        }
+        return { ...galleryImage, [key]: value };
+      }),
     }));
     setDirty(true);
     setNotice(null);
@@ -203,7 +272,49 @@ export function DemoLandingPanel({
 
   function addGalleryImage() {
     if (draft.galleryImages.length >= 6) return;
-    updateDraft("galleryImages", [...draft.galleryImages, { url: "", alt: "" }]);
+    updateDraft("galleryImages", [
+      ...draft.galleryImages,
+      { url: "", alt: "", kind: "official", credit: null, creditUrl: "" },
+    ]);
+  }
+
+  function addStockPhotoToGallery(photo: PickerPhoto) {
+    if (draft.galleryImages.length >= 6) return;
+    if (draft.galleryImages.some((galleryImage) => galleryImage.url === photo.url)) {
+      setNotice("Esta foto já está na galeria.");
+      return;
+    }
+    updateDraft("galleryImages", [
+      ...draft.galleryImages,
+      { ...photo, kind: "stock" as const },
+    ]);
+    setNotice("Foto ilustrativa adicionada. Salve para atualizar a prévia.");
+  }
+
+  function useStockPhotoAsHero(photo: PickerPhoto) {
+    setDraft((current) => ({
+      ...current,
+      heroImageUrl: photo.url,
+      heroImageKind: "stock",
+      heroImageCredit: photo.credit,
+      heroImageCreditUrl: photo.creditUrl,
+    }));
+    setDirty(true);
+    setError(null);
+    setNotice("Foto definida como imagem do topo. Salve para atualizar a prévia.");
+  }
+
+  function updateHeroImageUrl(value: string) {
+    setDraft((current) => ({
+      ...current,
+      heroImageUrl: value,
+      ...(isStockPhotoUrl(value)
+        ? {}
+        : { heroImageKind: "official" as const, heroImageCredit: null, heroImageCreditUrl: "" }),
+    }));
+    setDirty(true);
+    setNotice(null);
+    setError(null);
   }
 
   function removeGalleryImage(index: number) {
@@ -234,6 +345,51 @@ export function DemoLandingPanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function improveWithClaude() {
+    if (!landing) return;
+    setAiBusy(true);
+    setAiError(null);
+    setNotice(null);
+    setError(null);
+    try {
+      const response = await fetch(`/api/demo-landings/${landing.id}/improve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(
+          await readApiError(
+            response,
+            "Não foi possível melhorar a demonstração com o Claude. Nada foi alterado.",
+          ),
+        );
+      }
+      const payload = (await response.json()) as { suggestion: AiSuggestion };
+      if (!payload.suggestion?.changedFields?.length) {
+        setSuggestion(null);
+        setNotice("O Claude não sugeriu mudanças no conteúdo editorial.");
+        return;
+      }
+      setSuggestion(payload.suggestion);
+    } catch (cause) {
+      setAiError(errorMessage(cause));
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function applySuggestion() {
+    if (!suggestion) return;
+    setDraft(toDraft(suggestion.content));
+    setSuggestion(null);
+    setDirty(true);
+    setAiError(null);
+    setError(null);
+    setNotice(
+      "Sugestão aplicada ao rascunho. Revise, salve e aprove antes de compartilhar o link.",
+    );
   }
 
   async function updateLanding(status?: DemoLanding["status"]) {
@@ -334,8 +490,9 @@ export function DemoLandingPanel({
             )}
           </div>
           <p className="mt-1 max-w-3xl text-sm text-nox-muted">
-            O conteúdo é criado por um modelo automático e fica marcado como demonstração não
-            oficial. Revise e confirme cada informação antes de compartilhar.
+            O conteúdo é criado por um gerador automático sem custo e fica marcado como demonstração
+            não oficial. Depois, se quiser, o Claude pode melhorar apenas os textos — sempre como
+            rascunho. Revise e confirme cada informação antes de compartilhar.
           </p>
         </div>
         {landing && previewUrl && (
@@ -379,7 +536,7 @@ export function DemoLandingPanel({
               onClick={() => void createLanding()}
               className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {busy ? "Gerando…" : "Gerar landing demonstrativa"}
+              {busy ? "Gerando…" : "Gerar demonstração automática"}
             </button>
           </div>
         </div>
@@ -390,6 +547,122 @@ export function DemoLandingPanel({
           <div className="rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 text-xs text-amber-100">
             Não inclua avaliações, preços, horários, promoções ou serviços que não estejam
             confirmados na ficha da empresa.
+          </div>
+
+          <div className="rounded-xl border border-nox-border bg-nox-bg/40 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-medium text-white">Melhorar com Claude</h3>
+                  <span className="rounded-full border border-nox-purple/40 bg-nox-purple/10 px-2 py-0.5 text-xs text-purple-200">
+                    Opcional · usa a API da Anthropic
+                  </span>
+                </div>
+                <p className="mt-1 max-w-2xl text-sm text-nox-muted">
+                  Reescreve apenas títulos, textos, benefícios, etapas, FAQ, chamadas e cores.
+                  Telefone, endereço, mapa, redes sociais, fotos, endereço da página e validade
+                  não são tocados. O resultado volta como rascunho para a sua revisão.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={aiBusy || busy || dirty || !aiConfigured || landing.status === "EXPIRED"}
+                onClick={() => void improveWithClaude()}
+                className="rounded-lg border border-nox-purple/50 bg-nox-purple/10 px-4 py-2 text-sm font-medium text-purple-100 hover:border-nox-purple disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {aiBusy ? "Consultando o Claude…" : "Melhorar com Claude"}
+              </button>
+            </div>
+
+            {aiConfigured && dirty && (
+              <p className="mt-3 text-xs text-amber-200">
+                Salve as alterações do rascunho antes de pedir a melhoria — o Claude parte do
+                conteúdo já salvo.
+              </p>
+            )}
+
+            {!aiConfigured && (
+              <p className="mt-3 rounded-lg border border-nox-border bg-nox-surface p-3 text-xs leading-5 text-nox-muted">
+                A melhoria com Claude não está configurada. Defina{" "}
+                <code className="text-nox-cyan">ANTHROPIC_API_KEY</code> nas variáveis de ambiente
+                da Vercel. O gerador automático gratuito continua funcionando normalmente.
+              </p>
+            )}
+
+            {aiError && (
+              <p role="alert" className="mt-3 text-sm text-red-300">
+                {aiError}
+              </p>
+            )}
+
+            {suggestion && (
+              <div className="mt-4 rounded-lg border border-nox-purple/30 bg-nox-surface p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="text-sm font-medium text-white">
+                    Sugestão do Claude · {suggestion.changedFields.length}{" "}
+                    {suggestion.changedFields.length === 1 ? "campo" : "campos"}
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={applySuggestion}
+                      className="rounded-lg bg-nox-purple px-3 py-2 text-sm font-medium text-white"
+                    >
+                      Aplicar ao rascunho
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSuggestion(null)}
+                      className="rounded-lg border border-nox-border px-3 py-2 text-sm text-nox-muted hover:border-nox-cyan"
+                    >
+                      Descartar
+                    </button>
+                  </div>
+                </div>
+
+                {suggestion.droppedServices.length > 0 && (
+                  <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 text-xs text-amber-100">
+                    {suggestion.droppedServices.length} serviço(s) sugerido(s) foram descartados
+                    porque não estão confirmados na ficha. Só entram serviços já cadastrados.
+                  </p>
+                )}
+
+                <p className="mt-3 text-xs text-nox-muted">
+                  Aplicar substitui o rascunho atual. Nada é publicado: você ainda precisa salvar e
+                  aprovar.
+                </p>
+
+                <ul className="mt-3 space-y-3">
+                  {suggestion.changedFields.map((field) => (
+                    <li key={field} className="rounded-lg border border-nox-border bg-nox-bg/50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-nox-cyan">
+                        {AI_FIELD_LABELS[field] ?? field}
+                      </p>
+                      <div className="mt-2 grid gap-3 md:grid-cols-2">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-nox-muted">Atual</p>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-sm text-nox-muted">
+                            {describeFieldValue(
+                              (landing.content as Record<string, unknown>)[field],
+                            )}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-emerald-300">
+                            Sugerido
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-sm text-white">
+                            {describeFieldValue(
+                              (suggestion.content as unknown as Record<string, unknown>)[field],
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -441,10 +714,17 @@ export function DemoLandingPanel({
                 <div className="lg:col-span-2">
                   <UrlField
                     label="Imagem principal (opcional)"
-                    hint="Use uma imagem oficial ou autorizada, com URL iniciada por https://."
+                    hint="Foto oficial, autorizada ou ilustrativa, com URL iniciada por https://."
                     value={draft.heroImageUrl}
-                    onChange={(value) => updateDraft("heroImageUrl", value)}
+                    onChange={updateHeroImageUrl}
                   />
+                  {draft.heroImageUrl.trim() && (
+                    <p className="mt-2 text-xs text-nox-muted">
+                      {draft.heroImageKind === "stock"
+                        ? `Foto ilustrativa licenciada · ${draft.heroImageCredit ?? "crédito no rodapé"}`
+                        : "Tratada como foto oficial do estabelecimento."}
+                    </p>
+                  )}
                 </div>
               </div>
             </EditorSection>
@@ -615,6 +895,13 @@ export function DemoLandingPanel({
                   ? "Limite de 6 imagens"
                   : "+ Adicionar imagem"}
               </button>
+
+              <StockPhotoPicker
+                category={leadCategory}
+                galleryFull={draft.galleryImages.length >= 6}
+                onAddToGallery={addStockPhotoToGallery}
+                onUseAsHero={useStockPhotoAsHero}
+              />
             </EditorSection>
 
             <EditorSection
@@ -1017,6 +1304,9 @@ function toDraft(content: EditableLandingContent): Draft {
     headline: content.headline ?? "",
     subheadline: content.subheadline ?? "",
     heroImageUrl: content.heroImageUrl ?? "",
+    heroImageKind: content.heroImageKind ?? "official",
+    heroImageCredit: content.heroImageCredit ?? null,
+    heroImageCreditUrl: content.heroImageCreditUrl ?? "",
     aboutTitle: content.aboutTitle ?? "Sobre",
     about: content.about ?? "",
     factsTitle: content.factsTitle ?? "Destaques",
@@ -1030,6 +1320,9 @@ function toDraft(content: EditableLandingContent): Draft {
       ? content.galleryImages.slice(0, 6).map((galleryImage) => ({
           url: galleryImage.url ?? "",
           alt: galleryImage.alt ?? "",
+          kind: galleryImage.kind ?? "official",
+          credit: galleryImage.credit ?? null,
+          creditUrl: galleryImage.creditUrl ?? "",
         }))
       : [],
     processTitle: content.processTitle ?? "Como funciona",
@@ -1058,6 +1351,9 @@ function toContent(draft: Draft): EditableLandingContent {
     headline: draft.headline.trim(),
     subheadline: draft.subheadline.trim(),
     heroImageUrl: draft.heroImageUrl.trim(),
+    heroImageKind: draft.heroImageKind,
+    heroImageCredit: draft.heroImageCredit,
+    heroImageCreditUrl: draft.heroImageCreditUrl,
     aboutTitle: draft.aboutTitle.trim(),
     about: draft.about.trim(),
     factsTitle: draft.factsTitle.trim(),
@@ -1070,6 +1366,9 @@ function toContent(draft: Draft): EditableLandingContent {
     galleryImages: draft.galleryImages.map((galleryImage) => ({
       url: galleryImage.url.trim(),
       alt: galleryImage.alt.trim(),
+      kind: galleryImage.kind,
+      credit: galleryImage.credit,
+      creditUrl: galleryImage.creditUrl,
     })),
     processTitle: draft.processTitle.trim(),
     processIntro: draft.processIntro.trim(),

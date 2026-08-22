@@ -29,6 +29,18 @@ export const isSafeDemoHttpsUrl = (value: string): boolean => {
   }
 };
 export const isSafeDemoImageUrl = isSafeDemoHttpsUrl;
+
+/** Host of the licensed stock provider, shared by the server client and the editor. */
+export const DEMO_STOCK_PHOTO_HOST = "images.pexels.com";
+
+export function isDemoStockPhotoUrl(value: string): boolean {
+  if (!isSafeDemoHttpsUrl(value)) return false;
+  try {
+    return new URL(value).hostname.toLowerCase() === DEMO_STOCK_PHOTO_HOST;
+  } catch {
+    return false;
+  }
+}
 const httpsUrl = z
   .string()
   .trim()
@@ -48,10 +60,31 @@ const faqItemSchema = z
     answer: plainText(600),
   })
   .strict();
+
+/**
+ * Building blocks shared with the Claude improvement contract. Exporting them
+ * keeps the assisted draft bound to the exact same limits as the public content.
+ */
+export const demoPlainText = plainText;
+export const demoListItemSchema = listItem;
+export const demoFaqItemSchema = faqItemSchema;
+export const demoHexColorSchema = hexColor;
+/**
+ * `official` is a photo the reviewer supplied for this business; `stock` is a
+ * licensed illustrative photo. The default keeps demos stored before this field
+ * existed reading exactly as they render today.
+ */
+export const DEMO_IMAGE_KINDS = ["official", "stock"] as const;
+export type DemoImageKind = (typeof DEMO_IMAGE_KINDS)[number];
+const imageKindSchema = z.enum(DEMO_IMAGE_KINDS).default("official");
+
 const galleryImageSchema = z
   .object({
     url: httpsUrl,
     alt: plainText(180),
+    kind: imageKindSchema,
+    credit: nullablePlainText(180).default(null),
+    creditUrl: optionalHttpsUrl.default(""),
   })
   .strict();
 const phoneE164Schema = z
@@ -145,6 +178,9 @@ export const demoLandingContentSchema = z
       "Encontre as informações disponíveis e confirme os detalhes diretamente com o estabelecimento.",
     ),
     heroImageUrl: optionalHttpsUrl.default(""),
+    heroImageKind: imageKindSchema,
+    heroImageCredit: nullablePlainText(180).default(null),
+    heroImageCreditUrl: optionalHttpsUrl.default(""),
     galleryTitle: plainText(120).default("Uma presença digital mais completa"),
     galleryIntro: plainText(600).default(
       "Esta seção está pronta para receber fotos oficiais ou autorizadas. Enquanto não houver imagens, a demonstração exibirá composições visuais claramente identificadas como ilustrativas.",
