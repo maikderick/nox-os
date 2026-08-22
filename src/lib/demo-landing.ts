@@ -139,21 +139,64 @@ export function generateDemoLandingContent(lead: DemoLeadInput): DemoLandingCont
   const neighborhood = safeLeadText(lead.neighborhood, 96);
 
   const knownFacts = compact([
-    `Categoria cadastrada: ${category}`,
-    location ? `Localização informada: ${location}` : null,
-    neighborhood ? `Bairro informado: ${neighborhood}` : null,
-    lead.address ? "Endereço cadastrado" : null,
-    lead.phoneE164 ? "Contato telefônico disponível" : null,
+    `Categoria: ${category}`,
+    location ? `Localização: ${location}` : null,
+    neighborhood && neighborhood !== location ? `Bairro: ${neighborhood}` : null,
+    lead.address ? "Endereço informado" : null,
   ]).slice(0, 5);
 
-  const locationSentence = location ? ` com localização informada em ${location}` : "";
+  const locationSentence = location ? ` e tem localização informada em ${location}` : "";
+  const processLocationStep = location
+    ? `Confira a localização informada em ${location}.`
+    : "Confirme a localização diretamente com o estabelecimento.";
+  const faqs = [
+    {
+      question: "Em qual categoria atua?",
+      answer: `${name} atua na categoria ${category}.`,
+    },
+    ...(location
+      ? [
+          {
+            question: "Qual é a localização informada?",
+            answer: `A localização informada de ${name} é ${location}.`,
+          },
+        ]
+      : []),
+    {
+      question: "Como confirmar os detalhes?",
+      answer:
+        "Consulte diretamente o estabelecimento para validar as informações importantes para a sua necessidade.",
+    },
+    {
+      question: "Esta é a página oficial do estabelecimento?",
+      answer:
+        "Não. Esta é uma demonstração não oficial criada para apresentar uma possível presença digital.",
+    },
+  ];
 
   return demoLandingContentSchema.parse({
     headline: `Conheça ${name}`,
     subheadline: `${category}${location ? ` em ${location}` : ""}. ${template.context}`,
-    about: `${name} está cadastrado na categoria ${category}${locationSentence}. Esta demonstração mostra como as informações confirmadas do estabelecimento podem ser organizadas em uma página clara e acessível.`,
+    about: `${name} atua na categoria ${category}${locationSentence}. Esta demonstração reúne as informações essenciais do estabelecimento em uma página clara e acessível.`,
+    aboutTitle: `Sobre ${name}`,
     benefits: knownFacts,
+    factsTitle: "Informações essenciais",
     services: [],
+    servicesTitle: "Serviços",
+    servicesIntro: `${name} atua na categoria ${category}. Consulte o estabelecimento para confirmar os detalhes do que está disponível.`,
+    processTitle: `Como conhecer ${name}`,
+    processIntro:
+      "Encontre as informações essenciais e verifique os detalhes importantes antes de decidir.",
+    processSteps: [
+      `Confira a atuação na categoria ${category}.`,
+      processLocationStep,
+      "Confirme diretamente os detalhes importantes para a sua necessidade.",
+    ],
+    faqTitle: "Dúvidas frequentes",
+    faqs,
+    finalCtaTitle: `Conheça melhor ${name}`,
+    finalCtaText:
+      "Use as informações disponíveis nesta prévia como ponto de partida e valide os detalhes diretamente com o estabelecimento.",
     ctaLabel: "Ver informações",
     primaryColor: template.primaryColor,
     accentColor: template.accentColor,
