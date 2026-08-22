@@ -70,6 +70,7 @@ const EMPTY_DRAFT: Draft = {
   heroImageKind: "official",
   heroImageCredit: null,
   heroImageCreditUrl: "",
+  builtSiteUrl: "",
   aboutTitle: "Sobre",
   about: "",
   factsTitle: "Destaques",
@@ -260,6 +261,12 @@ export function DemoLandingPanel({
   }, [landing, shareUrl]);
 
   const lovablePrompt = lovablePromptOverride ?? lovableBriefing?.prompt ?? "";
+
+  /** Served from the demo's own address, so it dies with the demo. */
+  const builtSiteShareUrl = useMemo(() => {
+    if (!landing?.content.builtSiteUrl?.trim() || typeof window === "undefined") return null;
+    return new URL(`/demo/${landing.slug}/site`, window.location.origin).toString();
+  }, [landing]);
 
   function updateDraft<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -512,6 +519,17 @@ export function DemoLandingPanel({
     // The prompt travels in the URL fragment, so it never reaches a server log.
     window.open(url, "_blank", "noopener,noreferrer");
     setNotice("Lovable aberto em outra aba com o prompt já preenchido.");
+  }
+
+  async function copyBuiltSiteLink() {
+    if (!builtSiteShareUrl) return;
+    try {
+      await navigator.clipboard.writeText(builtSiteShareUrl);
+      setNotice("Link do site copiado.");
+      setError(null);
+    } catch {
+      setError("Não foi possível copiar automaticamente. Copie o endereço exibido ao lado.");
+    }
   }
 
   async function copyPreviewLink() {
@@ -802,6 +820,50 @@ export function DemoLandingPanel({
                 <strong className="text-nox-cyan">Copiar prompt</strong> e cole direto no campo
                 dele — o conteúdo é exatamente o mesmo.
               </p>
+
+              <div className="mt-4 rounded-lg border border-nox-border bg-nox-surface p-4">
+                <h4 className="text-sm font-medium text-white">Site já construído</h4>
+                <p className="mt-1 text-xs leading-5 text-nox-muted">
+                  Depois de publicar no Lovable, cole aqui o endereço. O NOX OS passa a servir esse
+                  site pelo seu próprio domínio, com a mesma validade da demonstração — quando ela
+                  expira, o link para de funcionar.
+                </p>
+                <div className="mt-3">
+                  <UrlField
+                    label="Endereço do site publicado"
+                    hint="Obrigatoriamente HTTPS."
+                    value={draft.builtSiteUrl}
+                    onChange={(value) => updateDraft("builtSiteUrl", value)}
+                  />
+                </div>
+                {builtSiteShareUrl && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <a
+                      href={builtSiteShareUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg border border-nox-border px-3 py-2 text-sm text-nox-cyan hover:border-nox-cyan"
+                    >
+                      Abrir site gerado pelo Lovable ↗
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => void copyBuiltSiteLink()}
+                      className="rounded-lg border border-nox-border px-3 py-2 text-sm text-nox-muted hover:border-nox-cyan"
+                    >
+                      Copiar link
+                    </button>
+                    <code className="min-w-0 truncate text-xs text-nox-muted">
+                      {builtSiteShareUrl}
+                    </code>
+                  </div>
+                )}
+                {dirty && draft.builtSiteUrl.trim() && (
+                  <p className="mt-2 text-xs text-amber-200">
+                    Salve para o link passar a funcionar.
+                  </p>
+                )}
+              </div>
 
               <details className="mt-3 rounded-lg border border-nox-border bg-nox-surface">
                 <summary className="cursor-pointer px-4 py-3 text-sm text-white marker:text-nox-cyan">
@@ -1552,6 +1614,7 @@ function toDraft(content: EditableLandingContent): Draft {
     heroImageKind: content.heroImageKind ?? "official",
     heroImageCredit: content.heroImageCredit ?? null,
     heroImageCreditUrl: content.heroImageCreditUrl ?? "",
+    builtSiteUrl: content.builtSiteUrl ?? "",
     aboutTitle: content.aboutTitle ?? "Sobre",
     about: content.about ?? "",
     factsTitle: content.factsTitle ?? "Destaques",
@@ -1604,6 +1667,7 @@ function toContent(draft: Draft): EditableLandingContent {
     heroImageKind: draft.heroImageKind,
     heroImageCredit: draft.heroImageCredit,
     heroImageCreditUrl: draft.heroImageCreditUrl,
+    builtSiteUrl: draft.builtSiteUrl.trim(),
     aboutTitle: draft.aboutTitle.trim(),
     about: draft.about.trim(),
     factsTitle: draft.factsTitle.trim(),

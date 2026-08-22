@@ -51,6 +51,7 @@ export const DEMO_AI_PROTECTED_FIELDS = [
   "heroImageCredit",
   "heroImageCreditUrl",
   "galleryImages",
+  "builtSiteUrl",
   "instagramPosts",
 ] as const;
 
@@ -339,6 +340,7 @@ export function mergeDemoAiDraft(params: {
     heroImageCredit: current.heroImageCredit,
     heroImageCreditUrl: current.heroImageCreditUrl,
     galleryImages: current.galleryImages,
+    builtSiteUrl: current.builtSiteUrl,
     instagramPosts: current.instagramPosts,
     businessSnapshot: current.businessSnapshot ?? null,
   });

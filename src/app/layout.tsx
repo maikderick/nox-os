@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import {
+  Bricolage_Grotesque,
+  JetBrains_Mono,
+  Plus_Jakarta_Sans,
+  Space_Grotesk,
+} from "next/font/google";
 import "./globals.css";
 
 const display = Space_Grotesk({
@@ -9,6 +14,18 @@ const display = Space_Grotesk({
 
 const mono = JetBrains_Mono({
   variable: "--font-mono",
+  subsets: ["latin"],
+});
+
+/** Public demo pages only: a heavier, tighter display voice than the panel's. */
+const demoDisplay = Bricolage_Grotesque({
+  variable: "--font-demo-display",
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+});
+
+const demoBody = Plus_Jakarta_Sans({
+  variable: "--font-demo-body",
   subsets: ["latin"],
 });
 
@@ -42,7 +59,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR">
-      <body className={`${display.variable} ${mono.variable} antialiased`}>{children}</body>
+      <body
+        className={`${display.variable} ${mono.variable} ${demoDisplay.variable} ${demoBody.variable} antialiased`}
+      >
+        {children}
+      </body>
     </html>
   );
 }
