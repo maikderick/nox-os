@@ -105,7 +105,8 @@ export function DemoLandingPanel({
   }, [applyLanding, eligible, leadId]);
 
   useEffect(() => {
-    void loadLanding();
+    const timeoutId = window.setTimeout(() => void loadLanding(), 0);
+    return () => window.clearTimeout(timeoutId);
   }, [loadLanding]);
 
   const previewUrl = useMemo(

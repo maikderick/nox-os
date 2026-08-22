@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { FUNNEL_LABELS, FUNNEL_STAGES } from "@/lib/funnel";
 import { DemoLandingPanel } from "@/components/leads/demo-landing-panel";
 import { hasOwnWebsite } from "@/lib/website";
+import { buildWhatsAppLink, canOpenWhatsApp } from "@/lib/whatsapp";
 
 type LeadDetail = {
   id: string;
@@ -20,7 +21,7 @@ type LeadDetail = {
   phoneE164: string | null;
   website: string | null;
   websiteStatus: string;
-  socialLinks: string;
+  socialLinks: string[];
   source: string;
   sourceUrl: string | null;
   collectedAt: string;
@@ -60,8 +61,9 @@ export default function LeadDetailPage() {
   const router = useRouter();
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [message, setMessage] = useState("");
-  const [waLink, setWaLink] = useState<string | null>(null);
+  const [whatsappRequested, setWhatsappRequested] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [whatsappBusy, setWhatsappBusy] = useState(false);
   const [optInEvidence, setOptInEvidence] = useState("");
   const [optInSource, setOptInSource] = useState("registro manual");
 
@@ -71,9 +73,8 @@ export default function LeadDetailPage() {
     const data = (await res.json()) as LeadDetail;
     setLead({
       ...data,
-      scoreReasons: Array.isArray(data.scoreReasons)
-        ? data.scoreReasons
-        : JSON.parse(String(data.scoreReasons || "[]")),
+      scoreReasons: Array.isArray(data.scoreReasons) ? data.scoreReasons : [],
+      socialLinks: Array.isArray(data.socialLinks) ? data.socialLinks : [],
     });
     const preview = await fetch(`/api/leads/${params.id}?action=preview-message`, {
       method: "POST",
@@ -85,7 +86,25 @@ export default function LeadDetailPage() {
   }, [params.id]);
 
   useEffect(() => {
-    void load();
+    const initialLoad = window.setTimeout(() => void load(), 0);
+    const whatsappError = new URL(window.location.href).searchParams.get("whatsappError");
+    const errorLoad = whatsappError
+      ? window.setTimeout(() => {
+          setStatusMsg(whatsappError);
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete("whatsappError");
+          window.history.replaceState(
+            null,
+            "",
+            `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`,
+          );
+        }, 0)
+      : null;
+
+    return () => {
+      window.clearTimeout(initialLoad);
+      if (errorLoad != null) window.clearTimeout(errorLoad);
+    };
   }, [load]);
 
   if (!lead) {
@@ -94,12 +113,17 @@ export default function LeadDetailPage() {
 
   const consent = lead.consents[0];
   const optIn = consent?.optInStatus ?? "unknown";
-  const social = JSON.parse(lead.socialLinks || "[]") as string[];
-  const waBlocked =
-    lead.doNotContact ||
-    lead.suppressions.length > 0 ||
-    optIn !== "verified" ||
-    !lead.phoneE164;
+  const social = lead.socialLinks;
+  const latestWhatsAppAttempt = lead.contacts.find((contact) => contact.channel === "whatsapp");
+  const hasPendingWhatsAppAttempt =
+    latestWhatsAppAttempt?.outcome === "link_prepared" && !latestWhatsAppAttempt.confirmedSent;
+  const whatsappGate = canOpenWhatsApp({
+    optInStatus: optIn,
+    doNotContact: lead.doNotContact,
+    phoneE164: lead.phoneE164,
+    suppressed: lead.suppressions.length > 0 || lead.doNotContact,
+  });
+  const waBlocked = !whatsappGate.allowed;
   const demoEligible = !hasOwnWebsite(lead.website);
 
   async function patch(body: Record<string, unknown>) {
@@ -117,29 +141,54 @@ export default function LeadDetailPage() {
     await load();
   }
 
-  async function prepareWhatsApp() {
-    if (!lead) return;
-    if (!confirm("Confirmar abertura manual de uma única conversa no WhatsApp?")) return;
-    const leadId = lead.id;
-    const res = await fetch(`/api/leads/${leadId}?action=whatsapp-link`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, confirmPreview: true }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setStatusMsg(data.error ?? "Bloqueado");
+  function handleWhatsAppSubmit(event: FormEvent<HTMLFormElement>) {
+    if (!lead || waBlocked || !lead.phoneE164) {
+      event.preventDefault();
+      setStatusMsg(whatsappGate.reason ?? "WhatsApp indisponível para este contato.");
       return;
     }
-    setWaLink(data.link);
-    window.open(data.link, "_blank", "noopener,noreferrer");
-    const sent = confirm("A mensagem foi realmente enviada no WhatsApp?");
-    await fetch(`/api/leads/${leadId}?action=confirm-sent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sent }),
-    });
-    await load();
+    if (!message.trim()) {
+      event.preventDefault();
+      setStatusMsg("Escreva a mensagem antes de abrir o WhatsApp.");
+      return;
+    }
+    if (!confirm("Confirmar abertura manual de uma única conversa no WhatsApp?")) {
+      event.preventDefault();
+      return;
+    }
+
+    // Validate the exact client-side URL synchronously as an additional guard. The native
+    // form submission then revalidates consent/suppression on the server and redirects to
+    // wa.me without losing the browser's click gesture to an asynchronous fetch.
+    try {
+      buildWhatsAppLink(lead.phoneE164, message);
+    } catch {
+      event.preventDefault();
+      setStatusMsg("Telefone inválido. Corrija o número antes de abrir o WhatsApp.");
+      return;
+    }
+
+    setWhatsappRequested(true);
+    setStatusMsg("Abrindo o WhatsApp…");
+  }
+
+  async function confirmWhatsAppSent() {
+    if (!lead) return;
+    setWhatsappBusy(true);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}?action=confirm-sent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sent: true }),
+      });
+      if (!res.ok) throw new Error("Falha ao confirmar envio");
+      setStatusMsg("Mensagem marcada como enviada.");
+      await load();
+    } catch {
+      setStatusMsg("Não foi possível marcar a mensagem como enviada.");
+    } finally {
+      setWhatsappBusy(false);
+    }
   }
 
   async function removeLead() {
@@ -256,7 +305,7 @@ export default function LeadDetailPage() {
         onMessageChange={setMessage}
       />
 
-      <section className="rounded-xl border border-nox-border bg-nox-surface p-4">
+      <section id="whatsapp" className="scroll-mt-20 rounded-xl border border-nox-border bg-nox-surface p-4">
         <h2 className="font-medium text-white">Opt-in WhatsApp</h2>
         <p className="mt-1 text-sm text-nox-muted">
           Status atual: <strong className="text-white">{optIn}</strong>
@@ -314,16 +363,54 @@ export default function LeadDetailPage() {
           onChange={(e) => setMessage(e.target.value)}
           disabled={waBlocked}
         />
-        <button
-          type="button"
-          disabled={waBlocked}
-          className="mt-3 rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
-          onClick={() => void prepareWhatsApp()}
+        {waBlocked && (
+          <p id="whatsapp-block-reason" className="mt-2 text-sm text-amber-300">
+            WhatsApp indisponível: {whatsappGate.reason}
+          </p>
+        )}
+        <form
+          method="POST"
+          action={`/api/leads/${lead.id}?action=open-whatsapp`}
+          rel="noopener noreferrer"
+          onSubmit={handleWhatsAppSubmit}
+          className="mt-3 flex flex-wrap items-center gap-3"
         >
-          Abrir WhatsApp
-        </button>
-        {waLink && (
-          <p className="mt-2 break-all text-xs text-nox-muted">Link gerado: {waLink}</p>
+          <input type="hidden" name="message" value={message} />
+          <input type="hidden" name="confirmPreview" value="true" />
+          <button
+            type="submit"
+            formTarget="_self"
+            disabled={waBlocked || whatsappBusy || !message.trim()}
+            aria-describedby={waBlocked ? "whatsapp-block-reason" : undefined}
+            title={waBlocked ? whatsappGate.reason : "Abre nesta aba para evitar bloqueadores"}
+            className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Abrir WhatsApp
+          </button>
+          <button
+            type="submit"
+            formTarget="_blank"
+            disabled={waBlocked || whatsappBusy || !message.trim()}
+            className="rounded-lg border border-nox-border px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Abrir em nova aba
+          </button>
+        </form>
+        <p className="mt-2 text-xs text-nox-muted">
+          O botão principal usa esta mesma aba e funciona mesmo quando o navegador bloqueia pop-ups.
+        </p>
+        {(whatsappRequested || hasPendingWhatsAppAttempt) && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-nox-muted">
+            <span>Depois de enviar a mensagem no WhatsApp:</span>
+            <button
+              type="button"
+              disabled={whatsappBusy}
+              className="rounded border border-nox-border px-2 py-1 text-emerald-300 disabled:opacity-40"
+              onClick={() => void confirmWhatsAppSent()}
+            >
+              Marcar como enviada
+            </button>
+          </div>
         )}
       </section>
 

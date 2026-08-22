@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -55,6 +56,7 @@ type LeadItem = {
 };
 
 export default function LeadsDashboardPage() {
+  const resultsRef = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [items, setItems] = useState<LeadItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -104,10 +106,30 @@ export default function LeadsDashboardPage() {
   }, [includeWithWebsite, query]);
 
   useEffect(() => {
-    void load();
+    const initialLoad = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(initialLoad);
   }, [load]);
 
   const pageCount = Math.max(1, Math.ceil(total / 25));
+
+  const selectCategory = useCallback((category: string) => {
+    setPage(1);
+    setFilters((current) => ({
+      ...current,
+      category: current.category === category ? "" : category,
+    }));
+    window.setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }, []);
+
+  const toggleScoreSort = useCallback(() => {
+    setPage(1);
+    setFilters((current) => ({
+      ...current,
+      sort: current.sort === "score_desc" ? "score_asc" : "score_desc",
+    }));
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -122,6 +144,9 @@ export default function LeadsDashboardPage() {
           </p>
           <p className="mt-1 text-xs text-emerald-300">
             Fila padrão: somente empresas sem site próprio
+            <span className="text-nox-muted">
+              {" "}· O contato abre pela ficha após telefone válido e opt-in verificado.
+            </span>
           </p>
         </div>
         <Link
@@ -162,13 +187,21 @@ export default function LeadsDashboardPage() {
             ))}
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
-            <ChartCard title="Por categoria" data={stats.byCategory} />
+            <ChartCard
+              title="Por categoria"
+              data={stats.byCategory}
+              selectedName={filters.category}
+              onSelect={selectCategory}
+            />
             <ChartCard title="Por cidade" data={stats.byCity} />
           </div>
         </>
       )}
 
-      <div className="rounded-xl border border-nox-border bg-nox-surface p-4">
+      <div
+        ref={resultsRef}
+        className="scroll-mt-20 rounded-xl border border-nox-border bg-nox-surface p-4"
+      >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-nox-border bg-nox-bg/50 p-3">
           <div>
             <p className="text-sm font-medium text-white">Presença de site</p>
@@ -361,17 +394,50 @@ export default function LeadsDashboardPage() {
                   <th className="p-2">Categoria</th>
                   <th className="p-2">Cidade</th>
                   <th className="p-2">km</th>
-                  <th className="p-2">Score</th>
+                  <th
+                    className="p-2"
+                    aria-sort={
+                      filters.sort === "score_desc"
+                        ? "descending"
+                        : filters.sort === "score_asc"
+                          ? "ascending"
+                          : "none"
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-nox-panel hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nox-cyan"
+                      onClick={toggleScoreSort}
+                      title="Ordenar pelo score"
+                      aria-label={
+                        filters.sort === "score_desc"
+                          ? "Score em ordem decrescente. Clique para ordenar do menor para o maior."
+                          : filters.sort === "score_asc"
+                            ? "Score em ordem crescente. Clique para ordenar do maior para o menor."
+                            : "Ordenar pelo score do maior para o menor."
+                      }
+                    >
+                      Score
+                      <span aria-hidden="true">
+                        {filters.sort === "score_desc"
+                          ? "↓"
+                          : filters.sort === "score_asc"
+                            ? "↑"
+                            : "↕"}
+                      </span>
+                    </button>
+                  </th>
                   <th className="p-2">Conf.</th>
                   <th className="p-2">Funil</th>
                   <th className="p-2">Site</th>
                   <th className="p-2">Opt-in</th>
+                  <th className="p-2">Contato</th>
                 </tr>
               </thead>
               <tbody>
                 {!loading && items.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-nox-muted">
+                    <td colSpan={10} className="p-8 text-center text-nox-muted">
                       Nenhum lead encontrado com os filtros atuais.
                     </td>
                   </tr>
@@ -401,6 +467,16 @@ export default function LeadsDashboardPage() {
                       <WebsiteBadge item={item} />
                     </td>
                     <td className="p-2">{item.optInStatus}</td>
+                    <td className="p-2">
+                      <Link
+                        href={`/leads/${item.id}#whatsapp`}
+                        className="rounded border border-nox-border px-2 py-1 text-xs text-nox-cyan hover:border-nox-cyan"
+                      >
+                        {item.phoneE164 && item.optInStatus === "verified" && !item.doNotContact
+                          ? "Abrir WhatsApp"
+                          : "Preparar contato"}
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -414,13 +490,16 @@ export default function LeadsDashboardPage() {
               </p>
             )}
             {items.map((item) => (
-              <Link
+              <article
                 key={item.id}
-                href={`/leads/${item.id}`}
                 className="rounded-xl border border-nox-border bg-nox-panel p-4 hover:border-nox-purple"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-medium text-white">{item.name}</h3>
+                  <h3 className="font-medium text-white">
+                    <Link href={`/leads/${item.id}`} className="hover:text-nox-cyan">
+                      {item.name}
+                    </Link>
+                  </h3>
                   <ScorePill score={item.opportunityScore} />
                 </div>
                 <p className="mt-1 text-xs text-nox-muted">
@@ -439,7 +518,15 @@ export default function LeadsDashboardPage() {
                     </span>
                   ))}
                 </div>
-              </Link>
+                <Link
+                  href={`/leads/${item.id}#whatsapp`}
+                  className="mt-4 inline-flex rounded-lg border border-nox-border px-3 py-1.5 text-xs text-nox-cyan hover:border-nox-cyan"
+                >
+                  {item.phoneE164 && item.optInStatus === "verified" && !item.doNotContact
+                    ? "Abrir WhatsApp"
+                    : "Preparar contato"}
+                </Link>
+              </article>
             ))}
           </div>
         )}
@@ -493,13 +580,22 @@ function WebsiteBadge({ item }: { item: LeadItem }) {
 function ChartCard({
   title,
   data,
+  selectedName,
+  onSelect,
 }: {
   title: string;
   data: { name: string; count: number }[];
+  selectedName?: string;
+  onSelect?: (name: string) => void;
 }) {
   return (
     <div className="rounded-xl border border-nox-border bg-nox-surface p-4">
-      <h2 className="mb-3 text-sm font-medium text-white">{title}</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-medium text-white">{title}</h2>
+        {onSelect && (
+          <p className="text-xs text-nox-muted">Clique para filtrar</p>
+        )}
+      </div>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
@@ -510,10 +606,58 @@ function ChartCard({
               contentStyle={{ background: "#151822", border: "1px solid #2a2f3d" }}
               labelStyle={{ color: "#fff" }}
             />
-            <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+            <Bar
+              dataKey="count"
+              fill="#8b5cf6"
+              radius={[4, 4, 0, 0]}
+              className={onSelect ? "cursor-pointer" : undefined}
+              onClick={
+                onSelect
+                  ? (entry) => {
+                      const name = entry.payload?.name;
+                      if (typeof name === "string") onSelect(name);
+                    }
+                  : undefined
+              }
+            >
+              {data.map((item) => {
+                const selected = selectedName === item.name;
+                return (
+                  <Cell
+                    key={item.name}
+                    fill={selected ? "#22d3ee" : "#8b5cf6"}
+                    stroke={selected ? "#a5f3fc" : undefined}
+                    strokeWidth={selected ? 2 : undefined}
+                  />
+                );
+              })}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
+      {onSelect && (
+        <div className="mt-3 flex flex-wrap gap-2" aria-label="Filtrar por categoria">
+          {data.map((item) => {
+            const selected = selectedName === item.name;
+            return (
+              <button
+                key={item.name}
+                type="button"
+                aria-pressed={selected}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nox-cyan",
+                  selected
+                    ? "border-nox-cyan bg-nox-cyan/10 text-nox-cyan"
+                    : "border-nox-border text-nox-muted hover:border-nox-purple hover:text-white",
+                )}
+                onClick={() => onSelect(item.name)}
+              >
+                {item.name} ({item.count})
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

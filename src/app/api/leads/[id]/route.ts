@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { FUNNEL_STAGES } from "@/lib/funnel";
 import { writeAudit } from "@/lib/settings";
+import { parseJsonArray } from "@/lib/utils";
 import { canOpenWhatsApp, buildWhatsAppLink, renderWhatsAppTemplate } from "@/lib/whatsapp";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -30,8 +31,8 @@ export async function GET(_req: Request, ctx: Ctx) {
 
   return NextResponse.json({
     ...business,
-    scoreReasons: JSON.parse(business.scoreReasons || "[]"),
-    socialLinks: JSON.parse(business.socialLinks || "[]"),
+    scoreReasons: parseJsonArray(business.scoreReasons),
+    socialLinks: parseJsonArray(business.socialLinks),
   });
 }
 
@@ -159,6 +160,13 @@ const waSchema = z.object({
   confirmPreview: z.literal(true),
 });
 
+function whatsappFormError(req: Request, id: string, error: string) {
+  const back = new URL(`/leads/${encodeURIComponent(id)}`, req.url);
+  back.searchParams.set("whatsappError", error);
+  back.hash = "whatsapp";
+  return NextResponse.redirect(back, 303);
+}
+
 /** Prepare a single manual wa.me link — never sends automatically. */
 export async function POST(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions);
@@ -168,10 +176,32 @@ export async function POST(req: Request, ctx: Ctx) {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
 
-  if (action === "whatsapp-link") {
-    const body = waSchema.safeParse(await req.json());
+  if (action === "whatsapp-link" || action === "open-whatsapp") {
+    const isNativeOpen = action === "open-whatsapp";
+    let rawBody: unknown;
+    try {
+      if (isNativeOpen) {
+        const form = await req.formData();
+        rawBody = {
+          message: form.get("message"),
+          confirmPreview: form.get("confirmPreview") === "true",
+        };
+      } else {
+        rawBody = await req.json();
+      }
+    } catch {
+      const error = "Solicitação do WhatsApp inválida. Atualize a página e tente novamente.";
+      return isNativeOpen
+        ? whatsappFormError(req, id, error)
+        : NextResponse.json({ error }, { status: 400 });
+    }
+
+    const body = waSchema.safeParse(rawBody);
     if (!body.success) {
-      return NextResponse.json({ error: body.error.flatten() }, { status: 400 });
+      const error = "A mensagem do WhatsApp não pode ficar vazia.";
+      return isNativeOpen
+        ? whatsappFormError(req, id, error)
+        : NextResponse.json({ error: body.error.flatten() }, { status: 400 });
     }
 
     const business = await prisma.business.findUnique({
@@ -181,7 +211,11 @@ export async function POST(req: Request, ctx: Ctx) {
         suppressions: true,
       },
     });
-    if (!business) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!business) {
+      return isNativeOpen
+        ? whatsappFormError(req, id, "Estabelecimento não encontrado.")
+        : NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     const optIn = business.consents[0]?.optInStatus ?? "unknown";
     const gate = canOpenWhatsApp({
@@ -192,10 +226,21 @@ export async function POST(req: Request, ctx: Ctx) {
     });
 
     if (!gate.allowed) {
-      return NextResponse.json({ error: gate.reason }, { status: 403 });
+      const error = gate.reason ?? "Contato pelo WhatsApp indisponível.";
+      return isNativeOpen
+        ? whatsappFormError(req, id, error)
+        : NextResponse.json({ error }, { status: 403 });
     }
 
-    const link = buildWhatsAppLink(business.phoneE164!, body.data.message);
+    let link: string;
+    try {
+      link = buildWhatsAppLink(business.phoneE164!, body.data.message);
+    } catch {
+      const error = "Telefone inválido. Corrija o número antes de abrir o WhatsApp.";
+      return isNativeOpen
+        ? whatsappFormError(req, id, error)
+        : NextResponse.json({ error }, { status: 422 });
+    }
 
     await prisma.contactAttempt.create({
       data: {
@@ -207,6 +252,10 @@ export async function POST(req: Request, ctx: Ctx) {
         outcome: "link_prepared",
       },
     });
+
+    if (isNativeOpen) {
+      return NextResponse.redirect(link, 303);
+    }
 
     return NextResponse.json({
       link,

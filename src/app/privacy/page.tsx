@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ensureDefaultSettings } from "@/lib/settings";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Política de privacidade",
 };

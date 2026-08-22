@@ -12,6 +12,7 @@ Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior
 - Fila padrão somente com empresas sem site próprio
 - Landings demonstrativas gratuitas por categoria, sem API de IA
 - WhatsApp **manual** somente com opt-in `verified` (sem disparo automático/massa)
+- Alteração da própria senha e gestão administrativa de usuários
 - Deduplicação idempotente
 - Política de privacidade e retenção
 
@@ -19,7 +20,7 @@ Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior
 
 - Next.js 15 (App Router) + TypeScript
 - Tailwind CSS
-- Prisma + SQLite (local) / PostgreSQL+PostGIS via Docker Compose (produção)
+- Prisma + PostgreSQL/PostGIS
 - NextAuth (credentials)
 - Leaflet + Recharts
 - Vitest + Playwright
@@ -28,9 +29,10 @@ Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior
 
 ```bash
 cd nox-os
+docker compose up -d
 cp .env.example .env
 npm install
-npx prisma migrate dev --name init
+npx prisma migrate deploy
 npm run db:seed
 npm run dev
 ```
@@ -39,11 +41,11 @@ Acesse:
 
 - Site: http://localhost:3000
 - Login: http://localhost:3000/login
-- Usuário seed: `admin@noxos.local` / `noxos-admin-123` (altere `ADMIN_PASSWORD`)
+- Usuário seed: definido por `ADMIN_EMAIL` e `ADMIN_PASSWORD` (mínimo de 12 caracteres)
 
 Com `DEMO_MODE=true`, o seed cria poucos registros claramente marcados como **Dados de demonstração** (não contam como leads reais na meta).
 
-## PostgreSQL (opcional)
+## PostgreSQL local
 
 Se tiver Docker:
 
@@ -51,15 +53,15 @@ Se tiver Docker:
 docker compose up -d
 ```
 
-No `.env`:
+O `.env.example` já aponta para esse banco local:
 
 ```env
 DATABASE_URL="postgresql://nox:nox@localhost:5432/nox_os?schema=public"
 ```
 
-Altere `provider = "postgresql"` em `prisma/schema.prisma`, rode `npx prisma migrate dev` e o seed.
+O schema e as migrations já são PostgreSQL. Rode `npx prisma migrate deploy` e depois `npm run db:seed`.
 
-Distâncias usam Haversine na aplicação (compatível com SQLite e Postgres). Em Postgres/PostGIS você pode evoluir índices espaciais depois.
+Distâncias usam Haversine na aplicação. O banco PostGIS permite evoluir índices espaciais depois.
 
 ## Configurações iniciais
 
@@ -86,6 +88,8 @@ Localização: autorização do navegador **ou** cidade/endereço/CEP (Nominatim
 4. Ou colar/importar CSV
 
 Controles: pausar / continuar / cancelar. Contadores: encontrados, aceitos, duplicados, rejeitados.
+Mantenha a página de importação aberta: a atualização periódica do progresso aciona novos blocos
+de trabalho sem chamadas recursivas entre funções.
 
 ```bash
 npm run import:csv -- ./arquivo.csv
@@ -119,10 +123,18 @@ usar o recurso em um ambiente já existente.
 
 - `optInStatus`: `unknown` | `pending` | `verified` | `refused`
 - Botão **Abrir WhatsApp** desabilitado sem `verified`
-- Prévia editável + confirmação humana + pergunta se enviou
+- Prévia editável + confirmação humana + marcação manual de envio
 - Lista permanente de supressão (`Não contatar` / `refused`)
 
 Não há fila, automação, envio em massa ou marcação automática só pelo clique.
+
+## Usuários e senha
+
+- **Minha conta:** qualquer usuário ativo pode alterar a própria senha informando a senha atual.
+- **Usuários:** administradores podem criar contas `admin` ou `operator`, redefinir senhas e
+  ativar/desativar acessos.
+- Senhas novas exigem no mínimo 12 caracteres.
+- O sistema impede desativar o próprio administrador ou remover o último administrador ativo.
 
 ## Testes
 
@@ -148,8 +160,14 @@ Defina `DATABASE_URL` (Postgres gerenciado), `NEXTAUTH_SECRET`, `NEXTAUTH_URL` e
 
 ```bash
 npx prisma migrate deploy
-npm run db:seed
 ```
+
+O script `vercel-build` aplica migrations antes do build. Execute o seed uma vez, de um ambiente seguro, usando `ADMIN_EMAIL` e uma senha forte em `ADMIN_PASSWORD`. Não mantenha a senha administrativa como variável da aplicação depois do seed.
+
+A importação Overpass usa `waitUntil`, blocos limitados a uma função de até 300 segundos e a
+consulta de progresso do navegador para continuar. Isso evita requisições recursivas e o erro
+`INFINITE_LOOP_DETECTED` da Vercel. Importações grandes continuam sujeitas aos limites e à
+disponibilidade dos servidores públicos do Overpass.
 
 ### Node em VPS
 

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ensureDefaultSettings } from "@/lib/settings";
 
+export const dynamic = "force-dynamic";
+
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",

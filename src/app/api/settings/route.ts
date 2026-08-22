@@ -4,13 +4,14 @@ import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/settings";
+import { settingsForClient } from "@/lib/settings-serialization";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
   return NextResponse.json({
-    settings,
+    settings: settings ? settingsForClient(settings) : null,
     envHints: {
       demoMode: process.env.DEMO_MODE === "true",
       hasNextAuthSecret: Boolean(process.env.NEXTAUTH_SECRET),
@@ -65,5 +66,5 @@ export async function PATCH(req: Request) {
     meta: body.data,
   });
 
-  return NextResponse.json({ settings });
+  return NextResponse.json({ settings: settingsForClient(settings) });
 }

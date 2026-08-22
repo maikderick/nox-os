@@ -1,6 +1,9 @@
-import { phoneDigitsForWaMe } from "./phone";
+import { isValidPhoneE164, phoneDigitsForWaMe } from "./phone";
 
 export function buildWhatsAppLink(e164: string, message: string): string {
+  if (!isValidPhoneE164(e164)) {
+    throw new Error("Telefone E.164 invalido para WhatsApp.");
+  }
   const digits = phoneDigitsForWaMe(e164);
   const text = encodeURIComponent(message);
   return `https://wa.me/${digits}?text=${text}`;
@@ -31,6 +34,12 @@ export function canOpenWhatsApp(opts: {
   }
   if (!opts.phoneE164) {
     return { allowed: false, reason: "Telefone E.164 indisponível." };
+  }
+  if (!isValidPhoneE164(opts.phoneE164)) {
+    return {
+      allowed: false,
+      reason: "Telefone inválido. Corrija o número para o formato E.164 (ex.: +5581999999999).",
+    };
   }
   if (opts.optInStatus !== "verified") {
     return {

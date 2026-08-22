@@ -1,6 +1,6 @@
 /**
  * Performance harness for 1k / 10k records (run: npm run test:perf).
- * Uses SQLite local DB — does not invent production leads.
+ * Uses the configured PostgreSQL database — does not invent production leads.
  */
 import { PrismaClient } from "@prisma/client";
 import { normalizeName } from "../src/lib/dedupe";

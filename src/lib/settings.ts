@@ -26,9 +26,17 @@ export async function writeAudit(params: {
   entityId?: string;
   meta?: unknown;
 }) {
+  const userId = params.userId
+    ? (
+        await prisma.user.findUnique({
+          where: { id: params.userId },
+          select: { id: true },
+        })
+      )?.id ?? null
+    : null;
   await prisma.auditLog.create({
     data: {
-      userId: params.userId ?? null,
+      userId,
       action: params.action,
       entity: params.entity,
       entityId: params.entityId,

@@ -3,19 +3,46 @@ import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { runOverpassImportJob, upsertPlaces } from "@/lib/import-service";
+import {
+  normalizeImportRadii,
+  runOverpassImportBurst,
+  upsertPlaces,
+} from "@/lib/import-service";
 import { parseCsvPlaces } from "@/lib/places/csv";
-import { DEFAULT_RADII_KM } from "@/lib/funnel";
 import { writeAudit } from "@/lib/settings";
+import { CATEGORY_GROUPS } from "@/lib/categories";
+import { parseJsonArray } from "@/lib/utils";
+import { waitUntil } from "@vercel/functions";
+
+export const maxDuration = 300;
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  await prisma.importJob.updateMany({
+    where: {
+      provider: "overpass",
+      status: "processing",
+      updatedAt: { lt: new Date(Date.now() - 6 * 60 * 1000) },
+    },
+    data: {
+      status: "running",
+      errorMessage: null,
+      finishedAt: null,
+    },
+  });
+
   const jobs = await prisma.importJob.findMany({
     orderBy: { createdAt: "desc" },
     take: 20,
   });
+
+  const readyJob = jobs.find(
+    (job) => job.provider === "overpass" && ["pending", "running"].includes(job.status),
+  );
+  if (readyJob) waitUntil(runOverpassImportBurst(readyJob.id));
+
   return NextResponse.json({ jobs });
 }
 
@@ -25,7 +52,7 @@ const startSchema = z.object({
   lng: z.number().optional(),
   label: z.string().optional(),
   categoryIds: z.array(z.string()).default([]),
-  radiiKm: z.array(z.number()).optional(),
+  radiiKm: z.array(z.number().min(1).max(200)).optional(),
   csvText: z.string().optional(),
 });
 
@@ -40,6 +67,17 @@ export async function POST(req: Request) {
 
   const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
   const data = body.data;
+  const validCategoryIds = new Set(CATEGORY_GROUPS.map((group) => group.id));
+  const configuredCategories = parseJsonArray(settings?.enabledCategories).filter((id) =>
+    validCategoryIds.has(id),
+  );
+  const requestedCategories = data.categoryIds.filter((id) => validCategoryIds.has(id));
+  const categories =
+    requestedCategories.length > 0
+      ? requestedCategories
+      : configuredCategories.length > 0
+        ? configuredCategories
+        : CATEGORY_GROUPS.map((group) => group.id);
 
   if (data.provider === "csv") {
     if (!data.csvText) {
@@ -60,7 +98,7 @@ export async function POST(req: Request) {
         originLat: origin?.lat,
         originLng: origin?.lng,
         originLabel: data.label,
-        categories: JSON.stringify(data.categoryIds),
+        categories: JSON.stringify(categories),
         startedAt: new Date(),
         foundCount: places.length,
       },
@@ -105,6 +143,38 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "lat/lng obrigatórios para Overpass" }, { status: 400 });
   }
 
+  // A second job would query the same free public service in parallel and make
+  // overload errors more likely. Recover abandoned jobs, then reuse any active
+  // collection instead of creating duplicates on repeated clicks.
+  const staleBefore = new Date(Date.now() - 7 * 60 * 1000);
+  await prisma.importJob.updateMany({
+    where: {
+      provider: "overpass",
+      status: { in: ["pending", "running", "processing"] },
+      updatedAt: { lt: staleBefore },
+    },
+    data: {
+      status: "failed",
+      finishedAt: new Date(),
+      errorMessage: "A execução anterior foi interrompida. Inicie a coleta novamente.",
+    },
+  });
+
+  const activeJob = await prisma.importJob.findFirst({
+    where: {
+      provider: "overpass",
+      status: { in: ["pending", "running", "processing"] },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, status: true },
+  });
+  if (activeJob) {
+    return NextResponse.json({
+      jobId: activeJob.id,
+      status: "already_running",
+    });
+  }
+
   const job = await prisma.importJob.create({
     data: {
       provider: "overpass",
@@ -112,13 +182,29 @@ export async function POST(req: Request) {
       originLat: data.lat,
       originLng: data.lng,
       originLabel: data.label,
-      radiiKm: JSON.stringify(data.radiiKm ?? [...DEFAULT_RADII_KM]),
-      categories: JSON.stringify(data.categoryIds),
+      radiiKm: JSON.stringify(
+        normalizeImportRadii(
+          data.radiiKm,
+          settings?.initialRadiusKm ?? 5,
+          settings?.maxRadiusKm ?? 80,
+        ),
+      ),
+      categories: JSON.stringify(categories),
     },
   });
 
-  // Fire-and-forget background import (same process)
-  void runOverpassImportJob(job.id);
+  await prisma.appSettings.updateMany({
+    where: { id: "default" },
+    data: {
+      originLat: data.lat,
+      originLng: data.lng,
+      originLabel: data.label,
+    },
+  });
+
+  // Work in a bounded burst. Progress polling safely starts a later burst when
+  // more checkpoints remain, avoiding recursive requests and Vercel HTTP 508.
+  waitUntil(runOverpassImportBurst(job.id));
 
   await writeAudit({
     userId: session.user.id,
@@ -148,21 +234,60 @@ export async function PATCH(req: Request) {
   if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   if (body.data.action === "pause") {
-    await prisma.importJob.update({
-      where: { id: job.id },
+    const result = await prisma.importJob.updateMany({
+      where: { id: job.id, status: { in: ["pending", "running", "processing"] } },
       data: { status: "paused", pausedAt: new Date() },
     });
+    if (result.count === 0) {
+      return NextResponse.json({ error: "Este job não está em execução." }, { status: 409 });
+    }
   } else if (body.data.action === "cancel") {
-    await prisma.importJob.update({
-      where: { id: job.id },
+    const result = await prisma.importJob.updateMany({
+      where: { id: job.id, status: { notIn: ["completed", "cancelled"] } },
       data: { status: "cancelled", cancelledAt: new Date(), finishedAt: new Date() },
     });
+    if (result.count === 0) {
+      return NextResponse.json({ error: "Este job já foi encerrado." }, { status: 409 });
+    }
   } else if (body.data.action === "resume") {
-    await prisma.importJob.update({
-      where: { id: job.id },
-      data: { status: "pending", pausedAt: null },
+    const otherActiveJob = await prisma.importJob.findFirst({
+      where: {
+        id: { not: job.id },
+        provider: "overpass",
+        status: { in: ["pending", "running", "processing"] },
+      },
+      select: { id: true },
     });
-    void runOverpassImportJob(job.id);
+    if (otherActiveJob) {
+      return NextResponse.json(
+        { error: "Já existe outra coleta em andamento. Pause ou cancele-a antes de continuar." },
+        { status: 409 },
+      );
+    }
+
+    const staleBefore = new Date(Date.now() - 4 * 60 * 1000);
+    const result = await prisma.importJob.updateMany({
+      where: {
+        id: job.id,
+        OR: [
+          { status: { in: ["paused", "failed"] } },
+          { status: { in: ["running", "processing"] }, updatedAt: { lt: staleBefore } },
+        ],
+      },
+      data: {
+        status: "pending",
+        pausedAt: null,
+        finishedAt: null,
+        errorMessage: null,
+      },
+    });
+    if (result.count === 0) {
+      return NextResponse.json(
+        { error: "O job já está rodando ou não pode ser retomado." },
+        { status: 409 },
+      );
+    }
+    waitUntil(runOverpassImportBurst(job.id));
   }
 
   return NextResponse.json({ ok: true });

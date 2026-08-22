@@ -15,8 +15,13 @@ test("private routes require auth", async ({ page }) => {
 
 test("login and leads dashboard", async ({ page }) => {
   await page.goto("/login");
-  await page.getByLabel("E-mail").fill("admin@noxos.local");
-  await page.getByLabel("Senha").fill("noxos-admin-123");
+  const adminEmail = process.env.E2E_ADMIN_EMAIL;
+  const adminPassword = process.env.E2E_ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    throw new Error("Defina E2E_ADMIN_EMAIL e E2E_ADMIN_PASSWORD para executar o E2E autenticado.");
+  }
+  await page.getByLabel("E-mail").fill(adminEmail);
+  await page.getByLabel("Senha").fill(adminPassword);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(page).toHaveURL(/leads/);
   await expect(page.getByRole("heading", { name: "Prospecção" })).toBeVisible();

@@ -4,8 +4,9 @@ import { upsertPlaces } from "../../src/lib/import-service";
 import type { PlaceRecord } from "../../src/lib/places/types";
 
 const prisma = new PrismaClient();
+const describeWithDatabase = process.env.DATABASE_URL ? describe : describe.skip;
 
-describe("import idempotent + pagination perf", () => {
+describeWithDatabase("import idempotent + pagination perf", () => {
   beforeAll(async () => {
     await prisma.business.deleteMany({ where: { source: "test" } });
   });
