@@ -797,6 +797,12 @@ export function DemoLandingPanel({
                 </p>
               )}
 
+              <p className="mt-3 text-xs text-nox-muted">
+                Se o Lovable abrir uma página de erro em vez do construtor, use{" "}
+                <strong className="text-nox-cyan">Copiar prompt</strong> e cole direto no campo
+                dele — o conteúdo é exatamente o mesmo.
+              </p>
+
               <details className="mt-3 rounded-lg border border-nox-border bg-nox-surface">
                 <summary className="cursor-pointer px-4 py-3 text-sm text-white marker:text-nox-cyan">
                   Ver e editar o prompt mestre
