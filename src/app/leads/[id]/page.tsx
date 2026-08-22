@@ -300,6 +300,7 @@ export default function LeadDetailPage() {
         leadId={lead.id}
         leadName={lead.name}
         leadCategory={lead.category}
+        leadSocialLinks={lead.socialLinks}
         eligible={demoEligible}
         whatsappBlocked={waBlocked}
         message={message}

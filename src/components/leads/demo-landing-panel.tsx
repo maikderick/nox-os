@@ -9,6 +9,7 @@ import {
   normalizeDemoCtaLabel,
   type DemoLandingContent,
 } from "@/lib/demo-landing-schema";
+import { findInstagramProfile, isInstagramPostUrl } from "@/lib/instagram";
 import { StockPhotoPicker, type PickerPhoto } from "@/components/leads/stock-photo-picker";
 
 type DemoLanding = {
@@ -29,11 +30,12 @@ type EditableLandingContent = DemoLandingContent;
 
 type Draft = Omit<
   EditableLandingContent,
-  "benefits" | "services" | "processSteps" | "faqs" | "galleryImages"
+  "benefits" | "services" | "processSteps" | "faqs" | "galleryImages" | "instagramPosts"
 > & {
   benefits: string;
   services: string;
   processSteps: string;
+  instagramPosts: string;
   faqs: DemoFaq[];
   galleryImages: DemoGalleryImage[];
 };
@@ -42,6 +44,7 @@ type Props = {
   leadId: string;
   leadName: string;
   leadCategory: string;
+  leadSocialLinks?: string[];
   eligible: boolean;
   whatsappBlocked: boolean;
   message: string;
@@ -72,6 +75,9 @@ const EMPTY_DRAFT: Draft = {
   galleryTitle: DEFAULT_GALLERY_TITLE,
   galleryIntro: DEFAULT_GALLERY_INTRO,
   galleryImages: [],
+  instagramTitle: "No Instagram",
+  instagramIntro: "",
+  instagramPosts: "",
   processTitle: "Como funciona",
   processIntro: "",
   processSteps: "",
@@ -142,6 +148,7 @@ export function DemoLandingPanel({
   leadId,
   leadName,
   leadCategory,
+  leadSocialLinks = [],
   eligible,
   whatsappBlocked,
   message,
@@ -220,6 +227,20 @@ export function DemoLandingPanel({
   }, [previewUrl]);
   const today = new Date().toISOString().slice(0, 10);
   const expiryInvalid = !expiresOn || expiresOn < today;
+
+  const instagramProfile = useMemo(
+    () => findInstagramProfile(leadSocialLinks),
+    [leadSocialLinks],
+  );
+  const instagramPostLines = useMemo(
+    () => toLines(draft.instagramPosts),
+    [draft.instagramPosts],
+  );
+  const instagramPostCount = instagramPostLines.length;
+  const invalidInstagramPosts = useMemo(
+    () => instagramPostLines.filter((line) => !isInstagramPostUrl(line)),
+    [instagramPostLines],
+  );
 
   function updateDraft<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -922,7 +943,75 @@ export function DemoLandingPanel({
             </EditorSection>
 
             <EditorSection
-              title="5. Como funciona"
+              title="5. Instagram do estabelecimento"
+              description={
+                instagramProfile
+                  ? `Perfil encontrado na ficha: @${instagramProfile.username}`
+                  : "Nenhum Instagram cadastrado na ficha deste lead."
+              }
+              defaultOpen={Boolean(instagramProfile) && !draft.instagramPosts.trim()}
+            >
+              <div className="rounded-lg border border-nox-cyan/20 bg-nox-cyan/5 p-3 text-xs leading-5 text-nox-muted">
+                As publicações são exibidas pelo próprio Instagram, com o nome do perfil e link.
+                Nenhuma imagem é copiada, então o estabelecimento continua dono do conteúdo e pode
+                removê-lo quando quiser. Use apenas posts públicos.
+              </div>
+
+              {instagramProfile && (
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <a
+                    href={instagramProfile.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border border-nox-border px-3 py-2 text-sm text-nox-cyan hover:border-nox-cyan"
+                  >
+                    Abrir @{instagramProfile.username} ↗
+                  </a>
+                  <span className="text-xs text-nox-muted">
+                    Abra o perfil, copie o endereço de até 3 publicações e cole abaixo.
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <TextField
+                  label="Título da seção"
+                  value={draft.instagramTitle}
+                  maxLength={120}
+                  onChange={(value) => updateDraft("instagramTitle", value)}
+                />
+                <TextAreaField
+                  label="Introdução da seção"
+                  value={draft.instagramIntro}
+                  maxLength={600}
+                  onChange={(value) => updateDraft("instagramIntro", value)}
+                />
+                <div className="lg:col-span-2">
+                  <TextAreaField
+                    label="Endereços das publicações"
+                    hint="Um por linha, no máximo 3. Formato instagram.com/p/... ou /reel/..."
+                    value={draft.instagramPosts}
+                    maxLength={6_000}
+                    onChange={(value) => updateDraft("instagramPosts", value)}
+                  />
+                </div>
+              </div>
+
+              {invalidInstagramPosts.length > 0 && (
+                <p role="alert" className="mt-2 text-xs text-red-300">
+                  {invalidInstagramPosts.length} endereço(s) não são publicações do Instagram e vão
+                  impedir o salvamento. Use o link de um post ou reel público.
+                </p>
+              )}
+              {instagramPostCount > 3 && (
+                <p role="alert" className="mt-2 text-xs text-red-300">
+                  Use no máximo 3 publicações.
+                </p>
+              )}
+            </EditorSection>
+
+            <EditorSection
+              title="6. Como funciona"
               description="Explique o processo sem prometer resultados."
               defaultOpen={
                 toLines(draft.processSteps).length < 3 ||
@@ -955,7 +1044,7 @@ export function DemoLandingPanel({
             </EditorSection>
 
             <EditorSection
-              title="6. Perguntas frequentes"
+              title="7. Perguntas frequentes"
               description={`${draft.faqs.length}/6 perguntas cadastradas.`}
               defaultOpen={draft.faqs.some(
                 (faq) => !faq.question.trim() || !faq.answer.trim(),
@@ -1020,7 +1109,7 @@ export function DemoLandingPanel({
             </EditorSection>
 
             <EditorSection
-              title="7. Contato"
+              title="8. Contato"
               description="Oriente o visitante a confirmar os detalhes com o estabelecimento."
               defaultOpen={!draft.contactTitle.trim() || !draft.contactText.trim()}
             >
@@ -1047,7 +1136,7 @@ export function DemoLandingPanel({
             </EditorSection>
 
             <EditorSection
-              title="8. Chamada final"
+              title="9. Chamada final"
               description="Fechamento final da página."
             >
               <div className="grid gap-4 lg:grid-cols-2">
@@ -1350,6 +1439,11 @@ function toDraft(content: EditableLandingContent): Draft {
           creditUrl: galleryImage.creditUrl ?? "",
         }))
       : [],
+    instagramTitle: content.instagramTitle ?? "No Instagram",
+    instagramIntro: content.instagramIntro ?? "",
+    instagramPosts: Array.isArray(content.instagramPosts)
+      ? content.instagramPosts.join("\n")
+      : "",
     processTitle: content.processTitle ?? "Como funciona",
     processIntro: content.processIntro ?? "",
     processSteps: Array.isArray(content.processSteps) ? content.processSteps.join("\n") : "",
@@ -1395,6 +1489,9 @@ function toContent(draft: Draft): EditableLandingContent {
       credit: galleryImage.credit,
       creditUrl: galleryImage.creditUrl,
     })),
+    instagramTitle: draft.instagramTitle.trim(),
+    instagramIntro: draft.instagramIntro.trim(),
+    instagramPosts: toLines(draft.instagramPosts),
     processTitle: draft.processTitle.trim(),
     processIntro: draft.processIntro.trim(),
     processSteps: toLines(draft.processSteps),
@@ -1434,6 +1531,7 @@ function validationFieldLabel(path: readonly PropertyKey[]): string {
     const part = path[2] === "url" ? "a URL" : "o texto alternativo";
     return position ? `${part} da imagem ${position}` : "as imagens da galeria";
   }
+  if (root === "instagramPosts") return "os endereços das publicações do Instagram";
   if (root === "processSteps") return "as etapas de como funciona";
   if (root === "benefits") return "as informações disponíveis";
   if (root === "services") return "os serviços";
