@@ -213,6 +213,18 @@ function contrastRatio(first: string, second: string): number {
   return (brighter + 0.05) / (darker + 0.05);
 }
 
+function mixHex(base: string, tint: string, ratio: number): string {
+  const channel = (hex: string, offset: number) =>
+    Number.parseInt(hex.slice(offset + 1, offset + 3), 16);
+  const parts = [0, 2, 4].map((offset) => {
+    const value = Math.round(
+      channel(base, offset) * (1 - ratio) + channel(tint, offset) * ratio,
+    );
+    return Math.min(255, Math.max(0, value)).toString(16).padStart(2, "0");
+  });
+  return `#${parts.join("")}`;
+}
+
 function readableAccentColor(color: string): string {
   return contrastRatio(color, "#07070a") >= 4.5 ? color : "#f8fafc";
 }
@@ -357,14 +369,18 @@ export default async function DemoLandingPage({ params }: PageProps) {
   const mainCtaHref = "#contato";
   const mainCtaLabel = ctaLabel;
   const accessibleGradient = `linear-gradient(rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.58)), linear-gradient(135deg, ${content.primaryColor}, ${content.accentColor})`;
+  // The page ground carries a trace of the business's own colour, so a demo for a
+  // bakery does not sit on the same neutral black as one for a garage.
+  const ink = mixHex("#07070a", content.primaryColor, 0.07);
   const theme = {
     "--demo-primary": content.primaryColor,
     "--demo-accent": content.accentColor,
+    backgroundColor: ink,
   } as CSSProperties;
 
   return (
     <main
-      className="min-h-screen overflow-x-clip bg-[#07070a] pb-24 text-slate-50 selection:bg-white/20 md:pb-0"
+      className="demo-page min-h-screen overflow-x-clip pb-24 text-slate-50 selection:bg-white/20 md:pb-0"
       style={theme}
     >
       <div
@@ -392,8 +408,11 @@ export default async function DemoLandingPage({ params }: PageProps) {
       </div>
 
       <div className="relative z-10">
-        <nav className="sticky top-9 z-40 border-b border-white/[0.07] bg-[#07070a]/88 backdrop-blur-2xl">
-          <div className="mx-auto flex h-[4.75rem] max-w-7xl items-center justify-between gap-5 px-5 sm:px-8 lg:px-10">
+        <nav
+          className="sticky top-9 z-40 border-b border-white/[0.07] backdrop-blur-2xl"
+          style={{ backgroundColor: `${ink}e0` }}
+        >
+          <div className="mx-auto flex h-[4.75rem] max-w-[70rem] items-center justify-between gap-5 px-5 sm:px-8 lg:px-10">
             <a href="#inicio" className="flex min-w-0 items-center gap-3" aria-label="Voltar ao início">
               <span
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white shadow-lg"
@@ -469,12 +488,17 @@ export default async function DemoLandingPage({ params }: PageProps) {
                 referrerPolicy="no-referrer"
               />
               {/* Heavy scrim: the headline must keep its contrast over any photo. */}
-              <div className="absolute inset-0 bg-[#07070a]/80" />
-              <div className="absolute inset-0 bg-gradient-to-b from-[#07070a] via-[#07070a]/55 to-[#07070a]" />
+              <div className="absolute inset-0" style={{ backgroundColor: `${ink}cc` }} />
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `linear-gradient(to bottom, ${ink}, ${ink}8c, ${ink})`,
+                }}
+              />
             </div>
           ) : null}
 
-          <div className="relative mx-auto grid min-h-[calc(100vh-7.5rem)] max-w-7xl items-center gap-14 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[1.08fr_0.92fr] lg:px-10 lg:py-24">
+          <div className="relative mx-auto grid min-h-[calc(100vh-7.5rem)] max-w-[70rem] items-center gap-14 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[1.08fr_0.92fr] lg:px-10 lg:py-24">
           <div className="min-w-0 max-w-3xl">
             <div
               className="mb-7 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.17em]"
@@ -487,7 +511,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
               <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
               {business.category}{locationSummary ? ` · ${locationSummary}` : ""}
             </div>
-            <h1 className="text-[clamp(3.25rem,7vw,6.6rem)] font-semibold leading-[0.94] tracking-[-0.058em] text-white">
+            <h1 className="text-[clamp(3.4rem,7.4vw,6.8rem)] leading-[0.94] text-white">
               {content.headline}
             </h1>
             <p className="mt-8 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg sm:leading-9">
@@ -496,7 +520,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
             <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
               <a
                 href={mainCtaHref}
-                className="group inline-flex min-h-14 items-center justify-center gap-2 rounded-full px-7 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5"
+                className="group inline-flex min-h-14 items-center justify-center gap-2 rounded-full px-7 py-3.5 text-sm font-bold text-white shadow-[0_24px_60px_-20px_rgba(0,0,0,.6)] transition hover:-translate-y-0.5"
                 style={{
                   backgroundImage: accessibleGradient,
                   boxShadow: `0 20px 55px ${content.primaryColor}30`,
@@ -650,7 +674,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
 
         <section
           id="sobre"
-          className="mx-auto grid max-w-7xl scroll-mt-28 gap-12 border-t border-white/[0.07] px-5 py-24 sm:px-8 sm:py-28 lg:grid-cols-[0.75fr_1.25fr] lg:px-10 lg:py-36"
+          className="mx-auto grid max-w-[70rem] scroll-mt-28 gap-12 border-t border-white/[0.07] px-5 py-24 sm:px-8 sm:py-28 lg:grid-cols-[0.75fr_1.25fr] lg:px-10 lg:py-36"
         >
           <div>
             <p
@@ -683,7 +707,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
           id="galeria"
           className="scroll-mt-28 border-y border-white/[0.07] bg-white/[0.018] py-24 sm:py-28"
         >
-          <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+          <div className="mx-auto max-w-[70rem] px-5 sm:px-8 lg:px-10">
             <div className="grid gap-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
               <div>
                 <p
@@ -834,7 +858,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
 
         {instagramEmbeds.length ? (
           <section id="instagram" className="scroll-mt-28 py-24 sm:py-28">
-            <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+            <div className="mx-auto max-w-[70rem] px-5 sm:px-8 lg:px-10">
               <div className="grid gap-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
                 <div>
                   <p
@@ -904,7 +928,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
             id="servicos"
             className="scroll-mt-28 border-y border-white/[0.07] bg-white/[0.018] py-24 sm:py-28"
           >
-            <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+            <div className="mx-auto max-w-[70rem] px-5 sm:px-8 lg:px-10">
               <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-end">
                 <div>
                   <p
@@ -956,7 +980,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
         {content.benefits.length ? (
           <section
             id="diferenciais"
-            className="mx-auto max-w-7xl scroll-mt-28 px-5 py-24 sm:px-8 sm:py-28 lg:px-10 lg:py-36"
+            className="mx-auto max-w-[70rem] scroll-mt-28 px-5 py-24 sm:px-8 sm:py-28 lg:px-10 lg:py-36"
           >
             <div className="max-w-3xl">
               <p
@@ -998,7 +1022,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
           id="processo"
           className="scroll-mt-28 border-y border-white/[0.07] bg-white/[0.018] py-24 sm:py-28"
         >
-          <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+          <div className="mx-auto max-w-[70rem] px-5 sm:px-8 lg:px-10">
             <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr]">
               <div>
                 <p
@@ -1048,7 +1072,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
           id="contato"
           className="scroll-mt-28 border-t border-white/[0.07] bg-white/[0.018] py-24 sm:py-28 lg:py-36"
         >
-          <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+          <div className="mx-auto max-w-[70rem] px-5 sm:px-8 lg:px-10">
             <div className="grid gap-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
               <div>
                 <p
@@ -1254,7 +1278,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
             id="duvidas"
             className="scroll-mt-28 border-y border-white/[0.07] bg-white/[0.018] py-24 sm:py-28"
           >
-            <div className="mx-auto grid max-w-7xl gap-12 px-5 sm:px-8 lg:grid-cols-[0.72fr_1.28fr] lg:px-10">
+            <div className="mx-auto grid max-w-[70rem] gap-12 px-5 sm:px-8 lg:grid-cols-[0.72fr_1.28fr] lg:px-10">
               <div>
                 <p
                   className="text-xs font-semibold uppercase tracking-[0.2em]"
@@ -1288,7 +1312,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
           </section>
         ) : null}
 
-        <section className="mx-auto max-w-7xl px-5 py-20 sm:px-8 sm:py-24 lg:px-10">
+        <section className="mx-auto max-w-[70rem] px-5 py-20 sm:px-8 sm:py-24 lg:px-10">
           <div
             className="relative overflow-hidden rounded-[2rem] border border-white/10 px-7 py-14 text-center sm:rounded-[2.5rem] sm:px-12 sm:py-20"
             style={{
@@ -1310,7 +1334,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
               </p>
               <a
                 href={mainCtaHref}
-                className="group mt-9 inline-flex min-h-14 items-center justify-center gap-2 rounded-full px-8 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5"
+                className="group mt-9 inline-flex min-h-14 items-center justify-center gap-2 rounded-full px-8 py-3.5 text-sm font-bold text-white shadow-[0_24px_60px_-20px_rgba(0,0,0,.6)] transition hover:-translate-y-0.5"
                 style={{
                   backgroundImage: accessibleGradient,
                   boxShadow: `0 20px 55px ${content.primaryColor}30`,
@@ -1327,7 +1351,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
         </section>
 
         <footer className="border-t border-white/[0.07] bg-black/15">
-          <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8 lg:px-10">
+          <div className="mx-auto max-w-[70rem] px-5 py-12 sm:px-8 lg:px-10">
             <div className="grid gap-8 border-b border-white/[0.07] pb-9 md:grid-cols-[1fr_auto] md:items-end">
               <div>
                 <div className="flex items-center gap-3">

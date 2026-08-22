@@ -67,3 +67,23 @@ body {
   background: #0b0d12;
   border-radius: 0.75rem;
 }
+
+/* Public demonstration pages: a heavier display voice and a wider body face
+   than the admin panel, matching the studio's own site. */
+.demo-page {
+  font-family: var(--font-demo-body), "Segoe UI", sans-serif;
+}
+
+.demo-page h1,
+.demo-page h2,
+.demo-page h3,
+.demo-page .demo-display {
+  font-family: var(--font-demo-display), var(--font-demo-body), "Segoe UI", sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.022em;
+}
+
+.demo-page h1 {
+  letter-spacing: -0.03em;
+  line-height: 0.98;
+}

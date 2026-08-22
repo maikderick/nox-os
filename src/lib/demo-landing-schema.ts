@@ -205,6 +205,11 @@ export const demoLandingContentSchema = z
       "Publicações do perfil informado, exibidas pelo próprio Instagram. O conteúdo é do estabelecimento e pode ser alterado ou removido por ele a qualquer momento.",
     ),
     instagramPosts: z.array(instagramPostUrlSchema).max(3).default([]),
+    /**
+     * Address of a finished site built elsewhere (Lovable, for instance). It is
+     * served through the demo's own domain so it inherits the same expiry.
+     */
+    builtSiteUrl: optionalHttpsUrl.default(""),
     contactTitle: plainText(120).default("Informações de contato"),
     contactText: plainText(600).default(
       "Valide os canais informados diretamente com o estabelecimento antes de entrar em contato.",
