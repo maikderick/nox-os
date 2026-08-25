@@ -1,0 +1,249 @@
+{
+  "schemaVersion": 1,
+  "business": {
+    "name": {
+      "value": "Oficina Demonstração NOX",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "legalName": {
+      "value": "Oficina Demonstração NOX Serviços Ltda",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "description": {
+      "value": "Serviços de manutenção residencial planejados e executados por equipe própria, com atendimento agendado.",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "sector": {
+      "value": "Manutenção residencial",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "logo": null
+  },
+  "contact": {
+    "phone": {
+      "value": "+5511900000000",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "whatsapp": {
+      "value": "+5511900000000",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "email": {
+      "value": "contato@exemplo-demonstracao.test",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "address": {
+      "value": {
+        "street": "Rua da Demonstração",
+        "number": "100",
+        "complement": null,
+        "neighborhood": "Centro",
+        "city": "São Paulo",
+        "state": "SP",
+        "postalCode": "01000-000",
+        "country": "Brasil"
+      },
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "coordinates": {
+      "value": {
+        "latitude": -23.5505,
+        "longitude": -46.6333
+      },
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "openingHours": {
+      "value": [
+        {
+          "dayOfWeek": "SEGUNDA",
+          "opens": "08:00",
+          "closes": "18:00"
+        },
+        {
+          "dayOfWeek": "TERCA",
+          "opens": "08:00",
+          "closes": "18:00"
+        }
+      ],
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "socialLinks": [
+      {
+        "value": {
+          "platform": "INSTAGRAM",
+          "url": "https://instagram.com/exemplo-demonstracao",
+          "label": null
+        },
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      }
+    ]
+  },
+  "about": {
+    "heading": {
+      "value": "Sobre a oficina",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "body": [
+      {
+        "value": "Trabalhamos com reparos hidráulicos e elétricos em residências e pequenos comércios.",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      },
+      {
+        "value": "Cada atendimento começa com uma visita técnica para entender o problema antes de propor a solução.",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      }
+    ]
+  },
+  "services": [
+    {
+      "slug": "reparos-hidraulicos",
+      "name": {
+        "value": "Reparos hidráulicos",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      },
+      "summary": {
+        "value": "Conserto de vazamentos, torneiras e registros em pontos internos.",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      },
+      "body": [
+        {
+          "value": "Avaliamos o ponto afetado, apresentamos o que precisa ser trocado e executamos o reparo na mesma visita quando há peça disponível.",
+          "source": "OPERADOR",
+          "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+        }
+      ],
+      "image": null,
+      "featured": true,
+      "relatedSlugs": [
+        "reparos-hidraulicos"
+      ]
+    },
+    {
+      "slug": "instalacoes-eletricas",
+      "name": {
+        "value": "Instalações elétricas",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      },
+      "summary": {
+        "value": "Troca de tomadas, interruptores e pontos de iluminação.",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      },
+      "body": [
+        {
+          "value": "Revisamos o circuito envolvido antes de qualquer troca e conferimos o funcionamento ao final.",
+          "source": "OPERADOR",
+          "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+        }
+      ],
+      "image": null,
+      "featured": true,
+      "relatedSlugs": []
+    },
+    {
+      "slug": "manutencao-preventiva",
+      "name": {
+        "value": "Manutenção preventiva",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      },
+      "summary": {
+        "value": "Revisão periódica de pontos hidráulicos e elétricos.",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      },
+      "body": [
+        {
+          "value": "Percorremos os pontos combinados com o cliente e registramos o que precisa de atenção.",
+          "source": "OPERADOR",
+          "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+        }
+      ],
+      "image": null,
+      "featured": false,
+      "relatedSlugs": [
+        "reparos-hidraulicos"
+      ]
+    }
+  ],
+  "gallery": [
+    {
+      "src": "/demo/oficina-1.svg",
+      "alt": "Ilustração de ferramentas sobre uma bancada",
+      "source": "BANCO_DE_IMAGENS",
+      "license": "LICENCIADA",
+      "credit": "Autoria de demonstração",
+      "creditUrl": "https://exemplo-demonstracao.test/credito",
+      "width": 1200,
+      "height": 800
+    }
+  ],
+  "callsToAction": [
+    {
+      "label": "Falar no WhatsApp",
+      "kind": "WHATSAPP",
+      "target": null,
+      "location": "hero",
+      "primary": true
+    },
+    {
+      "label": "Ver serviços",
+      "kind": "INTERNO",
+      "target": "/servicos",
+      "location": "hero",
+      "primary": false
+    }
+  ],
+  "branding": {
+    "primaryColor": "#1d4ed8",
+    "accentColor": "#0f766e",
+    "surfaceColor": "#ffffff",
+    "textColor": "#111827",
+    "fontFamily": "sans",
+    "radius": "md"
+  },
+  "seo": {
+    "siteUrl": "https://exemplo-demonstracao.test",
+    "defaultTitle": "Oficina Demonstração NOX",
+    "titleTemplate": "%s | Oficina Demonstração NOX",
+    "description": "Reparos hidráulicos e elétricos para residências e pequenos comércios, com atendimento agendado.",
+    "ogImage": null,
+    "localBusinessType": "HomeAndConstructionBusiness",
+    "locale": "pt_BR"
+  },
+  "analytics": {
+    "provider": "none",
+    "measurementId": null,
+    "consentMode": "required"
+  },
+  "privacy": {
+    "controllerName": "Oficina Demonstração NOX",
+    "contactEmail": "privacidade@exemplo-demonstracao.test",
+    "updatedAt": "2026-08-25T12:00:00.000-03:00",
+    "sections": [
+      {
+        "heading": "Dados que tratamos",
+        "body": [
+          "Tratamos apenas os dados enviados voluntariamente pelo formulário de contato."
+        ]
+      }
+    ]
+  }
+}

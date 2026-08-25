@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "note": "Regras que o JSON Schema não expressa. Um snapshot aprovado por um consumidor precisa ser recusado em todos estes casos.",
+  "cases": [
+    {
+      "id": "slug-duplicado",
+      "description": "Dois serviços com o mesmo slug: um esconderia a página do outro.",
+      "expectedPath": "services.1.slug",
+      "fixture": "invalid/slug-duplicado.json"
+    },
+    {
+      "id": "servico-relacionado-inexistente",
+      "description": "Um serviço relacionado que não existe vira link interno quebrado.",
+      "expectedPath": "services.0.relatedSlugs.0",
+      "fixture": "invalid/servico-relacionado-inexistente.json"
+    },
+    {
+      "id": "servico-relacionado-a-si-mesmo",
+      "description": "Um serviço não se relaciona consigo mesmo.",
+      "expectedPath": "services.0.relatedSlugs.0",
+      "fixture": "invalid/servico-relacionado-a-si-mesmo.json"
+    },
+    {
+      "id": "cta-whatsapp-sem-canal",
+      "description": "Botão de WhatsApp sem WhatsApp confirmado.",
+      "expectedPath": "callsToAction.0.kind",
+      "fixture": "invalid/cta-whatsapp-sem-canal.json"
+    },
+    {
+      "id": "cta-telefone-sem-canal",
+      "description": "Botão de telefone sem telefone confirmado.",
+      "expectedPath": "callsToAction.0.kind",
+      "fixture": "invalid/cta-telefone-sem-canal.json"
+    },
+    {
+      "id": "cta-email-sem-canal",
+      "description": "Botão de e-mail sem e-mail confirmado.",
+      "expectedPath": "callsToAction.0.kind",
+      "fixture": "invalid/cta-email-sem-canal.json"
+    },
+    {
+      "id": "cta-interna-sem-destino",
+      "description": "Ação interna sem caminho de destino.",
+      "expectedPath": "callsToAction.0.target",
+      "fixture": "invalid/cta-interna-sem-destino.json"
+    },
+    {
+      "id": "cta-de-contato-com-destino-livre",
+      "description": "Ação de contato com destino livre em vez do dado confirmado.",
+      "expectedPath": "callsToAction.0.target",
+      "fixture": "invalid/cta-de-contato-com-destino-livre.json"
+    },
+    {
+      "id": "local-business-sem-endereco",
+      "description": "Dados estruturados de negócio local sem endereço confirmado.",
+      "expectedPath": "seo.localBusinessType",
+      "fixture": "invalid/local-business-sem-endereco.json"
+    },
+    {
+      "id": "imagem-licenciada-sem-credito",
+      "description": "Foto de banco sem crédito do autor.",
+      "expectedPath": "gallery.0.credit",
+      "fixture": "invalid/imagem-licenciada-sem-credito.json"
+    },
+    {
+      "id": "imagem-de-banco-nao-marcada",
+      "description": "Foto de banco apresentada como se fosse do estabelecimento.",
+      "expectedPath": "gallery.0.license",
+      "fixture": "invalid/imagem-de-banco-nao-marcada.json"
+    },
+    {
+      "id": "analytics-ga4-sem-id",
+      "description": "GA4 ligado sem measurementId.",
+      "expectedPath": "analytics.measurementId",
+      "fixture": "invalid/analytics-ga4-sem-id.json"
+    },
+    {
+      "id": "analytics-desligado-com-id",
+      "description": "Sem provedor ativo, guardar um measurementId.",
+      "expectedPath": "analytics.measurementId",
+      "fixture": "invalid/analytics-desligado-com-id.json"
+    },
+    {
+      "id": "horario-invertido",
+      "description": "Abertura depois do fechamento.",
+      "expectedPath": "contact.openingHours.value.0",
+      "fixture": "invalid/horario-invertido.json"
+    },
+    {
+      "id": "caminho-protocolo-relativo",
+      "description": "Um destino que parece interno mas sai do site.",
+      "expectedPath": "callsToAction.1.target",
+      "fixture": "invalid/caminho-protocolo-relativo.json"
+    },
+    {
+      "id": "imagem-protocolo-relativa",
+      "description": "Uma imagem que parece interna mas vem de outro host.",
+      "expectedPath": "gallery.0.src",
+      "fixture": "invalid/imagem-protocolo-relativa.json"
+    }
+  ]
+}
