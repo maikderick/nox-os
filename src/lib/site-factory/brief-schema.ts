@@ -278,6 +278,15 @@ const siteBriefV2Object = z
     ...commonFields,
     services: z.array(briefServiceSchema).max(40).default([]),
     publicContact: briefPublicContactSchema.default(EMPTY_PUBLIC_CONTACT),
+    /**
+     * Meta description, confirmed on its own.
+     *
+     * It exists because the positioning is written for a page and rarely fits
+     * the 180 characters a search result allows. Without it the export would
+     * either truncate a confirmed sentence — deciding for the operator what to
+     * cut — or refuse a perfectly good brief.
+     */
+    metaDescription: confirmedFactSchema.extend({ value: plainText(180) }).nullable().default(null),
   })
   .strict();
 
