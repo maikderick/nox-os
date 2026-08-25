@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requirePermission } from "@/lib/authz/dal";
 import { withAuthorization } from "@/lib/authz/route";
-import { siteBriefSchema } from "@/lib/site-factory/brief-schema";
+import { briefCapabilities, siteBriefSchema } from "@/lib/site-factory/brief-schema";
 import { createSiteBriefVersion } from "@/lib/site-factory/brief-service";
 import { getSiteProject } from "@/lib/site-factory/project-service";
 
@@ -30,6 +30,12 @@ export async function POST(request: Request, context: Context) {
       siteProjectId: id,
       brief: body.data,
     });
-    return NextResponse.json({ briefVersion }, { status: 201 });
+    // A v1 brief parses forever but names services without describing them.
+    // Saying so on the way in beats discovering it when the site comes out
+    // without service pages.
+    return NextResponse.json(
+      { briefVersion, capabilities: briefCapabilities(body.data) },
+      { status: 201 },
+    );
   });
 }
