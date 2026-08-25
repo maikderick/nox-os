@@ -58,7 +58,12 @@ site-<cliente>
 └── lockfile e manifesto de geração imutáveis
 ```
 
-`nox-os`, `nox-site-template` e `@nox/site-kit` nunca entram no contexto de um Cloud Agent de cliente.
+Os **repositórios** `nox-os`, `nox-site-template` e `nox-site-kit` nunca entram no contexto
+de um Cloud Agent de cliente. O que entra é apenas o **artefato compilado** do
+`@nox/site-kit`: o tarball versionado em `vendor/`, tratado como somente leitura e
+conferido por SHA-256 antes de qualquer build. O código-fonte do kit, seus testes e seu
+histórico ficam fora — o agente consome a biblioteca, não a desenvolve, e não pode
+alterá-la sem quebrar a verificação de integridade.
 
 Na primeira versão, o template consome um tarball versionado do `@nox/site-kit`
 armazenado em `vendor/`, com SHA-256 no manifesto. Assim, Cursor e Vercel não precisam

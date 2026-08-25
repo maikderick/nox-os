@@ -114,21 +114,58 @@ O que mantém os dois lados honestos é uma cópia versionada dos artefatos do k
 | `site-content.minimal.json` | Fixture mínima canônica |
 | `fabrication-rules.json` | Regras anti-invenção, com os padrões literais |
 | `hashes.json` | SHA-256 do JSON canônico de cada fixture |
+| `invariants.json` + `invalid/` | Uma fixture inválida por regra de campo cruzado |
 
 `tests/unit/site-export-contract.test.ts` valida contra esses arquivos que:
 
 - o snapshot produzido por `buildSiteContentSnapshot` é aceito pelo schema do kit;
 - os dois lados serializam de forma canônica idêntica, e portanto calculam o mesmo
   `contentSha256` — que é exatamente o que a build do site confere antes de compilar;
-- as regras anti-invenção têm os mesmos ids e reprovam os mesmos textos nos dois parsers.
+- as regras anti-invenção têm os mesmos ids e reprovam os mesmos textos nos dois parsers;
+- **todas as fixtures inválidas são recusadas aqui**, no mesmo caminho que o kit reporta.
+
+Esse último ponto existe porque um JSON Schema não expressa slug único, referência que
+resolve nem canal de contato confirmado — essas regras vivem em `superRefine` e não
+sobrevivem à exportação. Validar só pelo schema aprovaria snapshots que o parser real
+recusa. `src/lib/site-factory/snapshot-contract.ts` implementa essas invariantes, e o teste
+prova que três dos casos passam pelo schema sozinho, o que é justamente o motivo do módulo
+existir.
 
 Quando o contrato mudar, rode `npm run export:artifacts` no `nox-site-kit` e copie os
 artefatos para `contracts/site-kit/`. Se a divergência não for intencional, o teste
 reprova aqui, e não no site de um cliente.
 
-### Limite conhecido do briefing
+### Confirmação campo a campo
 
-O `SiteBriefVersion` da Fase 1 guarda apenas o **nome** de cada serviço. Isso não descreve
-uma página de serviço sem inventar resumo e corpo, então o exportador emite a página
-somente quando o operador fornece essa cópia (`serviceDetails`). Antes da Fase 4, o schema
-do briefing precisa ganhar `services[].summary` e `services[].body` confirmados.
+Nenhum dado público herda a confirmação de outro. Confirmar o nome do negócio não diz nada
+sobre o telefone ter sido conferido, e confirmar um telefone não confirma um WhatsApp no
+mesmo número. Cada campo publicável carrega a própria origem e o próprio instante de
+confirmação, em `publicContact` do briefing v2.
+
+`buildSiteContentSnapshot` **não recebe o registro do lead**. Não existe parâmetro por onde
+um telefone, endereço ou rede social bruta possa chegar, então nenhum dado de prospecção
+não confirmado pode aparecer em página pública. Um lead é fonte de candidatos para alguém
+confirmar, não fonte de fato publicado.
+
+### Versões do briefing
+
+`SiteBriefVersion` aceita duas versões, e uma versão gravada é imutável — a v1 continua
+sendo lida para sempre, sem reescrita:
+
+| | v1 | v2 |
+| --- | --- | --- |
+| Serviços | só o nome | id estável, nome, resumo e conteúdo confirmados |
+| Contato público | ausente | confirmado campo a campo |
+| Gera página de serviço | não | sim |
+
+`briefCapabilities(brief)` responde o que cada briefing sustenta e o que falta. Um briefing
+v1 é explicitamente reportado como insuficiente para páginas completas de serviço, e a
+resposta da API de briefing devolve isso junto com a versão criada.
+
+### Proveniência
+
+O commit do template é **entrada**, nunca dedução. Antes ele vinha de um `git rev-parse
+HEAD` dentro do próprio repositório gerado, o que é autorreferente e fica sempre um commit
+atrás: o commit que contém um manifesto não pode ser o commit que o manifesto declara. Em
+repositório de cliente o valor pertence a outro repositório, então só quem gera o sabe.
+`buildSiteManifest` exige um sha de 40 caracteres e declara exatamente o que recebeu.
