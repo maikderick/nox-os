@@ -1,6 +1,6 @@
 {
   "note": "SHA-256 do JSON canônico de cada fixture. Usado para provar que dois parsers produzem o mesmo snapshot.",
   "canonicalization": "chaves ordenadas, sem espaços",
-  "site-content.example.json": "98d453c6f0b8b9872d2f9dd5afe2688946b77064ff43ae61fd3581ebe65e7fe4",
-  "site-content.minimal.json": "c8d4ae81374caaa955109dc766966a5bb165e1b5ec593e149baeb51b9150a76a"
+  "site-content.example.json": "625ae60510a625545d61b3528c3550da2e77cd6e429a77e9cfa76f1324b457a8",
+  "site-content.minimal.json": "f9f7f1a08a60c15ed7785a437ebd05474795f25e05a38a757927b745bee8715b"
 }

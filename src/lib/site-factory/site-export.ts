@@ -27,23 +27,38 @@ import {
  *    to cut.
  */
 
-export const SITE_CONTENT_SCHEMA_VERSION = 1 as const;
+export const SITE_CONTENT_SCHEMA_VERSION = 2 as const;
 
 type FactSource = "LEAD" | "OPERADOR" | "CLIENTE" | "IMPORTACAO";
 
 type Fact<T> = { value: T; source: FactSource; confirmedAt: string };
 
+export const PUBLIC_CONTACT_FIELDS = [
+  "phone",
+  "whatsapp",
+  "email",
+  "address",
+  "coordinates",
+  "openingHours",
+  "socialLinks",
+] as const;
+
+export type PublicContactField = (typeof PUBLIC_CONTACT_FIELDS)[number];
+
 export type SiteExportInput = {
   brief: SiteBrief;
   siteUrl: string;
-  /** Meta description. Falls back to the positioning when it fits in 180. */
-  seoDescription?: string | null;
   /**
-   * Confirmed public data. Defaults to what the brief carries; a caller may
-   * pass a narrower set, never a wider one — anything here must already have
-   * been confirmed field by field.
+   * Which confirmed channels to publish. **Names only, never values.**
+   *
+   * A caller sometimes needs to publish less than the brief confirmed — a
+   * client who confirmed a phone but does not want it on the site. Expressing
+   * that as a list of field names means the only thing a caller can do is
+   * narrow: there is no shape here that could carry a phone number, so no
+   * caller can introduce one. Omitting it publishes everything the brief
+   * confirmed.
    */
-  publicContact?: BriefPublicContact;
+  publishContactFields?: readonly PublicContactField[];
   privacy: {
     controllerName: string;
     contactEmail?: string | null;
@@ -86,13 +101,44 @@ function carryText(field: string, fact: Fact<string>, max: number): Fact<string>
   return { value: limit(field, fact.value, max), source: fact.source, confirmedAt: fact.confirmedAt };
 }
 
+/**
+ * Narrows the brief's confirmed contact to the requested fields.
+ *
+ * Only removal is possible: a field name that the brief did not confirm still
+ * resolves to nothing, so asking for more than was confirmed publishes nothing
+ * more.
+ */
+function selectContact(
+  contact: BriefPublicContact,
+  fields: readonly PublicContactField[] | undefined,
+): BriefPublicContact {
+  if (!fields) return contact;
+  const allowed = new Set(fields);
+  return {
+    phone: allowed.has("phone") ? contact.phone : null,
+    whatsapp: allowed.has("whatsapp") ? contact.whatsapp : null,
+    email: allowed.has("email") ? contact.email : null,
+    address: allowed.has("address") ? contact.address : null,
+    coordinates: allowed.has("coordinates") ? contact.coordinates : null,
+    openingHours: allowed.has("openingHours") ? contact.openingHours : null,
+    socialLinks: allowed.has("socialLinks") ? contact.socialLinks : [],
+  };
+}
+
 export function buildSiteContentSnapshot(input: SiteExportInput): Record<string, unknown> {
   const { brief } = input;
-  const contact = input.publicContact ?? briefPublicContact(brief);
+  const contact = selectContact(briefPublicContact(brief), input.publishContactFields);
 
+  /*
+   * The meta description is derived from confirmed text, never typed in here.
+   * A v2 brief can confirm one of its own; otherwise the positioning is used,
+   * and a positioning that does not fit raises rather than being cut — deciding
+   * what to drop from a confirmed sentence is the operator's call, not ours.
+   */
+  const confirmedMetaDescription = isSiteBriefV2(brief) ? brief.metaDescription : null;
   const seoDescription = limit(
     "seo.description",
-    input.seoDescription?.trim() || brief.positioning.value,
+    (confirmedMetaDescription ?? brief.positioning).value,
     180,
   );
 
@@ -163,13 +209,10 @@ export function buildSiteContentSnapshot(input: SiteExportInput): Record<string,
       socialLinks,
     },
     about: {
-      // The heading is a label we choose, not a claim about the client, so it
-      // carries the objective's confirmation rather than inventing one.
-      heading: {
-        value: "Sobre",
-        source: brief.objective.source,
-        confirmedAt: brief.objective.confirmedAt,
-      },
+      // A section label is configuration, not a claim about the client. In
+      // schemaVersion 2 it is a plain string, so it no longer has to borrow
+      // some other fact's source and timestamp to exist.
+      heading: "Sobre",
       body: [
         carryText("about.body[0]", brief.objective, 1500),
         carryText("about.body[1]", brief.audience, 1500),

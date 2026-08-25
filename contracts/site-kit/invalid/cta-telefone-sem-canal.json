@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "business": {
     "name": {
       "value": "Oficina Demonstração NOX",
@@ -82,11 +82,7 @@
     ]
   },
   "about": {
-    "heading": {
-      "value": "Sobre a oficina",
-      "source": "OPERADOR",
-      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
-    },
+    "heading": "Sobre a oficina",
     "body": [
       {
         "value": "Trabalhamos com reparos hidráulicos e elétricos em residências e pequenos comércios.",

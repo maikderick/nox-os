@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "note": "Regras que o JSON Schema não expressa. Um snapshot aprovado por um consumidor precisa ser recusado em todos estes casos.",
   "cases": [
     {

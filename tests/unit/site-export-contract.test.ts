@@ -17,6 +17,8 @@ import {
   buildSiteManifest,
   canonicalJsonStringify,
   hashSiteContent,
+  PUBLIC_CONTACT_FIELDS,
+  SITE_CONTENT_SCHEMA_VERSION,
   SiteExportError,
 } from "@/lib/site-factory/site-export";
 import { validateSnapshotInvariants } from "@/lib/site-factory/snapshot-contract";
@@ -144,9 +146,11 @@ const SITE_URL = "https://exemplo-demonstracao.test";
 
 describe("the artifacts published by the site-kit", () => {
   it("target the schema version this server exports", () => {
-    expect(publishedRules.schemaVersion).toBe(1);
-    expect(invariants.schemaVersion).toBe(1);
-    expect(exampleSnapshot.schemaVersion).toBe(1);
+    // If the kit moves to a new content version and this server does not, every
+    // snapshot it produces would be refused — better to fail here.
+    expect(publishedRules.schemaVersion).toBe(SITE_CONTENT_SCHEMA_VERSION);
+    expect(invariants.schemaVersion).toBe(SITE_CONTENT_SCHEMA_VERSION);
+    expect(exampleSnapshot.schemaVersion).toBe(SITE_CONTENT_SCHEMA_VERSION);
   });
 
   it("accept their own example and minimal fixtures", () => {
@@ -378,9 +382,103 @@ describe("no public field borrows another field's confirmation", () => {
   });
 
   it("refuses a public value that was never confirmed, even when the lead has one", () => {
-    // There is no parameter for it: the only way in is a confirmed fact.
+    // The brief is the only door. A value that nobody confirmed there has no
+    // other way to reach a page.
     const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, privacy });
     expect(canonicalJsonStringify(snapshot)).not.toContain("+5511988887777");
+  });
+});
+
+describe("no caller can publish more than the brief confirmed", () => {
+  const withPhone = () =>
+    briefV2({
+      publicContact: { phone: { value: "+5511900000000", source: "CLIENTE", confirmedAt: LATER } },
+    });
+
+  it("publishes everything the brief confirmed when no selection is given", () => {
+    const snapshot = buildSiteContentSnapshot({ brief: withPhone(), siteUrl: SITE_URL, privacy });
+    expect((snapshot.contact as Record<string, { value: string } | null>).phone?.value).toBe(
+      "+5511900000000",
+    );
+  });
+
+  it("narrows to the requested fields and drops the rest", () => {
+    const snapshot = buildSiteContentSnapshot({
+      brief: withPhone(),
+      siteUrl: SITE_URL,
+      privacy,
+      publishContactFields: ["email"],
+    });
+
+    const contact = snapshot.contact as Record<string, unknown>;
+    expect(contact.phone).toBeNull();
+    expect(contact.email).toBeNull();
+  });
+
+  it("asking for a field the brief never confirmed still publishes nothing", () => {
+    // The selection is a list of names. There is no shape in it that could
+    // carry a phone number, so a caller cannot introduce one — only remove.
+    const snapshot = buildSiteContentSnapshot({
+      brief: briefV2(),
+      siteUrl: SITE_URL,
+      privacy,
+      publishContactFields: [
+        "phone",
+        "whatsapp",
+        "email",
+        "address",
+        "coordinates",
+        "openingHours",
+        "socialLinks",
+      ],
+    });
+
+    const contact = snapshot.contact as Record<string, unknown>;
+    for (const field of PUBLIC_CONTACT_FIELDS) {
+      expect(contact[field], field).toEqual(field === "socialLinks" ? [] : null);
+    }
+
+    // Internal navigation survives — it is a decision about the site, not a
+    // channel. What must be absent is every button needing a confirmed one.
+    const kinds = (snapshot.callsToAction as { kind: string }[]).map((cta) => cta.kind);
+    expect(kinds).toEqual(["INTERNO"]);
+  });
+
+  it("takes the meta description from confirmed text, never from a free string", () => {
+    const snapshot = buildSiteContentSnapshot({
+      brief: briefV2({ metaDescription: fact("Manutenção residencial com atendimento agendado.") }),
+      siteUrl: SITE_URL,
+      privacy,
+    });
+
+    expect((snapshot.seo as Record<string, string>).description).toBe(
+      "Manutenção residencial com atendimento agendado.",
+    );
+  });
+
+  it("falls back to the confirmed positioning when the brief confirms no meta description", () => {
+    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, privacy });
+    expect((snapshot.seo as Record<string, string>).description).toBe(NARRATIVE.positioning.value);
+  });
+
+  it("refuses a positioning that does not fit rather than cutting a confirmed sentence", () => {
+    expect(() =>
+      buildSiteContentSnapshot({
+        brief: briefV2({ positioning: fact("a".repeat(200)) }),
+        siteUrl: SITE_URL,
+        privacy,
+      }),
+    ).toThrow(SiteExportError);
+  });
+
+  it("treats the about heading as a label, with no borrowed confirmation", () => {
+    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, privacy });
+    const about = snapshot.about as { heading: unknown; body: { confirmedAt: string }[] };
+
+    expect(typeof about.heading).toBe("string");
+    // The paragraphs still carry their own confirmation; only the label lost a
+    // wrapper it never earned.
+    expect(about.body[0]!.confirmedAt).toBe(CONFIRMED_AT);
   });
 });
 

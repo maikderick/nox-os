@@ -6,7 +6,56 @@
       "properties": {
         "schemaVersion": {
           "type": "number",
-          "const": 1
+          "const": 2
+        },
+        "about": {
+          "type": "object",
+          "properties": {
+            "heading": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "body": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1500
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "LEAD",
+                      "OPERADOR",
+                      "CLIENTE",
+                      "IMPORTACAO"
+                    ]
+                  },
+                  "confirmedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source",
+                  "confirmedAt"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 10
+            }
+          },
+          "required": [
+            "heading",
+            "body"
+          ],
+          "additionalProperties": false
         },
         "business": {
           "type": "object",
@@ -654,79 +703,6 @@
               "default": []
             }
           },
-          "additionalProperties": false
-        },
-        "about": {
-          "type": "object",
-          "properties": {
-            "heading": {
-              "type": "object",
-              "properties": {
-                "value": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120
-                },
-                "source": {
-                  "type": "string",
-                  "enum": [
-                    "LEAD",
-                    "OPERADOR",
-                    "CLIENTE",
-                    "IMPORTACAO"
-                  ]
-                },
-                "confirmedAt": {
-                  "type": "string",
-                  "format": "date-time"
-                }
-              },
-              "required": [
-                "value",
-                "source",
-                "confirmedAt"
-              ],
-              "additionalProperties": false
-            },
-            "body": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "value": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 1500
-                  },
-                  "source": {
-                    "type": "string",
-                    "enum": [
-                      "LEAD",
-                      "OPERADOR",
-                      "CLIENTE",
-                      "IMPORTACAO"
-                    ]
-                  },
-                  "confirmedAt": {
-                    "type": "string",
-                    "format": "date-time"
-                  }
-                },
-                "required": [
-                  "value",
-                  "source",
-                  "confirmedAt"
-                ],
-                "additionalProperties": false
-              },
-              "minItems": 1,
-              "maxItems": 10
-            }
-          },
-          "required": [
-            "heading",
-            "body"
-          ],
           "additionalProperties": false
         },
         "services": {
@@ -1413,9 +1389,9 @@
       },
       "required": [
         "schemaVersion",
+        "about",
         "business",
         "contact",
-        "about",
         "branding",
         "seo",
         "analytics",

@@ -1,5 +1,20 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "about": {
+    "heading": "Sobre a oficina",
+    "body": [
+      {
+        "value": "Trabalhamos com reparos hidráulicos e elétricos em residências e pequenos comércios.",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      },
+      {
+        "value": "Cada atendimento começa com uma visita técnica para entender o problema antes de propor a solução.",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      }
+    ]
+  },
   "business": {
     "name": {
       "value": "Oficina Demonstração NOX",
@@ -84,25 +99,6 @@
           "url": "https://instagram.com/exemplo-demonstracao",
           "label": null
         },
-        "source": "OPERADOR",
-        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
-      }
-    ]
-  },
-  "about": {
-    "heading": {
-      "value": "Sobre a oficina",
-      "source": "OPERADOR",
-      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
-    },
-    "body": [
-      {
-        "value": "Trabalhamos com reparos hidráulicos e elétricos em residências e pequenos comércios.",
-        "source": "OPERADOR",
-        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
-      },
-      {
-        "value": "Cada atendimento começa com uma visita técnica para entender o problema antes de propor a solução.",
         "source": "OPERADOR",
         "confirmedAt": "2026-08-25T12:00:00.000-03:00"
       }
