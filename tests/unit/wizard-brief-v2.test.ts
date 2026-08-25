@@ -20,7 +20,9 @@ import { POST } from "../../src/app/api/projects/route";
 import {
   authoredFact,
   buildBriefV2,
+  editSocialLinkDraft,
   initialBriefDraft,
+  type SocialLinkDraft,
   createServiceDraft,
   createSocialLinkDraft,
   emptyBriefDraft,
@@ -371,7 +373,59 @@ describe("o rascunho inicial do assistente", () => {
   });
 
   it("não produz um briefing enquanto o operador não escrever nada", () => {
-    const result = buildBriefV2(initialBriefDraft(), { projectName: "Site", leadId: "l1" });
+    const result = buildBriefV2(initialBriefDraft());
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("editar uma rede social exige nova confirmação", () => {
+  const confirmed = (): SocialLinkDraft => ({
+    key: "r1",
+    platform: "INSTAGRAM",
+    url: "https://instagram.com/exemplo-demonstracao",
+    label: "Instagram",
+    source: "LEAD",
+    confirmedAt: "2026-08-25T12:00:00.000-03:00",
+  });
+
+  for (const [field, value] of [
+    ["platform", "FACEBOOK"],
+    ["url", "https://facebook.com/outro-perfil"],
+    ["label", "Nosso perfil"],
+  ] as const) {
+    it(`limpa a confirmação e devolve a origem ao operador ao editar ${field}`, () => {
+      const edited = editSocialLinkDraft(confirmed(), { [field]: value });
+
+      expect(edited[field]).toBe(value);
+      // What was checked is no longer what would be published.
+      expect(edited.confirmedAt).toBeNull();
+      // And it is no longer the lead's value, whoever it came from originally.
+      expect(edited.source).toBe("OPERADOR");
+    });
+  }
+
+  it("mantém a confirmação quando o valor não muda", () => {
+    const link = confirmed();
+    const edited = editSocialLinkDraft(link, { platform: link.platform, label: link.label });
+
+    expect(edited.confirmedAt).toBe(link.confirmedAt);
+    expect(edited.source).toBe("LEAD");
+  });
+
+  it("permite confirmar sem se autolimpar", () => {
+    const pending = { ...confirmed(), source: "OPERADOR" as const, confirmedAt: null };
+    const edited = editSocialLinkDraft(pending, { confirmedAt: "2026-08-25T15:00:00.000-03:00" });
+
+    expect(edited.confirmedAt).toBe("2026-08-25T15:00:00.000-03:00");
+  });
+
+  it("uma rede editada e não reconfirmada não entra no payload", () => {
+    const draft = wizardDraft();
+    draft.contact.socialLinks = [editSocialLinkDraft(confirmed(), { label: "Outro rótulo" })];
+
+    const built = buildBriefV2(draft);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.brief.publicContact.socialLinks).toEqual([]);
   });
 });

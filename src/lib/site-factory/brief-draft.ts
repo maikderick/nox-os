@@ -310,6 +310,38 @@ export type SocialLinkDraft = {
   confirmedAt: string | null;
 };
 
+/** The parts of a social link that are a claim about the client. */
+const SOCIAL_FACT_FIELDS = ["platform", "url", "label"] as const;
+
+/**
+ * Applies an edit to a social link, resetting its confirmation when the edit
+ * changes what would be published.
+ *
+ * All three fields matter. A `label` is what a visitor reads next to the link,
+ * and a `platform` decides which network the site says the profile belongs to —
+ * neither is presentation. Changing any of them means what was confirmed is no
+ * longer what would go out, so the fact reverts to the operator and has to be
+ * confirmed again.
+ *
+ * Centralised on purpose: doing this at each call site is how `label` ended up
+ * resetting nothing and `platform` ended up keeping `source: "LEAD"` after the
+ * operator had changed it.
+ */
+export function editSocialLinkDraft(
+  link: SocialLinkDraft,
+  update: Partial<SocialLinkDraft>,
+): SocialLinkDraft {
+  const next = { ...link, ...update };
+
+  const changed = SOCIAL_FACT_FIELDS.some(
+    (field) => field in update && update[field] !== link[field],
+  );
+  if (!changed) return next;
+
+  // Re-selecting the same value is not an edit, so a confirmation survives it.
+  return { ...next, source: "OPERADOR", confirmedAt: null };
+}
+
 export type ContactDraft = {
   phone: DraftFact;
   whatsapp: DraftFact;

@@ -22,6 +22,7 @@ import {
   buildBriefV2,
   createServiceDraft,
   createSocialLinkDraft,
+  editSocialLinkDraft,
   initialBriefDraft,
   guessSocialPlatform,
   isFactConfirmed,
@@ -246,7 +247,7 @@ export function NewProjectWizard() {
       contact: {
         ...current.contact,
         socialLinks: current.contact.socialLinks.map((link) =>
-          link.key === key ? { ...link, ...update } : link,
+          link.key === key ? editSocialLinkDraft(link, update) : link,
         ),
       },
     }));
@@ -1290,7 +1291,6 @@ function ContactSection({
                     onChange={(event) =>
                       onSocialChange(link.key, {
                         platform: event.target.value as BriefSocialPlatform,
-                        confirmedAt: null,
                       })
                     }
                     className={INPUT_CLASS}
@@ -1307,7 +1307,7 @@ function ContactSection({
                   label="Endereço (https)"
                   value={link.url}
                   onChange={(value) =>
-                    onSocialChange(link.key, { url: value, source: "OPERADOR", confirmedAt: null })
+                    onSocialChange(link.key, { url: value })
                   }
                   placeholder="https://instagram.com/perfil"
                   source={link.source}
