@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "business": {
+    "name": {
+      "value": "Negócio Demonstração",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "legalName": null,
+    "description": {
+      "value": "Atendimento sob agendamento para a região.",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "sector": {
+      "value": "Serviços",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "logo": null
+  },
+  "contact": {
+    "phone": null,
+    "whatsapp": null,
+    "email": null,
+    "address": null,
+    "coordinates": null,
+    "openingHours": null,
+    "socialLinks": []
+  },
+  "about": {
+    "heading": {
+      "value": "Sobre",
+      "source": "OPERADOR",
+      "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+    },
+    "body": [
+      {
+        "value": "Somos um negócio local em fase de estruturação da presença digital.",
+        "source": "OPERADOR",
+        "confirmedAt": "2026-08-25T12:00:00.000-03:00"
+      }
+    ]
+  },
+  "services": [],
+  "gallery": [],
+  "callsToAction": [],
+  "branding": {
+    "primaryColor": "#1d4ed8",
+    "accentColor": "#0f766e",
+    "surfaceColor": "#ffffff",
+    "textColor": "#111827",
+    "fontFamily": "sans",
+    "radius": "md"
+  },
+  "seo": {
+    "siteUrl": "https://minimo-demonstracao.test",
+    "defaultTitle": "Negócio Demonstração",
+    "titleTemplate": null,
+    "description": "Atendimento sob agendamento para a região.",
+    "ogImage": null,
+    "localBusinessType": null,
+    "locale": "pt_BR"
+  },
+  "analytics": {
+    "provider": "none",
+    "measurementId": null,
+    "consentMode": "required"
+  },
+  "privacy": {
+    "controllerName": "Negócio Demonstração",
+    "contactEmail": null,
+    "updatedAt": "2026-08-25T12:00:00.000-03:00",
+    "sections": [
+      {
+        "heading": "Dados",
+        "body": [
+          "Não coletamos dados além do formulário."
+        ]
+      }
+    ]
+  }
+}
