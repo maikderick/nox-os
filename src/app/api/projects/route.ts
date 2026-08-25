@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { requirePermission } from "@/lib/authz/dal";
 import { withAuthorization } from "@/lib/authz/route";
-import { siteBriefSchema } from "@/lib/site-factory/brief-schema";
+import { briefCapabilities, siteBriefSchema } from "@/lib/site-factory/brief-schema";
 import { createSiteBriefVersion } from "@/lib/site-factory/brief-service";
 import { convertBusinessToClient } from "@/lib/site-factory/client-service";
 import { createSiteProject, listSiteProjects } from "@/lib/site-factory/project-service";
@@ -46,6 +46,17 @@ export async function POST(request: Request) {
       brief: body.data.brief,
     });
 
-    return NextResponse.json({ project: { ...project, status: "BRIEFING_PRONTO" }, client, briefVersion }, { status: 201 });
+    // The brief parses but may still be unable to describe a service page or a
+    // way to reach the business. Reporting it here means the operator reads it
+    // while the project is on screen, not when the site comes out incomplete.
+    return NextResponse.json(
+      {
+        project: { ...project, status: "BRIEFING_PRONTO" },
+        client,
+        briefVersion,
+        capabilities: briefCapabilities(body.data.brief),
+      },
+      { status: 201 },
+    );
   });
 }
