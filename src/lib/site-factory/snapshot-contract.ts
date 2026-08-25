@@ -71,6 +71,30 @@ function checkAsset(asset: unknown, base: string, issues: SnapshotIssue[]): void
   }
 }
 
+/**
+ * Every page a snapshot produces.
+ *
+ * Mirrors `siteRoutes` in the site-kit. The information architecture belongs to
+ * the contract rather than to one template, because whoever writes a call to
+ * action has to know which destinations are real before writing it.
+ */
+export function snapshotRoutes(content: Record<string, unknown>): string[] {
+  const services = asArray(content.services);
+  const gallery = asArray(content.gallery);
+
+  const routes = ["/", "/sobre", "/contato", "/privacidade"];
+  if (services.length > 0) {
+    routes.push("/servicos");
+    for (const service of services) {
+      if (isRecord(service) && typeof service.slug === "string") {
+        routes.push(`/servicos/${service.slug}`);
+      }
+    }
+  }
+  if (gallery.length > 0) routes.push("/galeria");
+  return routes;
+}
+
 export function validateSnapshotInvariants(content: unknown): SnapshotIssue[] {
   const issues: SnapshotIssue[] = [];
   if (!isRecord(content)) return [{ path: "(raiz)", message: "Snapshot precisa ser um objeto" }];
@@ -109,6 +133,7 @@ export function validateSnapshotInvariants(content: unknown): SnapshotIssue[] {
   });
 
   // --- Chamadas de ação ---------------------------------------------------
+  const routes = new Set(snapshotRoutes(content));
   asArray(content.callsToAction).forEach((cta, index) => {
     if (!isRecord(cta)) return;
     const kind = cta.kind;
@@ -135,6 +160,12 @@ export function validateSnapshotInvariants(content: unknown): SnapshotIssue[] {
         issues.push({
           path: `callsToAction.${index}.target`,
           message: "Informe um caminho interno começando com uma única barra",
+        });
+      } else if (!routes.has(cta.target as string)) {
+        // A well-formed path is still a 404 when the snapshot has no such page.
+        issues.push({
+          path: `callsToAction.${index}.target`,
+          message: `Rota inexistente neste snapshot: ${String(cta.target)}`,
         });
       }
     } else if (cta.target) {

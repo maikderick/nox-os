@@ -93,6 +93,24 @@
       "fixture": "invalid/caminho-protocolo-relativo.json"
     },
     {
+      "id": "cta-interna-para-rota-inexistente",
+      "description": "Ação interna apontando para uma página que este snapshot não produz.",
+      "expectedPath": "callsToAction.1.target",
+      "fixture": "invalid/cta-interna-para-rota-inexistente.json"
+    },
+    {
+      "id": "cta-interna-para-servico-sem-galeria",
+      "description": "Ação interna para /galeria num snapshot sem imagem.",
+      "expectedPath": "callsToAction.1.target",
+      "fixture": "invalid/cta-interna-para-servico-sem-galeria.json"
+    },
+    {
+      "id": "cta-interna-para-slug-inexistente",
+      "description": "Ação interna para um serviço que não está na lista.",
+      "expectedPath": "callsToAction.1.target",
+      "fixture": "invalid/cta-interna-para-slug-inexistente.json"
+    },
+    {
       "id": "imagem-protocolo-relativa",
       "description": "Uma imagem que parece interna mas vem de outro host.",
       "expectedPath": "gallery.0.src",
