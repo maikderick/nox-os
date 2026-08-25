@@ -1,16 +1,20 @@
-# NOX OS — Prospecção B2B
+# NOX OS — Fábrica de sites e prospecção B2B
 
-Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior oportunidade de contratar um site personalizado.
+Plataforma web da **NOX OS** para descobrir oportunidades, confirmar um briefing e orquestrar a criação de sites com revisão e aprovação separadas.
 
 ## O que inclui
 
 - Landing page pública em `/`
 - Painel autenticado em `/leads` (`noindex`)
+- Fábrica autenticada em `/projetos`, com assistente de cinco etapas
+- Organizações, papéis e permissões sem default administrativo
+- Briefings factuais versionados e estados explícitos do projeto
+- Contrato de provedores de geração, com provedor manual nesta primeira fase
 - Fontes: OpenStreetMap/Overpass + importação CSV + stub para provedor comercial licenciado (`PlacesProvider`)
 - Score explicável + confiança
 - Funil comercial
 - Fila padrão somente com empresas sem site próprio
-- Landings demonstrativas gratuitas por categoria, sem API de IA
+- Landings demonstrativas existentes preservadas em modo de compatibilidade
 - Melhoria editorial opcional com Claude (server-side, sempre como rascunho)
 - Fotos ilustrativas licenciadas por categoria, sempre rotuladas como ilustrativas
 - Publicações reais do Instagram do estabelecimento via embed oficial
@@ -22,7 +26,7 @@ Plataforma web da **NOX OS** para descobrir estabelecimentos próximos com maior
 
 ## Stack
 
-- Next.js 15 (App Router) + TypeScript
+- Next.js 16 (App Router, `proxy.ts`) + TypeScript
 - Tailwind CSS
 - Prisma + PostgreSQL/PostGIS
 - NextAuth (credentials)
@@ -110,18 +114,44 @@ Atribuição: © OpenStreetMap contributors (ODbL).
 
 ## Landings demonstrativas
 
-Na ficha de um lead elegível, use **Gerar demonstração automática**. O NOX OS cria a
-prévia com templates locais por categoria, sem Claude ou outra API paga. A página:
+`DemoLanding` é agora um recurso de compatibilidade. As demonstrações já existentes
+continuam editáveis e podem ser melhoradas, mas novos trabalhos devem começar em
+`/projetos/novo`. Por padrão, `POST /api/demo-landings` responde `410 Gone`; a criação
+legada só pode ser reativada deliberadamente com
+`ALLOW_LEGACY_DEMO_LANDING_CREATION=true`.
+
+Uma demonstração existente:
 
 - usa endereço aleatório em `/demo/[slug]` e validade configurável;
 - exibe permanentemente **Demonstração não oficial**;
 - usa `noindex`/`nofollow` e deixa de abrir após expirar;
 - não gera avaliações, preços, horários ou serviços não confirmados;
 - não publica telefone na página;
+- só fica pública no estado `APPROVED`; rascunhos nunca são renderizados nem redirecionados;
 - só libera o link para WhatsApp após revisão e aprovação humana.
 
 O conteúdo e o estado ficam na tabela `DemoLanding`; aplique as migrations antes de
 usar o recurso em um ambiente já existente.
+
+## Fábrica de sites
+
+O assistente em `/projetos/novo` realiza uma única submissão com cinco passos: setor,
+lead, negócio, abordagem e briefing. O servidor então:
+
+1. converte o `Business` em `Client` de forma idempotente, mantendo endereço, telefone,
+   coordenadas e redes sociais apenas no lead original;
+2. cria o `SiteProject` dentro da organização ativa;
+3. grava a primeira `SiteBriefVersion` imutável, com fonte e data de confirmação em cada fato;
+4. move o projeto para `BRIEFING_PRONTO`.
+
+Estados disponíveis: `RASCUNHO`, `BRIEFING_PRONTO`, `GERANDO`, `PREVIA_PRONTA`,
+`EM_REVISAO`, `APROVADO`, `PUBLICANDO`, `PUBLICADO` e `FALHOU`. A máquina de estados
+recusa saltos e separa transições humanas de retornos do orquestrador. Somente
+`PUBLICADO` é público; a passagem para `PUBLICANDO` exige `publish:approve`.
+
+Papéis da organização: `OWNER`, `ADMIN`, `OPERADOR` e `LEITOR`. Operadores executam o
+fluxo diário, mas não excluem registros, alteram configurações, gerenciam membros nem
+aprovam a própria publicação. Consulte [a arquitetura da fábrica](docs/arquitetura-fabrica-de-sites.md).
 
 ### Criar no Lovable
 
@@ -242,8 +272,8 @@ Não há fila, automação, envio em massa ou marcação automática só pelo cl
 ## Usuários e senha
 
 - **Minha conta:** qualquer usuário ativo pode alterar a própria senha informando a senha atual.
-- **Usuários:** administradores podem criar contas `admin` ou `operator`, redefinir senhas e
-  ativar/desativar acessos.
+- **Usuários:** membros com `org:manage_members` podem criar contas `admin` ou `operator`,
+  redefinir senhas e ativar/desativar acessos.
 - Senhas novas exigem no mínimo 12 caracteres.
 - O sistema impede desativar o próprio administrador ou remover o último administrador ativo.
 
@@ -293,7 +323,7 @@ npm run start
 ## Segurança
 
 - Segredos só no backend (sem `NEXT_PUBLIC_*` para keys)
-- Rotas `/leads` e APIs protegidas (middleware + session)
+- Rotas `/leads`, `/projetos` e APIs protegidas (`proxy.ts`, sessão e permissão viva da organização)
 - Auditoria básica de sites com bloqueio SSRF
 - Telefones/coordenadas não aparecem na landing pública
 
@@ -303,6 +333,9 @@ npm run start
 - `src/lib/score.ts` — score + motivos
 - `src/lib/dedupe.ts` — deduplicação
 - `src/lib/whatsapp.ts` — gate de opt-in + `wa.me`
+- `src/lib/authz` — papéis, permissões e DAL multi-organização
+- `src/lib/site-factory` — briefing, estados e serviços de projeto
+- `src/lib/codegen` — contrato e registro de provedores de geração
 - `prisma/schema.prisma` — entidades
 
 ## Licença de dados

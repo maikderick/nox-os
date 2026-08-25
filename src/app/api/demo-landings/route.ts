@@ -72,6 +72,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (process.env.ALLOW_LEGACY_DEMO_LANDING_CREATION !== "true") {
+    return NextResponse.json(
+      {
+        error:
+          "A criação de landings demonstrativas foi encerrada. Crie um projeto na fábrica de sites.",
+        code: "demo_landing_deprecated",
+      },
+      { status: 410 },
+    );
+  }
+
   let payload: unknown;
   try {
     payload = await req.json();

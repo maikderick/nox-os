@@ -7,6 +7,8 @@ import { FUNNEL_STAGES } from "@/lib/funnel";
 import { writeAudit } from "@/lib/settings";
 import { parseJsonArray } from "@/lib/utils";
 import { canOpenWhatsApp, buildWhatsAppLink, renderWhatsAppTemplate } from "@/lib/whatsapp";
+import { requirePermission } from "@/lib/authz/dal";
+import { withAuthorization } from "@/lib/authz/route";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -142,17 +144,18 @@ export async function PATCH(req: Request, ctx: Ctx) {
 }
 
 export async function DELETE(_req: Request, ctx: Ctx) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return withAuthorization(async () => {
+  const actor = await requirePermission("lead:delete");
   const { id } = await ctx.params;
   await prisma.business.delete({ where: { id } });
   await writeAudit({
-    userId: session.user.id,
+    userId: actor.userId,
     action: "business.delete",
     entity: "Business",
     entityId: id,
   });
   return NextResponse.json({ ok: true });
+  });
 }
 
 const waSchema = z.object({

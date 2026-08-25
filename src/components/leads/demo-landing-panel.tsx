@@ -163,7 +163,7 @@ export function DemoLandingPanel({
   const [landing, setLanding] = useState<DemoLanding | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [expiresOn, setExpiresOn] = useState("");
-  const [expiresInDays, setExpiresInDays] = useState("14");
+  const expiresInDays = "14";
   const [loading, setLoading] = useState(eligible);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -607,34 +607,14 @@ export function DemoLandingPanel({
 
       {!loading && !landing && (
         <div className="mt-4 rounded-xl border border-dashed border-nox-border bg-nox-bg/40 p-4">
-          <h3 className="text-sm font-medium text-white">Criar uma prévia para este lead</h3>
+          <h3 className="text-sm font-medium text-white">Crie um projeto de site completo</h3>
           <p className="mt-1 text-sm text-nox-muted">
-            Usa somente os dados cadastrados e textos genéricos da categoria. Nenhuma IA paga será
-            chamada.
+            O gerador de demonstrações entrou em modo de compatibilidade. Novos trabalhos começam
+            na fábrica de sites, com briefing versionado e aprovação separada.
           </p>
-          <div className="mt-4 flex flex-wrap items-end gap-3">
-            <label className="text-sm text-nox-muted">
-              Validade
-              <select
-                value={expiresInDays}
-                onChange={(event) => setExpiresInDays(event.target.value)}
-                className="mt-1 block rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-white"
-              >
-                <option value="7">7 dias</option>
-                <option value="14">14 dias</option>
-                <option value="30">30 dias</option>
-                <option value="60">60 dias</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void createLanding()}
-              className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {busy ? "Gerando…" : "Gerar demonstração automática"}
-            </button>
-          </div>
+          <a href="/projetos/novo" className="mt-4 inline-flex rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white hover:bg-violet-500">
+            Abrir novo projeto
+          </a>
         </div>
       )}
 

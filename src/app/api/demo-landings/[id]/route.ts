@@ -10,6 +10,8 @@ import {
 } from "@/lib/demo-landing";
 import { updateDemoLandingSchema } from "@/lib/demo-landing-schema";
 import { writeAudit } from "@/lib/settings";
+import { requirePermission } from "@/lib/authz/dal";
+import { authorizationResponse } from "@/lib/authz/route";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -29,6 +31,16 @@ export async function PATCH(req: Request, ctx: Ctx) {
   const body = updateDemoLandingSchema.safeParse(payload);
   if (!body.success) {
     return NextResponse.json({ error: body.error.flatten() }, { status: 400 });
+  }
+
+  if (body.data.status === "APPROVED") {
+    try {
+      await requirePermission("publish:approve");
+    } catch (error) {
+      const response = authorizationResponse(error);
+      if (response) return response;
+      throw error;
+    }
   }
 
   const { id } = await ctx.params;

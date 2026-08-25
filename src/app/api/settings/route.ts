@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
+import { requirePermission } from "@/lib/authz/dal";
+import { withAuthorization } from "@/lib/authz/route";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/settings";
 import { settingsForClient } from "@/lib/settings-serialization";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
-  return NextResponse.json({
-    settings: settings ? settingsForClient(settings) : null,
-    envHints: {
-      demoMode: process.env.DEMO_MODE === "true",
-      hasNextAuthSecret: Boolean(process.env.NEXTAUTH_SECRET),
-    },
+  return withAuthorization(async () => {
+    await requirePermission("org:read");
+    const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
+    return NextResponse.json({
+      settings: settings ? settingsForClient(settings) : null,
+      envHints: {
+        demoMode: process.env.DEMO_MODE === "true",
+        hasNextAuthSecret: Boolean(process.env.NEXTAUTH_SECRET),
+      },
+    });
   });
 }
 
@@ -41,8 +42,8 @@ const updateSchema = z.object({
 });
 
 export async function PATCH(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return withAuthorization(async () => {
+  const actor = await requirePermission("settings:write");
 
   const body = updateSchema.safeParse(await req.json());
   if (!body.success) {
@@ -59,7 +60,7 @@ export async function PATCH(req: Request) {
   });
 
   await writeAudit({
-    userId: session.user.id,
+    userId: actor.userId,
     action: "settings.update",
     entity: "AppSettings",
     entityId: "default",
@@ -67,4 +68,5 @@ export async function PATCH(req: Request) {
   });
 
   return NextResponse.json({ settings: settingsForClient(settings) });
+  });
 }

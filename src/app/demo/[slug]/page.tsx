@@ -239,6 +239,17 @@ const getDemo = cache(async (slug: string) =>
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const landing = await getDemo(slug);
+  if (
+    !landing ||
+    landing.status !== "APPROVED" ||
+    isDemoLandingExpired(landing.expiresAt)
+  ) {
+    return {
+      title: "Demonstração indisponível",
+      description: "Esta demonstração não está disponível publicamente.",
+      robots: { index: false, follow: false, nocache: true },
+    };
+  }
   let businessName = landing?.business.name;
   if (landing) {
     try {
@@ -294,6 +305,10 @@ export default async function DemoLandingPage({ params }: PageProps) {
       });
     }
     return <UnavailableDemo expired />;
+  }
+
+  if (landing.status !== "APPROVED") {
+    return <UnavailableDemo />;
   }
 
   if (hasOwnWebsite(landing.business.website)) {

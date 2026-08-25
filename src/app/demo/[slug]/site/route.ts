@@ -45,6 +45,8 @@ export async function GET(req: Request, ctx: Ctx) {
     return fallback();
   }
 
+  if (landing.status !== "APPROVED") return fallback();
+
   if (hasOwnWebsite(landing.business.website)) return fallback();
 
   let target = "";

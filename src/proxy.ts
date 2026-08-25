@@ -10,11 +10,17 @@ export default withAuth({
 export const config = {
   matcher: [
     "/leads/:path*",
+    "/projetos/:path*",
     "/api/leads/:path*",
     "/api/import/:path*",
     "/api/settings/:path*",
     "/api/audit/:path*",
     "/api/account/:path*",
     "/api/users/:path*",
+    "/api/organizations/:path*",
+    "/api/projects/:path*",
+    "/api/demo-landings/:path*",
+    "/api/geocode/:path*",
+    "/api/stock-photos/:path*",
   ],
 };

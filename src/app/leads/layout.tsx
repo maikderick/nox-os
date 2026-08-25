@@ -5,6 +5,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { Providers } from "@/components/providers";
 import { ensureDefaultSettings } from "@/lib/settings";
+import { getActor } from "@/lib/authz/dal";
+import { roleHasPermission } from "@/lib/authz/permissions";
 
 export const metadata: Metadata = {
   title: "Painel de prospecção",
@@ -15,6 +17,8 @@ export default async function LeadsLayout({ children }: { children: React.ReactN
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
   await ensureDefaultSettings();
+  const actor = await getActor();
+  const canManageUsers = actor ? roleHasPermission(actor.role, "org:manage_members") : false;
 
   return (
     <Providers>
@@ -38,10 +42,13 @@ export default async function LeadsLayout({ children }: { children: React.ReactN
                 <Link href="/leads/map" className="hover:text-white">
                   Mapa
                 </Link>
+                <Link href="/projetos" className="hover:text-white">
+                  Projetos
+                </Link>
                 <Link href="/leads/settings" className="hover:text-white">
                   Configurações
                 </Link>
-                {session.user.role === "admin" && (
+                {canManageUsers && (
                   <Link href="/leads/users" className="hover:text-white">
                     Usuários
                   </Link>

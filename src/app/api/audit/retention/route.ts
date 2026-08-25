@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requirePermission } from "@/lib/authz/dal";
+import { withAuthorization } from "@/lib/authz/route";
 import { prisma } from "@/lib/db";
 
 /** Retention cleanup: delete businesses older than retentionDays (except clients). */
 export async function POST() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return withAuthorization(async () => {
+  await requirePermission("data:purge");
 
   const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
   const days = settings?.retentionDays ?? 365;
@@ -17,8 +17,10 @@ export async function POST() {
       updatedAt: { lt: cutoff },
       funnelStage: { notIn: ["cliente", "proposta", "reuniao"] },
       doNotContact: false,
+      client: { is: null },
     },
   });
 
   return NextResponse.json({ deleted: result.count, cutoff, retentionDays: days });
+  });
 }

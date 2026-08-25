@@ -12,7 +12,7 @@ model User {
   email        String           @unique
   name         String
   passwordHash String
-  role         String           @default("admin")
+  role         String           @default("operator")
   active       Boolean          @default(true)
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
@@ -20,7 +20,299 @@ model User {
   audits       AuditLog[]
   contacts     ContactAttempt[]
   demoLandings DemoLanding[]
+
+  memberships          OrganizationMembership[]
+  createdProjects      SiteProject[]            @relation("SiteProjectCreatedBy")
+  createdBriefVersions SiteBriefVersion[]       @relation("SiteBriefVersionCreatedBy")
+  requestedRuns        GenerationRun[]          @relation("GenerationRunRequestedBy")
+  requestedDeployments Deployment[]             @relation("DeploymentRequestedBy")
+  approvedDeployments  Deployment[]             @relation("DeploymentApprovedBy")
+  uploadedAssets       Asset[]                  @relation("AssetUploadedBy")
+  usageEntries         UsageLedger[]            @relation("UsageLedgerRecordedBy")
 }
+
+// ---------------------------------------------------------------------------
+// Fábrica de sites — organizações, clientes e projetos
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships  OrganizationMembership[]
+  clients      Client[]
+  siteProjects SiteProject[]
+  domains      Domain[]
+  assets       Asset[]
+  usageEntries UsageLedger[]
+}
+
+model OrganizationMembership {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // OWNER | ADMIN | OPERADOR | LEITOR
+  role           String       @default("LEITOR")
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, role])
+}
+
+/// O cliente aponta para o lead de origem em vez de copiar seus dados:
+/// endereço, telefone, coordenadas e redes sociais continuam vivendo em
+/// Business e são lidos pela relação.
+model Client {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  businessId       String?      @unique
+  business         Business?    @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  name             String
+  slug             String
+  // ATIVO | ARQUIVADO
+  status           String       @default("ATIVO")
+  contactName      String?
+  contactEmail     String?
+  contactPhoneE164 String?
+  notes            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  siteProjects SiteProject[]
+  assets       Asset[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model SiteProject {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientId       String
+  client         Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  sector         String?
+  // RASCUNHO | BRIEFING_PRONTO | GERANDO | PREVIA_PRONTA | EM_REVISAO
+  // | APROVADO | PUBLICANDO | PUBLICADO | FALHOU
+  status         String       @default("RASCUNHO")
+  statusMessage  String?
+  createdById    String?
+  createdBy      User?        @relation("SiteProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  currentBriefVersionId String?           @unique
+  currentBriefVersion   SiteBriefVersion? @relation("SiteProjectCurrentBrief", fields: [currentBriefVersionId], references: [id], onDelete: SetNull)
+
+  approvedRevisionId String?       @unique
+  approvedRevision   SiteRevision? @relation("SiteProjectApprovedRevision", fields: [approvedRevisionId], references: [id], onDelete: SetNull)
+
+  publishedDeploymentId String?     @unique
+  publishedDeployment   Deployment? @relation("SiteProjectPublishedDeployment", fields: [publishedDeploymentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  briefVersions  SiteBriefVersion[] @relation("SiteBriefVersionProject")
+  generationRuns GenerationRun[]
+  revisions      SiteRevision[]     @relation("SiteRevisionProject")
+  deployments    Deployment[]       @relation("DeploymentProject")
+  domains        Domain[]
+  assets         Asset[]
+  usageEntries   UsageLedger[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status])
+  @@index([clientId])
+}
+
+/// Versão imutável do briefing. Editar cria uma nova versão; nada é sobrescrito.
+model SiteBriefVersion {
+  id            String      @id @default(cuid())
+  siteProjectId String
+  siteProject   SiteProject @relation("SiteBriefVersionProject", fields: [siteProjectId], references: [id], onDelete: Cascade)
+  version       Int
+  contentJson   String
+  /// Impressão digital dos fatos confirmados, para detectar adulteração.
+  factsHash     String
+  createdById   String?
+  createdBy     User?       @relation("SiteBriefVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+
+  currentOfProject SiteProject[]   @relation("SiteProjectCurrentBrief")
+  generationRuns   GenerationRun[]
+
+  @@unique([siteProjectId, version])
+  @@index([siteProjectId])
+}
+
+model GenerationRun {
+  id             String           @id @default(cuid())
+  siteProjectId  String
+  siteProject    SiteProject      @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  briefVersionId String
+  briefVersion   SiteBriefVersion @relation(fields: [briefVersionId], references: [id], onDelete: Restrict)
+  /// Identificador do CodeGenerationProvider (ex.: "manual"). Nunca guarda credenciais.
+  provider       String
+  providerRunId  String?
+  // PENDENTE | EXECUTANDO | CONCLUIDO | FALHOU | CANCELADO
+  status         String           @default("PENDENTE")
+  requestJson    String
+  resultJson     String?
+  errorMessage   String?
+  requestedById  String?
+  requestedBy    User?            @relation("GenerationRunRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  revisions SiteRevision[] @relation("SiteRevisionRun")
+
+  @@index([siteProjectId, status])
+  @@index([provider, providerRunId])
+}
+
+/// Resultado imutável de uma geração. Toda publicação aponta para uma revisão,
+/// e a revisão carrega o commit que a originou.
+model SiteRevision {
+  id              String         @id @default(cuid())
+  siteProjectId   String
+  siteProject     SiteProject    @relation("SiteRevisionProject", fields: [siteProjectId], references: [id], onDelete: Cascade)
+  generationRunId String?
+  generationRun   GenerationRun? @relation("SiteRevisionRun", fields: [generationRunId], references: [id], onDelete: SetNull)
+  version         Int
+  commitSha       String?
+  repositoryUrl   String?
+  summary         String?
+  manifestJson    String
+  createdAt       DateTime       @default(now())
+
+  approvedOfProject SiteProject[] @relation("SiteProjectApprovedRevision")
+  deployments       Deployment[]  @relation("DeploymentRevision")
+
+  @@unique([siteProjectId, version])
+  @@index([siteProjectId])
+  @@index([commitSha])
+}
+
+model Deployment {
+  id                   String       @id @default(cuid())
+  siteProjectId        String
+  siteProject          SiteProject  @relation("DeploymentProject", fields: [siteProjectId], references: [id], onDelete: Cascade)
+  siteRevisionId       String
+  siteRevision         SiteRevision @relation("DeploymentRevision", fields: [siteRevisionId], references: [id], onDelete: Restrict)
+  // PREVIA | PRODUCAO
+  environment          String       @default("PREVIA")
+  // PENDENTE | EM_ANDAMENTO | PRONTO | FALHOU | CANCELADO
+  status               String       @default("PENDENTE")
+  provider             String       @default("vercel")
+  providerDeploymentId String?
+  url                  String?
+  errorMessage         String?
+  requestedById        String?
+  requestedBy          User?        @relation("DeploymentRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  approvedById         String?
+  approvedBy           User?        @relation("DeploymentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt           DateTime?
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  publishedOfProject SiteProject[] @relation("SiteProjectPublishedDeployment")
+
+  @@index([siteProjectId, environment])
+  @@index([status])
+}
+
+model Domain {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId     String?
+  siteProject       SiteProject? @relation(fields: [siteProjectId], references: [id], onDelete: SetNull)
+  hostname          String       @unique
+  // PREVIA | PRODUCAO
+  environment       String       @default("PRODUCAO")
+  // PENDENTE | VERIFICANDO | ATIVO | FALHOU
+  status            String       @default("PENDENTE")
+  verificationToken String?
+  verifiedAt        DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([siteProjectId])
+  @@index([status])
+}
+
+model Asset {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientId       String?
+  client         Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  siteProjectId  String?
+  siteProject    SiteProject? @relation(fields: [siteProjectId], references: [id], onDelete: SetNull)
+  // IMAGEM | LOGO | DOCUMENTO | VIDEO
+  kind           String
+  url            String
+  storageKey     String?
+  mimeType       String?
+  byteSize       Int?
+  checksum       String?
+  /// FORNECIDA | ILUSTRATIVA — a origem decide como a peça pode ser exibida.
+  license        String       @default("FORNECIDA")
+  credit         String?
+  creditUrl      String?
+  uploadedById   String?
+  uploadedBy     User?        @relation("AssetUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([siteProjectId])
+  @@index([clientId])
+}
+
+/// Livro-razão de consumo. Só acrescenta linhas; nada é editado ou removido.
+model UsageLedger {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId  String?
+  siteProject    SiteProject? @relation(fields: [siteProjectId], references: [id], onDelete: SetNull)
+  // GERACAO | DEPLOY | ARMAZENAMENTO | IA_TOKENS | DOMINIO
+  kind           String
+  quantity       Int          @default(1)
+  unit           String       @default("execucao")
+  reference      String?
+  metaJson       String?
+  occurredAt     DateTime     @default(now())
+  recordedById   String?
+  recordedBy     User?        @relation("UsageLedgerRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, occurredAt])
+  @@index([siteProjectId])
+  @@index([kind])
+}
+
+// ---------------------------------------------------------------------------
+// Prospecção B2B (domínio existente)
+// ---------------------------------------------------------------------------
 
 model Business {
   id               String   @id @default(cuid())
@@ -63,6 +355,7 @@ model Business {
   notes        Note[]
   suppressions SuppressionEntry[]
   demoLanding  DemoLanding?
+  client       Client?
 
   @@unique([source, externalId])
   @@index([city])

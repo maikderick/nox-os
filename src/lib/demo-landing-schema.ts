@@ -1,16 +1,8 @@
 import { z } from "zod";
 import { isInstagramPostUrl } from "./instagram";
 import { isValidPhoneE164 } from "./phone";
+import { plainText } from "./zod-text";
 
-const plainText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .min(1, "Preencha este campo")
-    .max(max, `Use no máximo ${max} caracteres`)
-    .refine((value) => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value), {
-      message: "O texto contém caracteres de controle inválidos",
-    });
 
 const listItem = plainText(180);
 const nullablePlainText = (max: number) => plainText(max).nullable();

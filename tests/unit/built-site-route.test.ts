@@ -78,6 +78,16 @@ describe("GET /demo/[slug]/site", () => {
     );
   });
 
+  it("never exposes a draft through the built-site redirect", async () => {
+    mocks.findUnique.mockResolvedValue(stored({ status: "DRAFT" }));
+
+    const response = await GET(request(), ctx);
+
+    expect(response.headers.get("location")).toBe(
+      "https://nox.example.com/demo/padaria-aurora-abc123",
+    );
+  });
+
   it("refuses a lead that turned out to have its own website", async () => {
     mocks.findUnique.mockResolvedValue(
       stored({ business: { website: "https://padaria-aurora.com.br" } }),

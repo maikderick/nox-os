@@ -1,9 +1,9 @@
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
+import { requirePermission } from "@/lib/authz/dal";
+import { isAuthorizationError } from "@/lib/authz/errors";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/settings";
 
@@ -36,9 +36,12 @@ const updateSchema = z
   );
 
 async function adminActor() {
-  const session = await getServerSession(authOptions);
-  const user = session?.user;
-  return user?.id && user.role === "admin" ? user : null;
+  try {
+    return await requirePermission("org:manage_members");
+  } catch (error) {
+    if (isAuthorizationError(error)) return null;
+    throw error;
+  }
 }
 
 const publicSelect = {
@@ -56,10 +59,11 @@ export async function GET() {
   if (!actor) return NextResponse.json({ error: "Acesso exclusivo de administrador." }, { status: 403 });
 
   const users = await prisma.user.findMany({
+    where: { memberships: { some: { organizationId: actor.organizationId } } },
     select: publicSelect,
     orderBy: [{ active: "desc" }, { createdAt: "asc" }],
   });
-  return NextResponse.json({ users, currentUserId: actor.id });
+  return NextResponse.json({ users, currentUserId: actor.userId });
 }
 
 export async function POST(req: Request) {
@@ -88,8 +92,15 @@ export async function POST(req: Request) {
     },
     select: publicSelect,
   });
+  await prisma.organizationMembership.create({
+    data: {
+      organizationId: actor.organizationId,
+      userId: user.id,
+      role: user.role === "admin" ? "ADMIN" : "OPERADOR",
+    },
+  });
   await writeAudit({
-    userId: actor.id,
+    userId: actor.userId,
     action: "user.create",
     entity: "User",
     entityId: user.id,
@@ -111,7 +122,7 @@ export async function PATCH(req: Request) {
   const target = await prisma.user.findUnique({ where: { id: body.data.id } });
   if (!target) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
 
-  if (target.id === actor.id && (body.data.active === false || body.data.role === "operator")) {
+  if (target.id === actor.userId && (body.data.active === false || body.data.role === "operator")) {
     return NextResponse.json(
       { error: "Você não pode desativar ou remover seu próprio acesso administrativo." },
       { status: 400 },
@@ -153,8 +164,17 @@ export async function PATCH(req: Request) {
     data: update,
     select: publicSelect,
   });
+  if (body.data.role !== undefined || body.data.active !== undefined) {
+    await prisma.organizationMembership.updateMany({
+      where: { organizationId: actor.organizationId, userId: target.id },
+      data: {
+        role: body.data.role === undefined ? undefined : body.data.role === "admin" ? "ADMIN" : "OPERADOR",
+        active: body.data.active,
+      },
+    });
+  }
   await writeAudit({
-    userId: actor.id,
+    userId: actor.userId,
     action: "user.update",
     entity: "User",
     entityId: user.id,

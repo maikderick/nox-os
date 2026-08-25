@@ -8,10 +8,12 @@ const mocks = vi.hoisted(() => ({
   auditCreate: vi.fn(),
   userFindUnique: vi.fn(),
   improve: vi.fn(),
+  requirePermission: vi.fn(),
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: mocks.getServerSession }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+vi.mock("@/lib/authz/dal", () => ({ requirePermission: mocks.requirePermission }));
 vi.mock("@/lib/db", () => ({
   prisma: {
     demoLanding: { findUnique: mocks.findUnique, update: mocks.update },
@@ -25,6 +27,7 @@ vi.mock("@/lib/anthropic", async (importOriginal) => {
 });
 
 import { DemoAiError } from "../../src/lib/anthropic";
+import { AuthorizationError } from "../../src/lib/authz/errors";
 import { generateDemoLandingContent } from "../../src/lib/demo-landing";
 import { POST } from "../../src/app/api/demo-landings/[id]/improve/route";
 import { PATCH } from "../../src/app/api/demo-landings/[id]/route";
@@ -86,6 +89,7 @@ describe("POST /api/demo-landings/[id]/improve", () => {
       attempts: 1,
       model: "claude-opus-5",
     });
+    mocks.requirePermission.mockResolvedValue({ userId: "user-1", role: "ADMIN" });
   });
 
   it("requires an authenticated user", async () => {
@@ -204,6 +208,7 @@ describe("PATCH approval state", () => {
         contentJson: data.contentJson ?? JSON.stringify(content),
       }),
     );
+    mocks.requirePermission.mockResolvedValue({ userId: "user-1", role: "ADMIN" });
   });
 
   it("sends an approved demo back to draft when the content changes", async () => {
@@ -227,5 +232,16 @@ describe("PATCH approval state", () => {
     expect(response.status).toBe(200);
     const data = mocks.update.mock.calls[0][0].data as Record<string, unknown>;
     expect(data.status).toBe("APPROVED");
+    expect(mocks.requirePermission).toHaveBeenCalledWith("publish:approve");
+  });
+
+  it("refuses approval when the actor lacks approval permission", async () => {
+    mocks.requirePermission.mockRejectedValue(
+      AuthorizationError.missingPermission("publish:approve"),
+    );
+
+    const response = await PATCH(patchRequest({ status: "APPROVED" }), ctx);
+    expect(response.status).toBe(403);
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 });
