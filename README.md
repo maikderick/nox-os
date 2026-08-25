@@ -336,7 +336,25 @@ npm run start
 - `src/lib/authz` — papéis, permissões e DAL multi-organização
 - `src/lib/site-factory` — briefing, estados e serviços de projeto
 - `src/lib/codegen` — contrato e registro de provedores de geração
+- `src/lib/site-factory/site-export.ts` — projeta um briefing no snapshot publicável
+- `contracts/site-kit` — cópia versionada do contrato dos sites gerados
 - `prisma/schema.prisma` — entidades
+
+## Repositórios da fábrica
+
+O site gerado não vive aqui. Ele é construído a partir de dois repositórios
+irmãos, propositalmente separados para que o servidor e os sites possam ser
+publicados em ritmos diferentes:
+
+| Repositório | Papel |
+| --- | --- |
+| `nox-site-kit` | Pacote `@nox/site-kit`: contrato de conteúdo em Zod, tokens, componentes acessíveis, SEO e analytics. |
+| `nox-site-template` | Aplicação Next.js completa que lê um snapshot validado. Cada repositório privado de cliente nasce como uma cópia dele. |
+
+O NOX OS **não** importa o pacote. O que impede os dois lados de divergirem é a
+cópia versionada dos artefatos do kit em `contracts/site-kit`, validada por
+`tests/unit/site-export-contract.test.ts`. Detalhes em
+[docs/arquitetura-fabrica-de-sites.md](docs/arquitetura-fabrica-de-sites.md).
 
 ## Licença de dados
 
