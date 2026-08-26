@@ -587,7 +587,11 @@ model SecretRef {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  @@unique([scope, organizationId, purpose])
+  /// A unicidade real vive em índices parciais criados por SQL, junto de um
+  /// CHECK que amarra escopo e dono — ver
+  /// 20260825233000_secretref_escopo_coerente. O Prisma não expressa nenhum dos
+  /// dois, e o índice composto que ele geraria não valeria para PLATAFORMA,
+  /// porque NULL não é igual a NULL.
   @@index([purpose])
 }
 
