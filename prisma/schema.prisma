@@ -710,8 +710,15 @@ model Job {
   payloadJson String
 
   /// Tentativas de falha real. Espera não conta aqui.
-  attempts       Int       @default(0)
-  maxAttempts    Int       @default(5)
+  attempts           Int @default(0)
+  maxAttempts        Int @default(5)
+  /// Quantas vezes um consumidor morreu segurando este job.
+  ///
+  /// Separado de `attempts` de propósito: consumidor morto não é job falhado.
+  /// Mas um job que derruba TODO consumidor que o executa também não é a
+  /// plataforma caindo, e nada além deste contador distingue os dois.
+  leaseRecoveryCount Int @default(0)
+
   /// Voltas de espera. Não consomem tentativa nem aplicam backoff de falha.
   pollCount      Int       @default(0)
   pollDeadlineAt DateTime?

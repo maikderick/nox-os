@@ -25,6 +25,7 @@ export const JOB_REASONS = [
   "TENTATIVAS_ESGOTADAS",
   "JOB_NAO_REPROCESSAVEL",
   "MOTIVO_DE_PAUSA_DESCONHECIDO",
+  "RESGATES_SUCESSIVOS",
 ] as const;
 
 export type JobReason = (typeof JOB_REASONS)[number];
@@ -97,6 +98,9 @@ const BUILDERS: Record<JobReason, (details: JobDetails) => string> = {
 
   MOTIVO_DE_PAUSA_DESCONHECIDO: () =>
     "O motivo de pausa informado não é um dos motivos previstos. Um job só é pausado por decisão do freio.",
+
+  RESGATES_SUCESSIVOS: () =>
+    "Consumidores morreram seguidas vezes executando este job, e ele foi para conciliação em vez de ser resgatado de novo. Um trabalho que derruba quem o executa não se resolve tentando mais uma vez.",
 };
 
 export function buildJobReasonMessage(reason: JobReason, details: JobDetails = {}): string {

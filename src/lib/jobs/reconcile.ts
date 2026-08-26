@@ -4,6 +4,8 @@ import type { Job } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 
+import { buildJobReasonMessage } from "./reasons";
+
 /**
  * Bringing back work whose consumer never came home.
  *
@@ -12,25 +14,50 @@ import { prisma } from "@/lib/db";
  * with a lease nobody is renewing, and without this it would sit there
  * forever, blocking its project through the concurrency index.
  *
- * **The counters survive the reclaim, and that is the point.** A dead consumer
- * is not a failed job: nothing was tried and refused, the process simply
- * stopped existing. Spending an attempt here would let four deploys during a
- * long generation walk a perfectly healthy run into its dead letter, and
- * resetting `pollCount` would hand a stuck poll an unlimited new budget to be
- * stuck in. Neither number is ours to touch.
+ * **`attempts` and `pollCount` survive the reclaim, and that is the point.** A
+ * dead consumer is not a failed job: nothing was tried and refused, the process
+ * simply stopped existing. Spending an attempt here would let four deploys
+ * during a long generation walk a perfectly healthy run into its dead letter,
+ * and resetting `pollCount` would hand a stuck poll an unlimited new budget to
+ * be stuck in. Neither number is ours to touch.
  *
  * `runAfter` is not moved either: the job was due, and it still is.
  *
- * Known gap, deliberate: a job that kills its consumer *every* time comes back
- * every time, because nothing distinguishes "the platform died" from "this job
- * kills whatever runs it". Telling them apart needs a counter this phase does
- * not add. Until then it is visible rather than silent — a job that keeps
- * reappearing shows up on the queue screen of commit 15.
+ * What *is* counted is the reclaim itself. "The platform died" and "this job
+ * kills whatever runs it" produce the same row, and only repetition tells them
+ * apart — so the third recovery stops trying. The job goes to `CONCILIACAO`,
+ * where a person looks at it, rather than round the loop again taking a
+ * consumer with it each time.
  */
+
+/**
+ * How many times a job may be rescued before the rescuing itself becomes the
+ * evidence.
+ *
+ * Three, not one: a single deploy landing mid-run is ordinary, and two in a row
+ * is bad luck. Three consumers dying on the same job is a pattern.
+ */
+export const MAX_LEASE_RECOVERIES = 3;
+
 export async function reclaimExpiredLeases(): Promise<Job[]> {
+  // Built here, from the closed reason, exactly like every other stored text.
+  const exhausted = buildJobReasonMessage("RESGATES_SUCESSIVOS");
+
   return prisma.$queryRaw<Job[]>`
     UPDATE "Job"
-       SET "status" = 'PENDENTE',
+       SET "leaseRecoveryCount" = "leaseRecoveryCount" + 1,
+           "status" = CASE
+             WHEN "leaseRecoveryCount" + 1 >= ${MAX_LEASE_RECOVERIES} THEN 'CONCILIACAO'
+             ELSE 'PENDENTE'
+           END,
+           "lastErrorCode" = CASE
+             WHEN "leaseRecoveryCount" + 1 >= ${MAX_LEASE_RECOVERIES} THEN 'RESGATES_SUCESSIVOS'
+             ELSE "lastErrorCode"
+           END,
+           "lastError" = CASE
+             WHEN "leaseRecoveryCount" + 1 >= ${MAX_LEASE_RECOVERIES} THEN ${exhausted}
+             ELSE "lastError"
+           END,
            "leaseOwner" = NULL,
            "leaseExpiresAt" = NULL,
            "updatedAt" = NOW()

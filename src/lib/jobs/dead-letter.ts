@@ -36,9 +36,9 @@ export async function listDeadLetters(actor: Actor, limit = 50): Promise<Job[]> 
  * Precisely what it does, because "clean slate" is not true and would be a bad
  * thing to believe:
  *
- *   * `attempts` and `pollCount` go to zero. The operator is saying the reason
- *     it failed is gone; a reprocess that kept the old count would get one try
- *     and die again.
+ *   * `attempts`, `pollCount` and `leaseRecoveryCount` go to zero. The
+ *     operator is saying the reason it failed is gone; a reprocess that kept
+ *     the old count would get one try and die again.
  *   * `pollDeadlineAt` is **renewed** from the closed policy for this kind, not
  *     preserved and not cleared. Preserving it would restart a poll whose
  *     patience already ran out months ago, and it would give up on the first
@@ -99,6 +99,7 @@ export async function reprocessDeadLetter(actor: Actor, jobId: string): Promise<
            SET "status" = 'PENDENTE',
                "attempts" = 0,
                "pollCount" = 0,
+               "leaseRecoveryCount" = 0,
                "runAfter" = NOW(),
                "pollDeadlineAt" = CASE
                  WHEN ${patience}::double precision IS NULL THEN NULL
