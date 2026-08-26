@@ -6,6 +6,8 @@ export default defineConfig({
     environment: "node",
     include: ["tests/unit/**/*.test.ts"],
     testTimeout: 30000,
+    // Every suite runs with the network blocked; see the file for why.
+    setupFiles: ["./tests/setup/no-network.ts"],
   },
   resolve: {
     alias: {

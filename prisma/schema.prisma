@@ -28,6 +28,7 @@ model User {
   requestedDeployments Deployment[]             @relation("DeploymentRequestedBy")
   approvedDeployments  Deployment[]             @relation("DeploymentApprovedBy")
   uploadedAssets       Asset[]                  @relation("AssetUploadedBy")
+  enabledIntegrations  IntegrationSetting[]     @relation("IntegrationSettingEnabledBy")
   usageEntries         UsageLedger[]            @relation("UsageLedgerRecordedBy")
 }
 
@@ -44,6 +45,8 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   memberships  OrganizationMembership[]
+  integrations IntegrationSetting[]
+  secretRefs   SecretRef[]
   clients      Client[]
   siteProjects SiteProject[]
   domains      Domain[]
@@ -535,4 +538,50 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([action])
+}
+
+// ---------------------------------------------------------------------------
+// Integrações externas — nascem desligadas
+// ---------------------------------------------------------------------------
+
+/// Modo de uma integração por organização. O padrão é DESLIGADO, e a variável
+/// NOX_INTEGRATIONS=disabled força DESLIGADO para toda a instalação.
+model IntegrationSetting {
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // github | vercel | cursor
+  provider       String
+  // DESLIGADO | FALSO | SANDBOX | LIVE
+  mode           String       @default("DESLIGADO")
+  enabledById    String?
+  enabledBy      User?        @relation("IntegrationSettingEnabledBy", fields: [enabledById], references: [id], onDelete: SetNull)
+  enabledAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@id([organizationId, provider])
+  @@index([provider, mode])
+}
+
+/// Referência a um segredo. Guarda onde o valor está, nunca o valor.
+model SecretRef {
+  id             String        @id @default(cuid())
+  /// PLATAFORMA: credencial do NOX OS, uma para toda a instalação.
+  /// ORGANIZACAO: credencial de um cliente, escopada a uma organização.
+  scope          String        @default("PLATAFORMA")
+  /// Nulo quando scope = PLATAFORMA.
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// github.provisioner.appId | github.reconciler.privateKey | vercel.token | ...
+  purpose        String
+  /// Nome da variável de ambiente que carrega o valor.
+  envVarName     String
+  /// SHA-256 do valor, só para detectar rotação. Não reverte ao segredo.
+  fingerprint    String?
+  lastRotatedAt  DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([scope, organizationId, purpose])
+  @@index([purpose])
 }
