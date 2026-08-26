@@ -730,13 +730,16 @@ model Job {
   updatedAt  DateTime  @updatedAt
   finishedAt DateTime?
 
-  /// A unicidade real vive em dois índices escritos à mão — ver
-  /// 20260826_fila_durable. O Prisma 5 não expressa índice parcial, e um índice
-  /// total sobre `concurrencyKey` impediria o segundo trabalho do mesmo projeto
-  /// para sempre, não só enquanto o primeiro estivesse vivo.
-  /// Uma etapa, um job, para sempre. O nome é fixado com `map` porque a
-  /// migration cria o índice à mão, ao lado do parcial que o Prisma não
-  /// expressa: os dois precisam sair do mesmo arquivo para serem lidos juntos.
+  /// A outra metade da unicidade não cabe aqui: `Job_concurrency_ativo_uniq` é
+  /// um índice PARCIAL, que o Prisma 5 não expressa, e vive só na migration
+  /// 20260826120000_fila_durable. Um índice total sobre `concurrencyKey`
+  /// impediria o segundo trabalho do mesmo projeto para sempre, não apenas
+  /// enquanto o primeiro estivesse vivo.
+  ///
+  /// Esta metade, sim, é um índice único comum, e por isso está declarada. O
+  /// `map` fixa o nome que a migration usa, para que os dois sejam o mesmo
+  /// objeto. Sem esta linha, o próximo `migrate diff` escreveria um
+  /// `DROP INDEX` dela.
   @@unique([organizationId, idempotencyKey], map: "Job_idempotency_uniq")
   @@index([status, runAfter])
   @@index([organizationId, kind, status])

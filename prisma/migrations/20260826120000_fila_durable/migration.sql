@@ -1,18 +1,23 @@
 -- Fila durável: uma etapa por job.
 --
--- Os dois índices únicos no fim são escritos à mão, e não saem de nenhum
--- `prisma migrate diff`. O Prisma 5 não expressa índice parcial, e aqui a
--- parcialidade é o desenho inteiro:
+-- Dos dois índices únicos no fim, só um é invisível ao Prisma. A distinção
+-- importa para quem gerar a próxima migration por diff:
 --
---   * a chave de idempotência identifica UMA ETAPA. Um índice sobre o trabalho
---     lógico impediria a segunda etapa da mesma cadeia de ser enfileirada,
---     e a cadeia simplesmente não andaria.
+--   * `Job_idempotency_uniq` é um índice único COMUM, e está declarado no
+--     schema como `@@unique([organizationId, idempotencyKey], map: ...)`. O
+--     `map` existe para que o nome lá e o nome aqui sejam o mesmo. O diff o
+--     enxerga e o preserva sozinho — sem a declaração no schema ele escreveria
+--     um `DROP INDEX`, que foi exatamente o que o teste de drift pegou.
+--     Ele identifica UMA ETAPA: um índice sobre o trabalho lógico impediria a
+--     segunda etapa da mesma cadeia de ser enfileirada, e a cadeia não andaria.
 --
---   * a chave de concorrência exclui um segundo trabalho MUTANTE do mesmo
---     projeto enquanto o primeiro está vivo. Um índice total sobre ela
---     impediria o segundo para sempre, mesmo com o primeiro terminado.
+--   * `Job_concurrency_ativo_uniq` é PARCIAL, e o Prisma 5 não expressa índice
+--     parcial. Ele existe só neste arquivo. A parcialidade é o desenho inteiro:
+--     a chave exclui um segundo trabalho MUTANTE do mesmo projeto enquanto o
+--     primeiro está vivo, e um índice total sobre ela impediria o segundo para
+--     sempre, mesmo com o primeiro terminado.
 --
--- Quem gerar a próxima migration por diff precisa preservar os dois.
+-- Só o parcial precisa ser preservado à mão. O teste de drift cobre os dois.
 
 -- CreateTable
 CREATE TABLE "Job" (
@@ -61,7 +66,8 @@ ALTER TABLE "Job" ADD CONSTRAINT "Job_siteProjectId_fkey" FOREIGN KEY ("siteProj
 -- AddForeignKey
 ALTER TABLE "Job" ADD CONSTRAINT "Job_generationRunId_fkey" FOREIGN KEY ("generationRunId") REFERENCES "GenerationRun"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- Uma etapa, um job, para sempre.
+-- Uma etapa, um job, para sempre. Declarado no schema; criado aqui só porque
+-- esta migration cria a tabela.
 CREATE UNIQUE INDEX "Job_idempotency_uniq"
     ON "Job" ("organizationId", "idempotencyKey");
 
