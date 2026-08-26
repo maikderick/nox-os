@@ -7,7 +7,6 @@ import {
   ProviderPreflightError,
   ProviderResourceConflictError,
   ProviderResourceNotFoundError,
-  redactProviderError,
 } from "@/lib/providers/errors";
 
 import { ProvisioningNotEligibleError } from "./eligibility";
@@ -20,8 +19,11 @@ import { ProvisioningNotEligibleError } from "./eligibility";
  * caused it, and that request carried an authorization header.
  */
 export function provisioningErrorResponse(error: unknown): NextResponse | null {
+  // Every branch below is one of this application's own errors, so the message
+  // is already ours. An unrecognised error returns null and never reaches the
+  // client as text.
   const answer = (status: number, code: string, message: string) =>
-    NextResponse.json({ error: redactProviderError(message), code }, { status });
+    NextResponse.json({ error: message, code }, { status });
 
   if (error instanceof ProvisioningNotEligibleError) {
     // The request is well formed and the caller is allowed; the project simply

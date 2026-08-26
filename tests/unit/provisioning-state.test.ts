@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { permissionsForRole, roleHasPermission } from "../../src/lib/authz/permissions";
-import { redactProviderError } from "../../src/lib/providers/errors";
 
 const mocks = vi.hoisted(() => ({
   projectFindFirst: vi.fn(),
@@ -97,7 +96,7 @@ describe("provisioning state", () => {
     });
   });
 
-  it("redacts a provider error before storing it", async () => {
+  it("stores nothing of an error it did not build", async () => {
     const leak =
       "GitHub respondeu 401 para Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz012345";
 
@@ -109,28 +108,18 @@ describe("provisioning state", () => {
 
     expect(data.status).toBe("FALHOU");
     expect(data.lastError).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz012345");
-    expect(data.lastError).toContain("[redigido]");
-  });
-});
-
-describe("error redaction", () => {
-  it("removes tokens, keys and authorization headers", () => {
-    expect(redactProviderError("token ghp_abcdefghijklmnopqrstuvwxyz012345")).not.toContain("ghp_");
-    expect(
-      redactProviderError(
-        "-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----",
-      ),
-    ).toBe("[redigido]");
-    expect(redactProviderError("Authorization: Bearer abcdefghijklmnop")).not.toContain(
-      "abcdefghijklmnop",
-    );
+    expect(data.lastError).toContain("código de correlação");
   });
 
-  it("keeps an ordinary message readable", () => {
-    expect(redactProviderError("O repositório já existe.")).toBe("O repositório já existe.");
-  });
+  it("stores the message of an error it did build", async () => {
+    const { ProviderPreflightError } = await import("../../src/lib/providers/errors");
 
-  it("caps the length so a huge body never lands in a column", () => {
-    expect(redactProviderError("x".repeat(5000)).length).toBeLessThanOrEqual(501);
+    const data = (await recordStepFailure({
+      siteProjectId: "project-1",
+      step: "hosting",
+      error: new ProviderPreflightError("Autorize o repositório na instalação da Vercel."),
+    })) as unknown as { lastError: string };
+
+    expect(data.lastError).toBe("Autorize o repositório na instalação da Vercel.");
   });
 });

@@ -57,23 +57,3 @@ export class ProviderPreflightError extends Error {
     this.name = "ProviderPreflightError";
   }
 }
-
-/**
- * Provider errors often echo back the request, and the request carried an
- * authorization header. Anything stored or shown passes through here first.
- */
-const SECRET_SHAPED = [
-  /gh[pousr]_[A-Za-z0-9]{16,}/g,
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-  /\bBearer\s+[A-Za-z0-9._~+/-]{12,}=*/gi,
-  /\bAuthorization\b\s*[:=]\s*\S+/gi,
-  /\b[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{16,}\b/g,
-];
-
-export function redactProviderError(message: string, maxLength = 500): string {
-  let redacted = message;
-  for (const pattern of SECRET_SHAPED) {
-    redacted = redacted.replace(pattern, "[redigido]");
-  }
-  return redacted.length > maxLength ? `${redacted.slice(0, maxLength)}…` : redacted;
-}

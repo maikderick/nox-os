@@ -3,7 +3,7 @@ import "server-only";
 import { assertPermission, type Actor } from "@/lib/authz/dal";
 import { AuthorizationError } from "@/lib/authz/errors";
 import { prisma } from "@/lib/db";
-import { redactProviderError } from "@/lib/providers/errors";
+import { describeErrorForStorage, formatStoredError } from "./error-record";
 
 /**
  * How far provisioning has got.
@@ -128,17 +128,16 @@ export async function recordStepFailure(params: {
   error: unknown;
 }) {
   await ensureProvisioning(params.siteProjectId);
-  const message =
-    params.error instanceof Error ? params.error.message : String(params.error ?? "erro");
+  // Only what this application composed itself is stored. Anything else keeps
+  // a correlation id and nothing of its original text.
+  const stored = describeErrorForStorage(params.error);
 
   return prisma.siteProvisioning.update({
     where: { siteProjectId: params.siteProjectId },
     data: {
       status: "FALHOU",
       lastStep: params.step,
-      // Provider errors frequently echo the request, and the request carried an
-      // authorization header.
-      lastError: redactProviderError(message),
+      lastError: formatStoredError(stored),
     },
   });
 }
