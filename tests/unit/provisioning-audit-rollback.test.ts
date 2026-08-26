@@ -207,7 +207,7 @@ describe("a failing audit write rolls the local completion back", () => {
 
     await expect(
       provisionRepository({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toThrow(/auditoria/);
+    ).rejects.toMatchObject({ code: "ERRO_INESPERADO" });
 
     // The remote repository exists — that effect is allowed to survive. What
     // must not survive is this side claiming to be done.
@@ -236,7 +236,7 @@ describe("a failing audit write rolls the local completion back", () => {
     db.failAuditOn.action = "provisioning.content.commit";
     await expect(
       provisionContent({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toThrow(/auditoria/);
+    ).rejects.toMatchObject({ code: "ERRO_INESPERADO" });
 
     const repo = [...sharedFakeWorld.repositories.values()][0];
     expect(repo.commits).toHaveLength(1);
@@ -262,7 +262,7 @@ describe("a failing audit write rolls the local completion back", () => {
     db.failAuditOn.action = "provisioning.hosting.create";
     await expect(
       provisionHosting({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toThrow(/auditoria/);
+    ).rejects.toMatchObject({ code: "ERRO_INESPERADO" });
 
     expect(sharedFakeWorld.projects.size).toBe(1);
     expect(db.state.hosting.get("project-1")!.linkedAt).toBeNull();
@@ -289,7 +289,7 @@ describe("a failing audit write rolls the local completion back", () => {
     db.failAuditOn.action = "provisioning.preview.reconcile";
     await expect(
       reconcilePreview({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toThrow(/auditoria/);
+    ).rejects.toMatchObject({ code: "ERRO_INESPERADO" });
 
     expect(db.state.provisioning.get("project-1")!.previewCheckedAt).toBeUndefined();
     expect(status()).toBe("FALHOU");

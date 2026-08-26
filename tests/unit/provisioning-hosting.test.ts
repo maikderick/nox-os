@@ -237,7 +237,7 @@ describe("provisioning step 3 — hosting", () => {
 
       await expect(
         provisionHosting({ actor: admin, siteProjectId: "project-1" }),
-      ).rejects.toThrow(/resultado/);
+      ).rejects.toMatchObject({ code: "ERRO_INESPERADO" });
 
       expect(sharedFakeWorld.projects.size).toBe(1);
       const stranded = store.rows.get("project-1")!;

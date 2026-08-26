@@ -9,6 +9,7 @@ import type { GitRepositoryProvider, HostingProvider } from "@/lib/providers/por
 import { getGitRepositoryProvider, getHostingProvider } from "@/lib/providers/registry";
 
 import { assertProvisioningEligible, type EligibleBrief } from "./eligibility";
+import { SanitizedProvisioningFailure } from "./error-record";
 import { ProvisioningRefusal } from "./reasons";
 import { sitesOwnerFallback } from "./naming";
 import { loadProvisionableProject, recordStepFailure, type ProvisioningStep } from "./state";
@@ -97,6 +98,12 @@ export async function resolveSitesOwner(context: ProvisioningContext): Promise<s
  * The recording matters: without it a failed run leaves no trace on the screen
  * the operator is looking at, and the only evidence lives in a log they cannot
  * reach.
+ *
+ * What travels onward is never the original object. A refusal this application
+ * built is safe by construction and continues as itself; anything else is
+ * replaced by a sanitized failure carrying the same correlation id that reached
+ * the column. Re-throwing the original would have kept the database clean and
+ * handed the message and the stack to the framework, which logs both.
  */
 export async function runStep<T>(
   params: { siteProjectId: string; step: ProvisioningStep },
@@ -105,11 +112,18 @@ export async function runStep<T>(
   try {
     return await work();
   } catch (error) {
-    await recordStepFailure({
+    const stored = await recordStepFailure({
       siteProjectId: params.siteProjectId,
       step: params.step,
       error,
     });
+
+    // A correlation id is only minted when nothing of the original could be
+    // kept, which is exactly the case that must not travel.
+    if (stored.correlationId) {
+      throw new SanitizedProvisioningFailure(stored, params.step);
+    }
+
     throw error;
   }
 }

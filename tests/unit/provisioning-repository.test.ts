@@ -189,7 +189,7 @@ describe("provisioning step 1 — repository", () => {
 
     await expect(
       provisionRepository({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toThrow(/intenção/);
+    ).rejects.toMatchObject({ code: "ERRO_INESPERADO" });
 
     // Nothing remote was attempted, which is the point of writing it first.
     expect(sharedFakeWorld.repositories.size).toBe(0);
@@ -249,7 +249,7 @@ describe("provisioning step 1 — repository", () => {
       store.failures.updateWhen = (data) => "protectedAt" in data;
       await expect(
         provisionRepository({ actor: admin, siteProjectId: "project-1" }),
-      ).rejects.toThrow(/resultado/);
+      ).rejects.toMatchObject({ code: "ERRO_INESPERADO" });
 
       expect(sharedFakeWorld.repositories.size).toBe(1);
       const stranded = store.rows.get("project-1")!;

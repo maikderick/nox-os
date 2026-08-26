@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 
 import { authorizationResponse } from "@/lib/authz/route";
 
-import { describeErrorForStorage } from "./error-record";
+import {
+  describeErrorForStorage,
+  isSanitizedFailure,
+  type StoredError,
+} from "./error-record";
 import { isProvisioningRefusal, type ProvisioningReason } from "./reasons";
 
 /**
@@ -50,6 +54,25 @@ export function provisioningErrorResponse(error: unknown): NextResponse | null {
   );
 }
 
+function answerUnexpected(stored: StoredError): NextResponse {
+  return NextResponse.json(
+    {
+      error: stored.message,
+      code: stored.code,
+      correlationId: stored.correlationId,
+    },
+    { status: 500 },
+  );
+}
+
+/**
+ * The HTTP boundary, and the last place an error can escape.
+ *
+ * Nothing is re-thrown. An unrecognised error reaching Next would be logged by
+ * the framework with its message and stack intact, which is the one path that
+ * survives every other precaution — so it stops here, described safely, whether
+ * it came from a step that already recorded it or from anywhere before that.
+ */
 export async function withProvisioningErrors<T>(
   handler: () => Promise<T>,
 ): Promise<T | NextResponse> {
@@ -58,8 +81,22 @@ export async function withProvisioningErrors<T>(
   } catch (error) {
     const denied = authorizationResponse(error);
     if (denied) return denied;
+
     const refused = provisioningErrorResponse(error);
     if (refused) return refused;
-    throw error;
+
+    // Already recorded by `runStep`: reuse its correlation id rather than
+    // describing the failure again and minting a second one.
+    if (isSanitizedFailure(error)) {
+      return answerUnexpected({
+        code: error.code,
+        message: error.message,
+        correlationId: error.correlationId,
+      });
+    }
+
+    // Never reached a step — a failure while loading the project, resolving the
+    // mode, or anywhere else before `runStep`. Same treatment.
+    return answerUnexpected(describeErrorForStorage(error));
   }
 }

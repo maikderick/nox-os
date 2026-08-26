@@ -95,6 +95,35 @@ export function describeErrorForStorage(
   return { code: UNKNOWN_ERROR_CODE, message: GENERIC_MESSAGE, correlationId };
 }
 
+/**
+ * What is thrown onward after an unrecognised failure has been recorded.
+ *
+ * The original object never leaves the catch block. Re-throwing it would hand
+ * the message and the stack to the framework, which logs both — so the database
+ * would be clean and the platform log would hold the secret anyway.
+ *
+ * It carries no `cause`, no reference to the original, and nothing copied from
+ * it: not the name, not the message, not the stack, not a property. Its own
+ * stack is generated here and contains only this application's frames.
+ */
+export class SanitizedProvisioningFailure extends Error {
+  readonly code = UNKNOWN_ERROR_CODE;
+  readonly correlationId: string;
+  readonly step?: string;
+
+  constructor(stored: StoredError, step?: string) {
+    // The generic message, built by this module — never the original's.
+    super(stored.message);
+    this.name = "SanitizedProvisioningFailure";
+    this.correlationId = stored.correlationId ?? "";
+    this.step = step;
+  }
+}
+
+export function isSanitizedFailure(error: unknown): error is SanitizedProvisioningFailure {
+  return error instanceof SanitizedProvisioningFailure;
+}
+
 /** The single line stored in `SiteProvisioning.lastError`. */
 export function formatStoredError(stored: StoredError): string {
   return stored.correlationId

@@ -5,7 +5,11 @@ import { AuthorizationError } from "@/lib/authz/errors";
 import { prisma } from "@/lib/db";
 import type { SiteFactoryDb } from "@/lib/site-factory/db-client";
 
-import { describeErrorForStorage, formatStoredError } from "./error-record";
+import {
+  describeErrorForStorage,
+  formatStoredError,
+  type StoredError,
+} from "./error-record";
 
 /**
  * How far provisioning has got.
@@ -131,17 +135,25 @@ export async function recordStepSuccess(params: {
   });
 }
 
+/**
+ * Records the failure and hands back the safe description it produced.
+ *
+ * Returning it matters: the caller needs the same correlation id that reached
+ * the column. Describing the error a second time upstream would mint a second
+ * id, and the operator reading the screen would be chasing a value that appears
+ * nowhere in the log.
+ */
 export async function recordStepFailure(params: {
   siteProjectId: string;
   step: ProvisioningStep;
   error: unknown;
-}) {
+}): Promise<StoredError> {
   await ensureProvisioning(params.siteProjectId);
   // Only what this application composed itself is stored. Anything else keeps
   // a correlation id and nothing of its original text.
   const stored = describeErrorForStorage(params.error, { step: params.step });
 
-  return prisma.siteProvisioning.update({
+  await prisma.siteProvisioning.update({
     where: { siteProjectId: params.siteProjectId },
     data: {
       status: "FALHOU",
@@ -149,6 +161,8 @@ export async function recordStepFailure(params: {
       lastError: formatStoredError(stored),
     },
   });
+
+  return stored;
 }
 
 export function isProvisioningStep(value: unknown): value is ProvisioningStep {

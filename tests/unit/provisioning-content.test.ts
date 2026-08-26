@@ -189,7 +189,7 @@ describe("provisioning step 2 — content", () => {
 
     await expect(
       provisionContent({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toThrow(/resultado/);
+    ).rejects.toMatchObject({ code: "ERRO_INESPERADO" });
 
     const repo = [...sharedFakeWorld.repositories.values()][0];
     expect(repo.commits).toHaveLength(1);

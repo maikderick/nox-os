@@ -96,19 +96,38 @@ describe("provisioning state", () => {
     });
   });
 
-  it("stores nothing of an error it did not build", async () => {
+  it("stores nothing of an error it did not build, and hands the description back", async () => {
     const leak =
       "GitHub respondeu 401 para Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz012345";
+    const logged: unknown[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => {
+      logged.push(...args);
+    });
 
-    const data = (await recordStepFailure({
-      siteProjectId: "project-1",
-      step: "repository",
-      error: new Error(leak),
-    })) as unknown as { status: string; lastError: string };
+    let stored;
+    try {
+      stored = await recordStepFailure({
+        siteProjectId: "project-1",
+        step: "repository",
+        error: new Error(leak),
+      });
+    } finally {
+      spy.mockRestore();
+    }
 
-    expect(data.status).toBe("FALHOU");
-    expect(data.lastError).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz012345");
-    expect(data.lastError).toContain("código de correlação");
+    // The caller gets the same description that reached the column, so the
+    // exception it raises next carries one correlation id, not a second one.
+    expect(stored.code).toBe("ERRO_INESPERADO");
+    expect(stored.correlationId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const written = mocks.provUpdate.mock.calls.at(-1)![0].data as {
+      status: string;
+      lastError: string;
+    };
+    expect(written.status).toBe("FALHOU");
+    expect(written.lastError).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz012345");
+    expect(written.lastError).toContain(stored.correlationId!);
+    expect(JSON.stringify(logged)).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz012345");
   });
 
   it("stores the message it rebuilds from a closed reason", async () => {
@@ -116,20 +135,25 @@ describe("provisioning state", () => {
       "../../src/lib/provisioning/reasons"
     );
 
-    const data = (await recordStepFailure({
+    const stored = await recordStepFailure({
       siteProjectId: "project-1",
       step: "hosting",
       error: new ProvisioningRefusal("HOSPEDAGEM_SEM_ACESSO_AO_REPOSITORIO", {
         owner: "nox-sites",
         repository: "site-oficina",
       }),
-    })) as unknown as { lastError: string };
+    });
 
-    expect(data.lastError).toBe(
-      buildReasonMessage("HOSPEDAGEM_SEM_ACESSO_AO_REPOSITORIO", {
-        owner: "nox-sites",
-        repository: "site-oficina",
-      }),
-    );
+    const expected = buildReasonMessage("HOSPEDAGEM_SEM_ACESSO_AO_REPOSITORIO", {
+      owner: "nox-sites",
+      repository: "site-oficina",
+    });
+
+    // A known refusal needs no correlation id: it travels as itself.
+    expect(stored).toMatchObject({ message: expected });
+    expect(stored.correlationId).toBeUndefined();
+
+    const written = mocks.provUpdate.mock.calls.at(-1)![0].data as { lastError: string };
+    expect(written.lastError).toBe(expected);
   });
 });
