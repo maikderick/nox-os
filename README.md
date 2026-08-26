@@ -166,6 +166,16 @@ permissão nomeada — inclusive as rotas de prospecção, importação e demons
 > global com atribuição. Veja o gate em
 > [a arquitetura da fábrica](docs/arquitetura-fabrica-de-sites.md).
 
+## Provisionamento
+
+Com um briefing pronto, `/projetos/[id]/provisionamento` leva o projeto por quatro
+etapas — criar o repositório, publicar o conteúdo, criar a hospedagem, reconciliar
+a prévia. Cada uma confere o que já existe antes de agir e é segura para repetir.
+
+**Nada está ligado.** Todo provedor nasce `DESLIGADO` e `LIVE` não é selecionável:
+o caminho roda contra implementações falsas e respostas gravadas. Ver
+[o runbook](docs/runbook-provisionamento.md).
+
 ### Criar no Lovable
 
 Na ficha, **Criar no Lovable** monta um prompt mestre a partir do que já está confirmado —
