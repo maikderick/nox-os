@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { requirePermission } from "@/lib/authz/dal";
+import { authorized } from "@/lib/authz/route";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
   normalizeImportRadii,
@@ -16,9 +16,8 @@ import { waitUntil } from "@vercel/functions";
 
 export const maxDuration = 300;
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = authorized(async () => {
+  await requirePermission("lead:read");
 
   await prisma.importJob.updateMany({
     where: {
@@ -44,7 +43,7 @@ export async function GET() {
   if (readyJob) waitUntil(runOverpassImportBurst(readyJob.id));
 
   return NextResponse.json({ jobs });
-}
+});
 
 const startSchema = z.object({
   provider: z.enum(["overpass", "csv"]),
@@ -56,9 +55,8 @@ const startSchema = z.object({
   csvText: z.string().optional(),
 });
 
-export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = authorized(async (req: Request) => {
+  const actor = await requirePermission("lead:write");
 
   const body = startSchema.safeParse(await req.json());
   if (!body.success) {
@@ -129,7 +127,7 @@ export async function POST(req: Request) {
     });
 
     await writeAudit({
-      userId: session.user.id,
+      userId: actor.userId,
       action: "import.csv",
       entity: "ImportJob",
       entityId: job.id,
@@ -207,23 +205,22 @@ export async function POST(req: Request) {
   waitUntil(runOverpassImportBurst(job.id));
 
   await writeAudit({
-    userId: session.user.id,
+    userId: actor.userId,
     action: "import.overpass.start",
     entity: "ImportJob",
     entityId: job.id,
   });
 
   return NextResponse.json({ jobId: job.id, status: "started" });
-}
+});
 
 const controlSchema = z.object({
   jobId: z.string(),
   action: z.enum(["pause", "resume", "cancel"]),
 });
 
-export async function PATCH(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const PATCH = authorized(async (req: Request) => {
+  await requirePermission("lead:write");
 
   const body = controlSchema.safeParse(await req.json());
   if (!body.success) {
@@ -291,4 +288,4 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json({ ok: true });
-}
+});

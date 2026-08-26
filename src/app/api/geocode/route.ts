@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { requirePermission } from "@/lib/authz/dal";
+import { authorized } from "@/lib/authz/route";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
 import { fetchWithRetry } from "@/lib/places/http";
 
 const schema = z.object({
@@ -9,9 +9,8 @@ const schema = z.object({
 });
 
 /** Nominatim geocoding (OSM) — respectful usage, server-side only. */
-export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = authorized(async (req: Request) => {
+  await requirePermission("lead:read");
 
   const url = new URL(req.url);
   const parsed = schema.safeParse({ q: url.searchParams.get("q") });
@@ -54,4 +53,4 @@ export async function GET(req: Request) {
     })),
     attribution: "© OpenStreetMap contributors / Nominatim",
   });
-}
+});

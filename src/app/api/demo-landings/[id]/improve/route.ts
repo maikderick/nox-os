@@ -1,5 +1,6 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
+import { requirePermission } from "@/lib/authz/dal";
+import { authorized } from "@/lib/authz/route";
 import {
   DemoAiError,
   getDemoAiConfig,
@@ -7,7 +8,6 @@ import {
   toDemoAiError,
   type DemoAiErrorCode,
 } from "@/lib/anthropic";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { buildDemoAiFacts } from "@/lib/demo-landing-ai";
 import {
@@ -34,12 +34,12 @@ const ERROR_STATUS: Record<DemoAiErrorCode, number> = {
   upstream: 502,
 };
 
-export async function POST(_req: Request, ctx: Ctx) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const userId = session.user.id;
+export const POST = authorized(async (_req: Request, ctx: Ctx) => {
+  // Authorization comes first, before the configuration read, the quota count
+  // and any call to Anthropic: a caller who may not edit the demo must not be
+  // able to probe whether the key is set, spend quota, or reach the provider.
+  const actor = await requirePermission("lead:write");
+  const userId = actor.userId;
 
   const config = getDemoAiConfig();
   if (!config.configured) {
@@ -155,4 +155,4 @@ export async function POST(_req: Request, ctx: Ctx) {
       { status: ERROR_STATUS[error.code] },
     );
   }
-}
+});

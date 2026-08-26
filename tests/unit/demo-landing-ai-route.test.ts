@@ -1,19 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getServerSession: vi.fn(),
   findUnique: vi.fn(),
   update: vi.fn(),
   auditCount: vi.fn(),
   auditCreate: vi.fn(),
   userFindUnique: vi.fn(),
   improve: vi.fn(),
-  requirePermission: vi.fn(),
 }));
 
-vi.mock("next-auth", () => ({ getServerSession: mocks.getServerSession }));
-vi.mock("@/lib/auth", () => ({ authOptions: {} }));
-vi.mock("@/lib/authz/dal", () => ({ requirePermission: mocks.requirePermission }));
+const roleBox = vi.hoisted(() => ({
+  role: "ADMIN" as "ADMIN" | "OPERADOR" | "LEITOR",
+}));
+
+vi.mock("@/lib/authz/dal", async () => {
+  const { dalMock } = await import("../helpers/authz-mock");
+  return dalMock(roleBox);
+});
 vi.mock("@/lib/db", () => ({
   prisma: {
     demoLanding: { findUnique: mocks.findUnique, update: mocks.update },
@@ -27,7 +30,6 @@ vi.mock("@/lib/anthropic", async (importOriginal) => {
 });
 
 import { DemoAiError } from "../../src/lib/anthropic";
-import { AuthorizationError } from "../../src/lib/authz/errors";
 import { generateDemoLandingContent } from "../../src/lib/demo-landing";
 import { POST } from "../../src/app/api/demo-landings/[id]/improve/route";
 import { PATCH } from "../../src/app/api/demo-landings/[id]/route";
@@ -77,7 +79,6 @@ describe("POST /api/demo-landings/[id]/improve", () => {
     vi.clearAllMocks();
     process.env.ANTHROPIC_API_KEY = "chave-de-teste";
     delete process.env.DEMO_AI_HOURLY_LIMIT;
-    mocks.getServerSession.mockResolvedValue({ user: { id: "user-1" } });
     mocks.findUnique.mockResolvedValue(storedLanding());
     mocks.auditCount.mockResolvedValue(0);
     mocks.auditCreate.mockResolvedValue({});
@@ -89,16 +90,29 @@ describe("POST /api/demo-landings/[id]/improve", () => {
       attempts: 1,
       model: "claude-opus-5",
     });
-    mocks.requirePermission.mockResolvedValue({ userId: "user-1", role: "ADMIN" });
+    roleBox.role = "ADMIN";
   });
 
-  it("requires an authenticated user", async () => {
-    mocks.getServerSession.mockResolvedValue(null);
+  it("refuses a viewer before reading configuration or calling the provider", async () => {
+    roleBox.role = "LEITOR";
 
     const response = await POST(improveRequest(), ctx);
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
     expect(mocks.improve).not.toHaveBeenCalled();
+    // Neither the demo, nor the quota, nor the key was consulted.
+    expect(mocks.findUnique).not.toHaveBeenCalled();
+    expect(mocks.auditCount).not.toHaveBeenCalled();
+    expect(mocks.auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("lets an operator improve a demo", async () => {
+    roleBox.role = "OPERADOR";
+
+    const response = await POST(improveRequest(), ctx);
+
+    expect(response.status).toBe(200);
+    expect(mocks.improve).toHaveBeenCalled();
   });
 
   it("explains the missing configuration instead of failing silently", async () => {
@@ -195,7 +209,6 @@ function patchRequest(payload: unknown) {
 describe("PATCH approval state", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getServerSession.mockResolvedValue({ user: { id: "user-1" } });
     mocks.auditCreate.mockResolvedValue({});
     mocks.userFindUnique.mockResolvedValue({ id: "user-1" });
     mocks.findUnique.mockResolvedValue(
@@ -208,7 +221,7 @@ describe("PATCH approval state", () => {
         contentJson: data.contentJson ?? JSON.stringify(content),
       }),
     );
-    mocks.requirePermission.mockResolvedValue({ userId: "user-1", role: "ADMIN" });
+    roleBox.role = "ADMIN";
   });
 
   it("sends an approved demo back to draft when the content changes", async () => {
@@ -232,16 +245,30 @@ describe("PATCH approval state", () => {
     expect(response.status).toBe(200);
     const data = mocks.update.mock.calls[0][0].data as Record<string, unknown>;
     expect(data.status).toBe("APPROVED");
-    expect(mocks.requirePermission).toHaveBeenCalledWith("publish:approve");
   });
 
-  it("refuses approval when the actor lacks approval permission", async () => {
-    mocks.requirePermission.mockRejectedValue(
-      AuthorizationError.missingPermission("publish:approve"),
+  it("lets an operator edit a demo but never approve it", async () => {
+    roleBox.role = "OPERADOR";
+
+    const edit = await PATCH(patchRequest({ content: { ...content, headline: "Ajuste" } }), ctx);
+    expect(edit.status).toBe(200);
+
+    mocks.update.mockClear();
+    const approval = await PATCH(patchRequest({ status: "APPROVED" }), ctx);
+    expect(approval.status).toBe(403);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a viewer editing a demo", async () => {
+    roleBox.role = "LEITOR";
+
+    const response = await PATCH(
+      patchRequest({ content: { ...content, headline: "Ajuste" } }),
+      ctx,
     );
 
-    const response = await PATCH(patchRequest({ status: "APPROVED" }), ctx);
     expect(response.status).toBe(403);
     expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.auditCreate).not.toHaveBeenCalled();
   });
 });

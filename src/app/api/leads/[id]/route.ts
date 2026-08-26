@@ -1,20 +1,17 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { FUNNEL_STAGES } from "@/lib/funnel";
 import { writeAudit } from "@/lib/settings";
 import { parseJsonArray } from "@/lib/utils";
 import { canOpenWhatsApp, buildWhatsAppLink, renderWhatsAppTemplate } from "@/lib/whatsapp";
 import { requirePermission } from "@/lib/authz/dal";
-import { withAuthorization } from "@/lib/authz/route";
+import { authorized } from "@/lib/authz/route";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: Request, ctx: Ctx) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = authorized(async (_req: Request, ctx: Ctx) => {
+  await requirePermission("lead:read");
 
   const { id } = await ctx.params;
   const business = await prisma.business.findUnique({
@@ -36,7 +33,7 @@ export async function GET(_req: Request, ctx: Ctx) {
     scoreReasons: parseJsonArray(business.scoreReasons),
     socialLinks: parseJsonArray(business.socialLinks),
   });
-}
+});
 
 const patchSchema = z.object({
   funnelStage: z.enum(FUNNEL_STAGES).optional(),
@@ -49,9 +46,8 @@ const patchSchema = z.object({
   note: z.string().optional(),
 });
 
-export async function PATCH(req: Request, ctx: Ctx) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const PATCH = authorized(async (req: Request, ctx: Ctx) => {
+  const actor = await requirePermission("lead:write");
 
   const { id } = await ctx.params;
   const body = patchSchema.safeParse(await req.json());
@@ -126,14 +122,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
     await prisma.note.create({
       data: {
         businessId: id,
-        userId: session.user.id,
+        userId: actor.userId,
         body: data.note,
       },
     });
   }
 
   await writeAudit({
-    userId: session.user.id,
+    userId: actor.userId,
     action: "business.patch",
     entity: "Business",
     entityId: id,
@@ -141,10 +137,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
   });
 
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(_req: Request, ctx: Ctx) {
-  return withAuthorization(async () => {
+export const DELETE = authorized(async (_req: Request, ctx: Ctx) => {
   const actor = await requirePermission("lead:delete");
   const { id } = await ctx.params;
   await prisma.business.delete({ where: { id } });
@@ -155,8 +150,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     entityId: id,
   });
   return NextResponse.json({ ok: true });
-  });
-}
+});
 
 const waSchema = z.object({
   message: z.string().min(1),
@@ -171,9 +165,8 @@ function whatsappFormError(req: Request, id: string, error: string) {
 }
 
 /** Prepare a single manual wa.me link — never sends automatically. */
-export async function POST(req: Request, ctx: Ctx) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = authorized(async (req: Request, ctx: Ctx) => {
+  const actor = await requirePermission("lead:write");
 
   const { id } = await ctx.params;
   const url = new URL(req.url);
@@ -248,7 +241,7 @@ export async function POST(req: Request, ctx: Ctx) {
     await prisma.contactAttempt.create({
       data: {
         businessId: id,
-        userId: session.user.id,
+        userId: actor.userId,
         channel: "whatsapp",
         messagePreview: body.data.message,
         confirmedSent: false,
@@ -311,4 +304,4 @@ export async function POST(req: Request, ctx: Ctx) {
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
-}
+});

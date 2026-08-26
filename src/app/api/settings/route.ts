@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/authz/dal";
-import { withAuthorization } from "@/lib/authz/route";
+import { authorized, withAuthorization } from "@/lib/authz/route";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/settings";
 import { settingsForClient } from "@/lib/settings-serialization";
@@ -41,8 +41,7 @@ const updateSchema = z.object({
   retentionDays: z.number().int().min(30).max(3650).optional(),
 });
 
-export async function PATCH(req: Request) {
-  return withAuthorization(async () => {
+export const PATCH = authorized(async (req: Request) => {
   const actor = await requirePermission("settings:write");
 
   const body = updateSchema.safeParse(await req.json());
@@ -68,5 +67,4 @@ export async function PATCH(req: Request) {
   });
 
   return NextResponse.json({ settings: settingsForClient(settings) });
-  });
-}
+});

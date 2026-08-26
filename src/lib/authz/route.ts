@@ -24,4 +24,15 @@ export async function withAuthorization<T>(
   }
 }
 
+/**
+ * Wraps a route handler so every authorization refusal inside it becomes the
+ * response it describes. Handlers then start with a `requirePermission` call and
+ * never spell out 401/403 themselves.
+ */
+export function authorized<A extends unknown[], R>(
+  handler: (...args: A) => Promise<R>,
+): (...args: A) => Promise<R | NextResponse> {
+  return (...args: A) => withAuthorization(() => handler(...args));
+}
+
 export { AuthorizationError };

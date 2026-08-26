@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
+import { requirePermission } from "@/lib/authz/dal";
+import { authorized } from "@/lib/authz/route";
 import { prisma } from "@/lib/db";
 import { FUNNEL_STAGES } from "@/lib/funnel";
 import { parseJsonArray } from "@/lib/utils";
@@ -55,11 +55,8 @@ function serializeLead(b: LeadWithConsents) {
   };
 }
 
-export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export const GET = authorized(async (req: Request) => {
+  await requirePermission("lead:read");
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse(Object.fromEntries(url.searchParams));
@@ -203,4 +200,4 @@ export async function GET(req: Request) {
     pageSize: p.pageSize,
     items: items.map(serializeLead),
   });
-}
+});

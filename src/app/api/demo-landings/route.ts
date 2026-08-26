@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
-import { getServerSession } from "next-auth";
+import { requirePermission } from "@/lib/authz/dal";
+import { authorized } from "@/lib/authz/route";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getDemoAiConfig } from "@/lib/anthropic";
 import { toDemoLandingDto } from "@/lib/demo-landing";
@@ -22,11 +22,8 @@ const getQuerySchema = z.object({
 function requestOrigin(req: Request): string {
   return new URL(req.url).origin;
 }
-export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export const GET = authorized(async (req: Request) => {
+  await requirePermission("lead:read");
 
   const url = new URL(req.url);
   const query = getQuerySchema.safeParse({ leadId: url.searchParams.get("leadId") });
@@ -64,13 +61,10 @@ export async function GET(req: Request) {
   const snapshotted = await captureLegacyDemoBusinessSnapshot(stored, stored.business);
   const landing = await markExpiredIfNeeded(snapshotted);
   return NextResponse.json({ landing: toDemoLandingDto(landing, requestOrigin(req)), ai });
-}
+});
 
-export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export const POST = authorized(async (req: Request) => {
+  const actor = await requirePermission("lead:write");
 
   if (process.env.ALLOW_LEGACY_DEMO_LANDING_CREATION !== "true") {
     return NextResponse.json(
@@ -126,12 +120,12 @@ export async function POST(req: Request) {
   try {
     const landing = await regenerateDemoLanding({
       business,
-      createdById: session.user.id,
+      createdById: actor.userId,
       expiresInDays: body.data.expiresInDays,
     });
 
     await writeAudit({
-      userId: session.user.id,
+      userId: actor.userId,
       action: "demo_landing.generated",
       entity: "DemoLanding",
       entityId: landing.id,
@@ -148,4 +142,4 @@ export async function POST(req: Request) {
     }
     throw error;
   }
-}
+});

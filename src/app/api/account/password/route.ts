@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
+import { requireSession } from "@/lib/authz/dal";
+import { authorized } from "@/lib/authz/route";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/settings";
 
@@ -11,10 +11,10 @@ const schema = z.object({
   newPassword: z.string().min(12).max(128),
 });
 
-export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  const userId = session?.user?.id;
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// Changing your own password needs a session, not a membership: it must keep
+// working for an account that belongs to no organization yet.
+export const POST = authorized(async (req: Request) => {
+  const { userId } = await requireSession();
 
   const body = schema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
@@ -51,4 +51,4 @@ export async function POST(req: Request) {
   });
 
   return NextResponse.json({ ok: true });
-}
+});

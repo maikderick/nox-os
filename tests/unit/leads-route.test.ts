@@ -4,11 +4,14 @@ const mocks = vi.hoisted(() => ({
   count: vi.fn(),
   findMany: vi.fn(),
   findSettings: vi.fn(),
-  getServerSession: vi.fn(),
 }));
 
-vi.mock("next-auth", () => ({ getServerSession: mocks.getServerSession }));
-vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+const roleBox = vi.hoisted(() => ({ role: "OPERADOR" as const }));
+
+vi.mock("@/lib/authz/dal", async () => {
+  const { dalMock } = await import("../helpers/authz-mock");
+  return dalMock(roleBox);
+});
 vi.mock("@/lib/db", () => ({
   prisma: {
     business: {
@@ -38,7 +41,6 @@ function lead(id: string, website: string | null) {
 describe("GET /api/leads website eligibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getServerSession.mockResolvedValue({ user: { id: "user-1" } });
   });
 
   it("returns only leads without an owned website by default", async () => {
@@ -120,7 +122,6 @@ describe("GET /api/leads/stats website eligibility", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getServerSession.mockResolvedValue({ user: { id: "user-1" } });
     mocks.findMany.mockResolvedValue(businesses);
     mocks.findSettings.mockResolvedValue({ leadGoal: 1000 });
   });

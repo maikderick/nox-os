@@ -1,7 +1,7 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
+import { requirePermission } from "@/lib/authz/dal";
+import { authorized } from "@/lib/authz/route";
 import { z } from "zod";
-import { authOptions } from "@/lib/auth";
 import {
   getStockPhotoConfig,
   searchStockPhotos,
@@ -47,11 +47,8 @@ function withinRateLimit(userId: string, now: number): boolean {
   return true;
 }
 
-export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export const GET = authorized(async (req: Request) => {
+  const actor = await requirePermission("lead:write");
 
   const config = getStockPhotoConfig();
   if (!config.configured) {
@@ -69,7 +66,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  if (!withinRateLimit(session.user.id, Date.now())) {
+  if (!withinRateLimit(actor.userId, Date.now())) {
     return NextResponse.json(
       { error: "Muitas buscas seguidas. Aguarde um minuto.", code: "rate_limited" },
       { status: 429 },
@@ -97,4 +94,4 @@ export async function GET(req: Request) {
       { status: ERROR_STATUS[error.code] },
     );
   }
-}
+});

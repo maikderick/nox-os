@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requirePermission } from "@/lib/authz/dal";
+import { authorized } from "@/lib/authz/route";
 import { prisma } from "@/lib/db";
 import { isLeadEligibleByWebsite } from "@/lib/website";
 
-export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export const GET = authorized(async (req: Request) => {
+  await requirePermission("lead:read");
 
   const demoMode = process.env.DEMO_MODE === "true";
   const includeWithWebsite = new URL(req.url).searchParams.get("includeWithWebsite") === "true";
@@ -93,4 +90,4 @@ export async function GET(req: Request) {
       count: item.count,
     })),
   });
-}
+});

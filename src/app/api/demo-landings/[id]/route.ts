@@ -1,6 +1,4 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
   ensureDemoBusinessSnapshot,
@@ -11,15 +9,14 @@ import {
 import { updateDemoLandingSchema } from "@/lib/demo-landing-schema";
 import { writeAudit } from "@/lib/settings";
 import { requirePermission } from "@/lib/authz/dal";
-import { authorizationResponse } from "@/lib/authz/route";
+import { authorized } from "@/lib/authz/route";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function PATCH(req: Request, ctx: Ctx) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export const PATCH = authorized(async (req: Request, ctx: Ctx) => {
+  // Editing a demo is a lead-writing act; approving one is a publishing act on
+  // top of it, so approval demands both permissions.
+  const actor = await requirePermission("lead:write");
 
   let payload: unknown;
   try {
@@ -34,13 +31,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
 
   if (body.data.status === "APPROVED") {
-    try {
-      await requirePermission("publish:approve");
-    } catch (error) {
-      const response = authorizationResponse(error);
-      if (response) return response;
-      throw error;
-    }
+    await requirePermission("publish:approve");
   }
 
   const { id } = await ctx.params;
@@ -114,7 +105,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   });
 
   await writeAudit({
-    userId: session.user.id,
+    userId: actor.userId,
     action: "demo_landing.updated",
     entity: "DemoLanding",
     entityId: landing.id,
@@ -130,4 +121,4 @@ export async function PATCH(req: Request, ctx: Ctx) {
   return NextResponse.json({
     landing: toDemoLandingDto(landing, new URL(req.url).origin),
   });
-}
+});

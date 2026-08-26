@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/authz/dal";
-import { withAuthorization } from "@/lib/authz/route";
+import { authorized } from "@/lib/authz/route";
 import { prisma } from "@/lib/db";
 
 /** Retention cleanup: delete businesses older than retentionDays (except clients). */
-export async function POST() {
-  return withAuthorization(async () => {
+export const POST = authorized(async () => {
   await requirePermission("data:purge");
 
   const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
@@ -22,5 +21,4 @@ export async function POST() {
   });
 
   return NextResponse.json({ deleted: result.count, cutoff, retentionDays: days });
-  });
-}
+});
