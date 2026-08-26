@@ -47,8 +47,10 @@ model Organization {
   memberships  OrganizationMembership[]
   integrations IntegrationSetting[]
   secretRefs   SecretRef[]
-  clients      Client[]
-  siteProjects SiteProject[]
+  clients        Client[]
+  siteProjects   SiteProject[]
+  repositories   Repository[]
+  hostingProjects HostingProject[]
   domains      Domain[]
   assets       Asset[]
   usageEntries UsageLedger[]
@@ -134,6 +136,9 @@ model SiteProject {
   domains        Domain[]
   assets         Asset[]
   usageEntries   UsageLedger[]
+  repository     Repository?
+  hostingProject HostingProject?
+  provisioning   SiteProvisioning?
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])
@@ -584,4 +589,72 @@ model SecretRef {
 
   @@unique([scope, organizationId, purpose])
   @@index([purpose])
+}
+
+// ---------------------------------------------------------------------------
+// Provisionamento — repositório, hospedagem e o andamento retomável
+// ---------------------------------------------------------------------------
+
+/// O repositório privado de um site. Um por SiteProject.
+model Repository {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId  String       @unique
+  siteProject    SiteProject  @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  provider       String       @default("github")
+  owner          String
+  name           String
+  /// Nulo até a criação remota acontecer; sintético no modo FALSO.
+  externalId     String?
+  url            String?
+  defaultBranch  String       @default("main")
+  installationId String?
+  protectedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([provider, owner, name])
+  @@index([organizationId])
+}
+
+/// O projeto de hospedagem de um site. Um por SiteProject.
+model HostingProject {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId  String       @unique
+  siteProject    SiteProject  @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  provider       String       @default("vercel")
+  externalId     String?
+  name           String
+  url            String?
+  linkedAt       DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+}
+
+/// O andamento do provisionamento, para que cada etapa seja retomável.
+model SiteProvisioning {
+  id                String      @id @default(cuid())
+  siteProjectId     String      @unique
+  siteProject       SiteProject @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  // PENDENTE | REPOSITORIO_PRONTO | CONTEUDO_PRONTO | HOSPEDAGEM_PRONTA
+  // | PREVIA_RECONCILIADA | FALHOU
+  status            String      @default("PENDENTE")
+  lastStep          String?
+  /// Redigido por allowlist antes de gravar: erro de provedor ecoa cabeçalho.
+  lastError         String?
+  /// SHA-256 do snapshot commitado, para saber se precisa commitar de novo.
+  contentSha256     String?
+  commitSha         String?
+  previewUrl        String?
+  previewExternalId String?
+  previewCheckedAt  DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([status])
 }

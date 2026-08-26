@@ -48,6 +48,9 @@ export const PERMISSIONS = [
   "lead:delete",
   // Integrações externas
   "integration:manage",
+  // Provisionamento
+  "provisioning:read",
+  "provisioning:run",
   // Plataforma
   "settings:write",
   "usage:read",
@@ -73,6 +76,7 @@ const LEITOR: Permission[] = [
  */
 const OPERADOR: Permission[] = [
   ...LEITOR,
+  "provisioning:read",
   "client:write",
   "project:write",
   "brief:write",
@@ -87,6 +91,7 @@ const ADMIN: Permission[] = [
   "org:manage_settings",
   "org:manage_members",
   "integration:manage",
+  "provisioning:run",
   "client:delete",
   "project:delete",
   "brief:approve",
