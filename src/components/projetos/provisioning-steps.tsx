@@ -60,10 +60,17 @@ function completedFor(status: string): Set<StepId> {
 export function ProvisioningSteps({
   projectId,
   canRun,
+  runnable,
   state,
 }: {
   projectId: string;
   canRun: boolean;
+  /**
+   * Which steps the server would accept right now. Computed from the same
+   * fields the endpoints check, so a disabled button and a refused request can
+   * never disagree — and the button is a courtesy, not the guard.
+   */
+  runnable: Record<StepId, boolean>;
   state: ProvisioningView;
 }) {
   const router = useRouter();
@@ -147,6 +154,11 @@ export function ProvisioningSteps({
                 {step.id === "hosting" && state.hostingName ? (
                   <p className="mt-2 text-xs text-nox-muted">{state.hostingName}</p>
                 ) : null}
+                {!runnable[step.id] ? (
+                  <p className="mt-2 text-xs text-nox-muted">
+                    Disponível depois que a etapa anterior estiver concluída.
+                  </p>
+                ) : null}
                 {step.id === "reconcile-preview" && state.previewCheckedAt ? (
                   <p className="mt-2 text-xs text-nox-muted">
                     Consultado em {new Date(state.previewCheckedAt).toLocaleString("pt-BR")}
@@ -158,7 +170,8 @@ export function ProvisioningSteps({
                 <button
                   type="button"
                   onClick={() => run(step.id)}
-                  disabled={running !== null || pending}
+                  disabled={running !== null || pending || !runnable[step.id]}
+                  title={runnable[step.id] ? undefined : "Conclua a etapa anterior primeiro."}
                   className="inline-flex items-center gap-2 rounded-xl border border-nox-border px-4 py-2 text-sm text-white transition hover:border-nox-cyan disabled:opacity-50"
                 >
                   {running === step.id ? (

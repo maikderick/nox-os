@@ -15,6 +15,7 @@ import { writeAudit } from "@/lib/settings";
 import { gitProviderFor, openProvisioningContext, runStep } from "./context";
 import { hostingProjectNameFor } from "./naming";
 import { ProvisioningRefusal } from "./reasons";
+import { assertRepositoryReady } from "./step-order";
 import { recordStepSuccess } from "./state";
 
 export const CONTENT_PATH = "content/site.json";
@@ -66,10 +67,11 @@ export async function provisionContent(params: {
   });
 
   return runStep({ siteProjectId: params.siteProjectId, step: "content" }, async () => {
-    const repository = context.project.repository;
-    if (!repository) {
-      throw new ProvisioningRefusal("REPOSITORIO_INCOMPLETO");
-    }
+    // Before the provider: committing into a repository whose branch was never
+    // protected produces a site nobody reviewed, and undoing it costs a real
+    // resource.
+    assertRepositoryReady(context.project);
+    const repository = context.project.repository!;
 
     // Already parsed and verified by the eligibility gate; re-reading the row
     // here would be a second source of truth for the same bytes.

@@ -12,6 +12,7 @@ import { writeAudit } from "@/lib/settings";
 import { hostingProviderFor, openProvisioningContext, runStep } from "./context";
 import { hostingProjectNameFor } from "./naming";
 import { ProvisioningRefusal } from "./reasons";
+import { assertContentPublished, assertRepositoryReady } from "./step-order";
 import { recordStepSuccess } from "./state";
 
 export type HostingStepResult = {
@@ -120,10 +121,12 @@ export async function provisionHosting(params: {
       return toResult(existing!, { alreadyDone: true, reconciled: false });
     }
 
-    const repository = context.project.repository;
-    if (!repository) {
-      throw new ProvisioningRefusal("REPOSITORIO_INCOMPLETO");
-    }
+    // Wiring hosting to a repository that holds no site yet produces a project
+    // that builds nothing, and the emptiness shows up as a deploy failure far
+    // from its cause.
+    assertRepositoryReady(context.project);
+    assertContentPublished(context.project);
+    const repository = context.project.repository!;
 
     const provider = await hostingProviderFor(context);
     const repo: RepoRef = {

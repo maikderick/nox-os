@@ -7,7 +7,7 @@ import type { DeploymentInfo } from "@/lib/providers/types";
 import { writeAudit } from "@/lib/settings";
 
 import { hostingProviderFor, openProvisioningContext, runStep } from "./context";
-import { ProvisioningRefusal } from "./reasons";
+import { assertContentPublished, assertHostingReady } from "./step-order";
 import { recordStepSuccess } from "./state";
 
 export type PreviewStepResult = {
@@ -57,15 +57,10 @@ export async function reconcilePreview(params: {
   return runStep(
     { siteProjectId: params.siteProjectId, step: "reconcile-preview" },
     async () => {
-      const hosting = context.project.hostingProject;
-      if (!hosting) {
-        throw new ProvisioningRefusal("HOSPEDAGEM_INCOMPLETA");
-      }
-
-      const commitSha = context.project.provisioning?.commitSha;
-      if (!commitSha) {
-        throw new ProvisioningRefusal("CONTEUDO_NAO_PUBLICADO");
-      }
+      assertHostingReady(context.project);
+      assertContentPublished(context.project);
+      const hosting = context.project.hostingProject!;
+      const commitSha = context.project.provisioning!.commitSha!;
 
       const provider = await hostingProviderFor(context);
       const deployments = await provider.listDeployments({

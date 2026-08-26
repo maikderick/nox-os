@@ -113,9 +113,16 @@ const admin = {
 
 const failFinalWrite = (data: Record<string, unknown>) => "linkedAt" in data;
 
+/** Step 3 runs after step 2, so the fixtures carry a published snapshot. */
+const PUBLISHED = { contentSha256: "a".repeat(64), commitSha: "b".repeat(40) };
+
 function refreshProject() {
   mocks.projectFindFirst.mockResolvedValue(
-    projectRow({ repository: REPO, hostingProject: store.rows.get("project-1") ?? null }),
+    projectRow({
+      repository: REPO,
+      provisioning: PUBLISHED,
+      hostingProject: store.rows.get("project-1") ?? null,
+    }),
   );
 }
 
@@ -131,7 +138,9 @@ describe("provisioning step 3 — hosting", () => {
     sharedFakeWorld.reset();
     store.reset();
     modeBox.mode = "FALSO";
-    mocks.projectFindFirst.mockResolvedValue(projectRow({ repository: REPO }));
+    mocks.projectFindFirst.mockResolvedValue(
+      projectRow({ repository: REPO, provisioning: PUBLISHED }),
+    );
     mocks.provUpsert.mockResolvedValue({});
     mocks.provUpdate.mockResolvedValue({});
     mocks.userFindUnique.mockResolvedValue({ id: "user-1" });
@@ -176,7 +185,7 @@ describe("provisioning step 3 — hosting", () => {
   });
 
   it("refuses before the repository exists", async () => {
-    mocks.projectFindFirst.mockResolvedValue(projectRow({ repository: null }));
+    mocks.projectFindFirst.mockResolvedValue(projectRow({ repository: null, provisioning: PUBLISHED }));
 
     await expect(
       provisionHosting({ actor: admin, siteProjectId: "project-1" }),

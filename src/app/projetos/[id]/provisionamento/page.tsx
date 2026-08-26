@@ -10,6 +10,7 @@ import {
   getProvisioning,
   type ProvisioningStatus,
 } from "@/lib/provisioning/state";
+import { runnableSteps } from "@/lib/provisioning/step-order";
 import { requireUser } from "@/lib/session";
 
 export default async function ProvisioningPage({
@@ -69,6 +70,7 @@ export default async function ProvisioningPage({
       <ProvisioningSteps
         projectId={project.id}
         canRun={canRun}
+        runnable={runnableSteps({ repository, hostingProject, provisioning })}
         state={{
           status,
           lastStep: provisioning?.lastStep ?? null,
