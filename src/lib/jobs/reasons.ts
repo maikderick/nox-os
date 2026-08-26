@@ -30,6 +30,8 @@ export const JOB_REASONS = [
   "CHAVE_EM_ANDAMENTO",
   "CORPO_DIVERGENTE",
   "EFEITO_EXTERNO_AMBIGUO",
+  "CHAVE_EM_CONCILIACAO",
+  "POSSE_PERDIDA",
 ] as const;
 
 export type JobReason = (typeof JOB_REASONS)[number];
@@ -111,6 +113,12 @@ const BUILDERS: Record<JobReason, (details: JobDetails) => string> = {
 
   CORPO_DIVERGENTE: () =>
     "Esta chave de idempotência já foi usada com um conteúdo diferente. A mesma chave não pode significar dois pedidos — gere uma chave nova para uma intenção nova.",
+
+  CHAVE_EM_CONCILIACAO: () =>
+    "Este pedido está sob conciliação: um trabalho anterior com esta chave caiu sem deixar resposta, e não é possível descartar que ele tenha produzido efeito externo. Nenhuma chamada comum o executa de novo — a saída é a resolução, com decisão registrada.",
+
+  POSSE_PERDIDA: () =>
+    "A execução deste pedido foi assumida por outro processo enquanto esta ainda corria. O resultado desta foi descartado para não sobrescrever o de quem assumiu.",
 
   EFEITO_EXTERNO_AMBIGUO: () =>
     "Um pedido anterior com esta chave venceu sem registrar resposta, e não é possível descartar que ele tenha produzido efeito externo. Ele foi para conciliação; repetir às cegas poderia duplicar esse efeito.",

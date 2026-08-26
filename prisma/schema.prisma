@@ -698,8 +698,21 @@ model IdempotencyKey {
   /// Impressão do corpo. Mesma chave com corpo diferente é bug de quem chamou.
   requestHash String
 
-  // EM_ANDAMENTO | CONCLUIDA
+  // EM_ANDAMENTO | CONCLUIDA | CONCILIACAO
+  //
+  /// `CONCILIACAO` é estado persistido, não uma exceção em voo: uma chave
+  /// externa cujo trabalho caiu sem deixar resposta não pode ser repetida por
+  /// nenhuma chamada comum, e isso precisa sobreviver ao processo que a pôs
+  /// nesse estado. O domínio é fechado por CHECK no banco — ver
+  /// 20260826180000_idempotencia_posse.
   status String @default("EM_ANDAMENTO")
+
+  /// Quem detém a execução desta chave, agora.
+  ///
+  /// Renovado a cada tomada de posse. Concluir, liberar e conciliar conferem
+  /// este token: um executor antigo que termine depois de o seu lugar ter
+  /// sido tomado não sobrescreve o resultado de quem o tomou.
+  ownerToken String?
 
   /// LOCAL — trabalho puro; vencer autoriza assumir.
   /// EXTERNO_RECONCILIAVEL — o provedor responde o que existe para a chave.

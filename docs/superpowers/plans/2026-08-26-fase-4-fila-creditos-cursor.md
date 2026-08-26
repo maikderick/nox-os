@@ -317,8 +317,11 @@ model IdempotencyKey {
   scope          String
   key            String
   requestHash    String
-  // EM_ANDAMENTO | CONCLUIDA
+  // EM_ANDAMENTO | CONCLUIDA | CONCILIACAO
   status         String   @default("EM_ANDAMENTO")
+  /// Quem detém a execução, agora. Renovar `expiresAt` não é tomar posse:
+  /// dois chamadores encontrando a mesma chave vencida renovariam os dois.
+  ownerToken     String?
   /// LOCAL — trabalho puro; expirar autoriza assumir.
   /// EXTERNO_RECONCILIAVEL — o provedor responde o que existe para a chave.
   /// EXTERNO_AMBIGUO — expirar **não** autoriza repetir; vai a conciliação.
@@ -675,18 +678,50 @@ O commit que a revisão 2 perdeu.
 `src/lib/jobs/idempotency.ts` — `withIdempotency({ organizationId, scope, key,
 requestHash, sideEffect, ttlMs }, work)`.
 
-**Testes** (contra o Postgres local)
-- duas organizações com a mesma chave não colidem;
-- segunda chamada com o mesmo corpo devolve a resposta gravada sem reexecutar;
-- mesma chave com corpo diferente → 409, sempre;
-- `EM_ANDAMENTO` **não** vencida responde "em andamento", não duplica;
-- `EM_ANDAMENTO` vencida com `sideEffect = LOCAL` **é assumida**;
-- `EM_ANDAMENTO` vencida com `EXTERNO_AMBIGUO` → **`CONCILIACAO`**, nunca
-  repetição;
-- `EXTERNO_RECONCILIAVEL` vencida consulta antes de decidir;
-- a resposta gravada passa pela allowlist.
+**Posse é token, não carimbo.** Renovar `expiresAt` não é tomar posse: dois
+chamadores encontrando a mesma chave vencida renovavam os dois e executavam os
+dois. Tomar posse escreve um `ownerToken` novo sob condição avaliada pelo
+PostgreSQL — estado, vencimento e `NOW()` na mesma instrução que escreve —, e
+concluir, liberar ou conciliar conferem esse token. Um executor cujo lugar foi
+tomado não sobrescreve o resultado de quem o tomou.
 
-**Janelas** — morte depois de reservar a chave e antes de gravar a resposta.
+**`LOCAL` roda dentro da transação que conclui a chave.** O callback recebe
+`Prisma.TransactionClient`, e escrita de domínio, allowlist e conclusão são um
+commit só. É o que fecha a janela "`GenerationRun` criado, resposta idempotente
+não gravada": qualquer falha derruba os três juntos.
+
+**Exceção externa nunca libera.** `LOCAL` pode ser liberada porque a transação
+comprovadamente caiu. `EXTERNO_AMBIGUO` que lança vai duravelmente para
+`CONCILIACAO`; `EXTERNO_RECONCILIAVEL` que lança permanece, e a decisão seguinte
+consulta `reconcile` antes de qualquer execução. Apagar a chave externa porque o
+processo caiu transformaria a próxima chamada numa nova tentativa do que talvez
+já tenha acontecido.
+
+**Ordem das propriedades do corpo não conta; ordem de lista conta.** `{a, b}` e
+`{b, a}` são o mesmo pedido — ordem de objeto JSON não é semântica e varia entre
+clientes —, `[1, 2]` e `[2, 1]` não são.
+
+**Testes** (contra o Postgres local)
+- duas organizações com a mesma chave não colidem; escopo é obrigatório;
+- segunda chamada com o mesmo corpo devolve a resposta gravada sem reexecutar;
+- mesma chave com corpo diferente → 409, sempre, inclusive com a primeira viva;
+- `EM_ANDAMENTO` **não** vencida responde "em andamento", não duplica;
+- **dois e seis takeovers simultâneos executam o trabalho uma vez**;
+- **executor antigo terminando depois do takeover não sobrescreve**, e suas
+  escritas locais caem junto;
+- `EM_ANDAMENTO` vencida com `LOCAL` **é assumida**;
+- `EXTERNO_AMBIGUO` vencida → **`CONCILIACAO` persistida**, nunca repetição;
+- `EXTERNO_RECONCILIAVEL` vencida consulta antes de decidir, e só executa se o
+  provedor disser que nada existe;
+- trabalho `LOCAL` que escreve e lança: entidade e conclusão caem juntas;
+- resposta `LOCAL` fora da allowlist reverte o trabalho local; resposta externa
+  fora da allowlist não libera nem repete;
+- `CONCILIACAO` fica persistida e não é assumida por chamada comum;
+- relógio do processo adiantado e atrasado não muda o vencimento;
+- nenhuma resposta ou erro persiste texto externo.
+
+**Janelas** — morte depois de reservar a chave e antes de gravar a resposta;
+dois takeovers no mesmo instante; executor antigo terminando tarde.
 
 ---
 
@@ -1162,7 +1197,8 @@ uso. A ordem de queda é a inversa das dependências:
 | Migration | Compensação derruba, nesta ordem | Pré-condição |
 | --- | --- | --- |
 | `fila_durable` | `Job_concurrency_ativo_uniq`, `Job_idempotency_uniq`, FKs, tabela | fila drenada; nenhum job vivo |
-| `idempotencia` | índices, FK, tabela | nenhuma chave `EM_ANDAMENTO` |
+| `idempotencia` | índices, FK, tabela | **tabela vazia**, ou linhas exportadas e a suspensão da proteção assumida |
+| `idempotencia_posse` | os dois `CHECK`, a coluna `ownerToken` | nenhuma chave `EM_ANDAMENTO` nem em `CONCILIACAO` |
 | `creditos` | `CreditLedgerEntry`, `CreditReservation`, `CHECK`, `CreditAccount` | nenhuma reserva `RESERVADA` ou em `CONCILIACAO` |
 | `geracao_colunas` | `SiteRevision_generationRunId_uniq`, as quatro colunas de `GenerationRun` | nenhum run em andamento |
 | `generation_check` | `@@unique`, FK, tabela | nenhuma barreira pendente |
