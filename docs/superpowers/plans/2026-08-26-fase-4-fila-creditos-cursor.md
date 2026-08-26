@@ -4,7 +4,9 @@
 > **Autoridade:** [spec da arquitetura-alvo](../specs/2026-08-25-fabrica-de-sites-arquitetura-alvo.md).
 > **Contexto:** [plano mestre das Fases 3 a 6](2026-08-25-fases-3-a-6-plano-mestre.md).
 > **Pré-requisito:** Fase 3 aprovada e encerrada em `30645e7`.
-> **Revisão 3** — corrige onze defeitos do desenho da revisão 2 e fixa os números.
+> **Revisão 4** — chave de idempotência do cliente, vencedor único por
+> atualização condicional, destino da reserva em todo caminho, e a correção de
+> como se desfaz um commit que já aplicou migration.
 
 **Objetivo:** dado um `SiteProject` provisionado, o NOX OS enfileira uma geração
 de forma durável, reserva crédito antes de qualquer operação paga, orquestra o
@@ -46,21 +48,40 @@ a ponta. Nenhum é de redação.
 
 ---
 
+## O que mudou desde a revisão 3
+
+| # | Defeito | Correção |
+| --- | --- | --- |
+| 1 | Chave de requisição derivada de projeto + briefing — não distinguia retentativa de rede de nova geração intencional | `Idempotency-Key` do cliente, UUID por intenção |
+| 2 | `requestGeneration` só aceitava `BRIEFING_PRONTO` | Aceita todo estado com transição autorizada para `GERANDO` |
+| 3 | Vencedor concorrente decidido pela fila | Atualização condicional do projeto: um vencedor, sempre |
+| 4 | `credit.threshold` existia como `kind` e ninguém o enfileirava | Nasce com a reserva, na mesma transação; renovação é `deferJob` |
+| 5 | O destino da reserva ficava implícito em alguns caminhos | Tabela de desfechos; nenhuma saída deixa reserva esquecida |
+| 6 | `UsageLedger` na transação de reserva — uso misturado com dinheiro | Reserva só no `CreditLedgerEntry`; uso é gravado uma vez, na execução |
+| 7 | Duas revisões podiam nascer do mesmo run sob lease expirado | `SiteRevision.generationRunId` único, com teste concorrente |
+| 8 | Dois observadores terminando juntos podiam transicionar duas vezes | Atualização condicional `GERANDO → resultado`; um transiciona, o outro reconhece |
+| 9 | `GenerationRun` sem o lado reverso da relação — não compila no Prisma | Campo reverso existe; a **FK** continua só em `CreditReservation` |
+| 10 | Rollback proposto como `git revert` de commit com migration | Desativação por trava, ou migration compensatória posterior |
+| 11 | Cron a cada 5 min tornava o backoff de 30 s decorativo | Cron a cada 1 min |
+
+---
+
 ## Decisões fixadas
 
 | Decisão | Valor |
 | --- | --- |
 | Cursor ao fim da fase | `FALSO` e `SANDBOX` no commit 16; `LIVE` continua fora |
 | `SANDBOX` do Cursor | replay local de fixtures, sem HTTP |
-| Consumidor | Vercel Cron, **a cada 5 minutos** |
+| Consumidor | Vercel Cron, **a cada 1 minuto** |
 | Retentativas de falha real | 5, base 30 s, teto 15 min, full jitter |
 | `pollDeadlineAt` — agente | **2 h** |
 | `pollDeadlineAt` — checks | **30 min** |
 | `pollDeadlineAt` — preview | **30 min** |
-| Reagendamento da pausa | **5 min** |
+| Reagendamento da pausa | **5 min** (reavaliação do freio, independente do ciclo) |
 | Limiar da reserva | **2 h**, renovável |
 | Preço | `CreditAccount.generationPriceCents`, **por organização**; nulo recusa a geração |
 | Capacidades do Cursor | ambas **falsas** por padrão — ambiguidade vira conciliação |
+| `Idempotency-Key` | **obrigatória**, UUID por intenção, fornecida pelo cliente |
 | Expurgo de jobs | não existe na Fase 4 |
 
 O **valor** do preço continua sendo dado, não desenho: quem opera define por
@@ -99,14 +120,20 @@ budgetMs = 235_000)` com `maxDuration = 300`.
 
 ## A cadeia e seus handoffs
 
-Quatro jobs, e o que importa é **quem enfileira quem, em qual transação**.
+Cinco jobs, e o que importa é **quem enfileira quem, em qual transação**.
 
 | Job | Faz | Persiste | Enfileira, na mesma transação |
 | --- | --- | --- | --- |
-| `generation.start` | reserva crédito, chama o agente | `startAttemptedAt`, `providerRunId` | `generation.poll` |
+| `generation.start` | reserva crédito, chama o agente | reserva, `startAttemptedAt`, `providerRunId` | `credit.threshold` (com a reserva) e `generation.poll` (com o `providerRunId`) |
 | `generation.poll` | consulta o agente | progresso; ao concluir, `SiteRevision` com `commitSha`, `branch`, `pullRequestUrl` | `checks.poll` **e** `preview.poll` |
 | `checks.poll` | consulta o check `verify` | `GenerationCheck` | nada; chama a barreira |
 | `preview.poll` | consulta o deployment | `Deployment` ligado à `SiteRevision` | nada; chama a barreira |
+| `credit.threshold` | vigia o limiar da reserva | renovação, liberação ou bloqueio | nada; `deferJob` em si mesmo ao renovar |
+
+`credit.threshold` nasce **na mesma transação que a reserva**, com chave
+`credit:<reservationId>`. Nasce junto de propósito: uma reserva criada sem
+vigia é exatamente a reserva que fica esquecida. Renovar não cria job novo —
+é `deferJob` no mesmo, que empurra `runAfter` sem consumir tentativa.
 
 **A regra do handoff:** o job seguinte é criado na **mesma transação** que grava
 o fato que o justifica. Se a transação falhar, nem o fato nem o job existem, e a
@@ -121,7 +148,41 @@ etapas.
 
 `checks.poll` e `preview.poll` são **irmãos, não sequenciais**. Rodam em qualquer
 ordem, em qualquer ciclo do consumidor, e cada um chama a barreira ao terminar.
-Quem chegar por último encontra os três fatos e conclui.
+Quem chegar por último encontra os três fatos e conclui — e a seção da barreira
+explica por que "por último" precisa ser decidido pelo banco, não pelo código.
+
+### Desfechos
+
+Toda linha existe. Nenhuma saída deixa reserva esquecida.
+
+| Situação | Job | Projeto | `GenerationRun` | Reserva |
+| --- | --- | --- | --- | --- |
+| Falha **antes** de `start` — sem preço, sem crédito, preflight | `FALHOU` ou `CARTA_MORTA` | `FALHOU` | `FALHOU` | **liberada** (ou nunca criada) |
+| `start` falhou comprovadamente sem efeito remoto | `PENDENTE` com backoff | `GERANDO` | `PENDENTE` | **liberada** |
+| Run confirmado em execução, limiar vencido | `PENDENTE` via `deferJob` | `GERANDO` | `EXECUTANDO` | **renovada** |
+| Agente concluiu, checks e preview verdes | `CONCLUIDO` | `PREVIA_PRONTA` | `CONCLUIDO` | **consumida** pelo preço configurado |
+| Agente concluiu, check ou preview falhou | `CONCLUIDO`; o irmão vivo é **cancelado** | `FALHOU` | `CONCLUIDO` | **consumida** — o trabalho pago aconteceu |
+| Prazo de poll estourado | `CONCILIACAO` | `GERANDO` | `EXECUTANDO` | **conciliação**, conta bloqueada |
+| Efeito remoto ambíguo — tentativa sem `providerRunId` | `CONCILIACAO` | `GERANDO` | `PENDENTE` | **conciliação**, conta bloqueada |
+| Custo real acima da reserva, sem espaço | `CONCLUIDO` | conforme a barreira | `CONCLUIDO` | **conciliação**, conta bloqueada |
+| Carta morta por esgotar tentativas | `CARTA_MORTA` | `FALHOU` | `FALHOU` | **conciliação** se houve `startAttemptedAt`; **liberada** se não |
+
+Sucesso em `FALSO` e `SANDBOX` consome o preço configurado como qualquer
+outro — o modo muda quem responde, não a contabilidade. Um caminho que não
+cobrasse em modo falso deixaria a conciliação sem nada para comparar quando o
+modo virasse.
+
+A última linha é a razão de `startAttemptedAt` existir: sem ela, uma carta
+morta não distingue "nunca chamou" de "chamou e não soube", e liberar no segundo
+caso é reembolsar trabalho que aconteceu.
+
+**Não existe volta de `GERANDO` para o estado de origem.** A máquina de estados
+da Fase 1 autoriza `GERANDO → PREVIA_PRONTA` e `GERANDO → FALHOU`, e nada mais.
+Por isso a primeira linha termina em `FALHOU` mesmo quando nada chegou a ser
+chamado: de lá quem opera volta ao briefing ou ao rascunho, por transições que
+existem e são auditadas. Escrever "volta ao estado anterior", como a revisão 3
+fazia, era inventar uma transição que a Fase 1 não tem — e que ficaria pior
+agora, com cinco estados de partida possíveis.
 
 ---
 
@@ -245,12 +306,18 @@ model IdempotencyKey {
 }
 ```
 
-A chave da requisição de geração é derivada de **entrada estável**:
-`<siteProjectId>:<currentBriefVersionId>`, escopo `generation.request`. Dois
-cliques no mesmo projeto, com o mesmo briefing, produzem a mesma chave — e é isso
-que faz o segundo devolver o primeiro run em vez de criar outro. A chave da
-revisão 2 era derivada do `GenerationRun`, que só existe depois; não podia
-deduplicar o que a criava.
+A chave da requisição de geração é **fornecida pelo cliente**, no cabeçalho
+`Idempotency-Key`, como UUID **por intenção**. É obrigatória: sem ela a rota
+responde `400`.
+
+A revisão 3 derivava a chave de `<siteProjectId>:<currentBriefVersionId>`, e
+isso confundia duas coisas diferentes. Uma retentativa de rede e um segundo
+pedido deliberado do mesmo site, com o mesmo briefing, produziam a mesma chave —
+então a segunda geração intencional era engolida como duplicata. Quem sabe a
+diferença é o cliente: retentativa reusa a chave, intenção nova gera outra.
+
+`requestHash` continua existindo, e agora tem função clara: mesma chave com
+corpo diferente é quase certamente bug do chamador, e responde `409`.
 
 `generation.request` é `LOCAL`: criar run, transicionar e enfileirar são escritas
 nossas, numa transação, integralmente reconciliáveis. É o único escopo que pode
@@ -377,13 +444,27 @@ Gravar os três "depois" em cada linha é o que torna o saldo reconstruível sem
 recalcular a série inteira, e o que faz uma divergência apontar a linha exata em
 que ela apareceu.
 
-`UsageLedger` continua registrando **uso** — execuções, deploys. `CreditLedgerEntry`
-registra **dinheiro**. Misturar os dois foi o que a revisão 2 fez ao gravar uma
-linha de uso na reserva.
+`UsageLedger` continua registrando **uso** — execuções, deploys.
+`CreditLedgerEntry` registra **dinheiro**. A revisão 3 ainda gravava uso na
+transação da reserva, e isso está errado por dois motivos: reserva é movimento
+financeiro, não execução; e reservar não é executar — um run que nunca começa
+teria deixado uma linha de uso para uma execução que não houve.
+
+`UsageLedger` passa a ser gravado **uma única vez, na execução**, com
+`reference = <generationRunId>`. A referência é o que torna a escrita
+idempotente: a retomada de um poll não soma uso duas vezes.
 
 `GenerationRun` ganha colunas nulas e aditivas: `branch`, `pullRequestUrl`,
-`startAttemptedAt`, `providerIdempotencyKey`. **Não** ganha `reservationId` — a
-ligação é única e vive na reserva.
+`startAttemptedAt`, `providerIdempotencyKey`. Ganha também o **lado reverso**
+da relação — `reservation CreditReservation?` —, que o Prisma exige para
+compilar. O que ele não ganha é **coluna de FK**: `reservationId` não existe,
+e a única chave estrangeira continua sendo `CreditReservation.generationRunId`,
+única. Campo reverso é leitura; FK é a verdade, e ela mora num lugar só.
+
+`SiteRevision` ganha uma restrição, não uma coluna: `generationRunId` passa a ser
+**único**. Um run produz uma revisão, e é o índice que sustenta isso quando dois
+handlers do mesmo run concluem sob lease vencido. Aqui também a FK é de um lado
+só — a revisão aponta para o run, nunca o contrário.
 
 ### Invariantes no banco
 
@@ -483,8 +564,13 @@ e é auditado na mesma transação; reprocessar não fura a `concurrencyKey`.
 
 **Arquivos** — `src/lib/jobs/consumer.ts` (`runJobBatch` adquirindo **um por
 vez**), `src/app/api/jobs/run/route.ts` (`maxDuration = 300`,
-`budgetMs = 235_000`), `vercel.json` com cron **a cada 5 min**,
+`budgetMs = 235_000`), `vercel.json` com cron **a cada 1 min**,
 `src/lib/jobs/cron-auth.ts`.
+
+Com ciclo de 1 min e orçamento de quase 4 min, disparos se sobrepõem **por
+desenho** — e é isso que faz o backoff de 30 s significar 30 s. Quem sustenta a
+sobreposição é o lease: cada job é adquirido por um consumidor só, e o disparo
+seguinte não o encontra adquirível.
 
 **Testes** — com orçamento para dois e cinco na fila, três permanecem
 adquiríveis **sem lease**; orçamento estourado encerra sem adquirir; handler que
@@ -564,8 +650,15 @@ requestHash, sideEffect, ttlMs }, work)`.
      AND "consumedThisMonthCents" + "reservedCents" + $amount <= "monthlyCapCents"
   ```
 
-  Zero linhas significa que não cabe. Reserva, linha de ledger e `UsageLedger`
-  vão na mesma transação.
+  Zero linhas significa que não cabe. Na mesma transação vão três escritas, e só
+  elas: a reserva, a linha de `CreditLedgerEntry` e o job `credit.threshold` com
+  chave `credit:<reservationId>`. `UsageLedger` **não** entra — uso é gravado na
+  execução (commit 12).
+
+  O vigia nasce junto de propósito. Enfileirá-lo depois pediria uma segunda
+  transação, e é exatamente entre as duas que o processo morre: sobraria uma
+  reserva que ninguém vai vencer, renovar nem liberar — dinheiro comprometido sem
+  data para voltar.
 
 O rollover é **preguiçoso, na escrita**, não por cron: um mês sem geração
 nenhuma não deixa dívida acumulada, e não há como "perder" a virada porque o cron
@@ -583,6 +676,10 @@ falhou.
   ao gravar o ledger desfaz o saldo; o `CHECK` recusa negativo.
 - `credits-ledger.test.ts` — **toda** movimentação grava linha, e os três
   "depois" batem com a conta em cada uma.
+- `credits-threshold-nasce.test.ts` — toda reserva sai da transação com seu
+  `credit.threshold` já enfileirado; falha ao enfileirar desfaz a reserva
+  inteira; duas reservas concorrentes produzem dois vigias, um por
+  `reservationId`; `UsageLedger` **não** é tocado aqui.
 
 **Janelas** — duas gerações com espaço para uma; virada de mês no meio de um run;
 morte entre mover a conta e gravar o ledger.
@@ -597,20 +694,35 @@ morte entre mover a conta e gravar o ledger.
   bloqueia a conta e manda para `CONCILIACAO`, sem nunca deixar saldo negativo.
   `releaseReservation` devolve `reserved`, restaurando disponível **e** exposição.
   Ambas gravam ledger.
-- `src/lib/credits/threshold.ts` — handler `credit.threshold`, que ao vencer as
-  2 h **decide**: run ativo → renova; `startAttemptedAt` nulo → libera; ambíguo →
-  bloqueia e concilia.
+- `src/lib/credits/threshold.ts` — handler `credit.threshold`, enfileirado pela
+  transação da reserva (commit 8) e **reusado** a cada renovação: renovar é
+  `deferJob(job, +2 h)` no mesmo job, nunca um job novo. A chave
+  `credit:<reservationId>` é única e permanente — um segundo vigia para a mesma
+  reserva não caberia no índice.
+
+  Ao vencer as 2 h ele **decide**, e as decisões saem da tabela de desfechos:
+  reserva já liquidada → encerra sem renovar; run confirmado em execução →
+  renova; falha comprovadamente anterior ao `start`, com `startAttemptedAt` nulo
+  → libera; qualquer ambiguidade sobre efeito remoto ou custo → bloqueia a conta
+  e manda para `CONCILIACAO`.
 - `src/lib/credits/reconcile.ts`, `src/app/api/organizations/credits/route.ts`,
   `src/app/organizacao/creditos/page.tsx`, permissão `credit:manage`.
 
-**Testes** — as três decisões do vencimento; **nenhum caminho libera sem prova de
-que não houve chamada paga**; real maior sem espaço bloqueia e não fica negativo;
-liberar restaura os dois números juntos; conciliar exige `credit:manage` e é
-auditado na mesma transação; **negativo:** reserva de A não é conciliável por
-ator de B, e reserva não aponta para job de outra organização.
+**A tabela de desfechos é o contrato desta seção.** Toda saída termina com a
+reserva **liberada, renovada, consumida ou em conciliação**. Não existe caminho
+que devolva controle deixando reserva viva sem vigia: o `credit.threshold` nasceu
+com ela e só para quando ela é liquidada.
+
+**Testes** — cada linha da tabela de desfechos, uma a uma; **nenhum caminho
+libera sem prova de que não houve chamada paga**; renovar reusa o **mesmo** job
+(`id` estável, `runAt` adiantado) e não cria um segundo; sucesso em `FALSO` e em
+`SANDBOX` consome o preço configurado; real maior sem espaço bloqueia e não fica
+negativo; liberar restaura os dois números juntos; conciliar exige
+`credit:manage` e é auditado na mesma transação; **negativo:** reserva de A não
+é conciliável por ator de B, e reserva não aponta para job de outra organização.
 
 **Janelas** — run mais longo que o limiar; ambiguidade no vencimento; custo real
-acima do estimado.
+acima do estimado; limiar vencendo no mesmo instante da liquidação.
 
 ---
 
@@ -664,7 +776,8 @@ cancelável por ator de B; o escopo carrega `purpose`, nunca valor resolvido;
 ### Commit 12 — `feat(geracao)`: iniciar, acompanhar e passar adiante
 
 **Arquivos** — migration aditiva (`GenerationRun.branch`, `.pullRequestUrl`,
-`.startAttemptedAt`, `.providerIdempotencyKey`), `src/lib/generation/start.ts`,
+`.startAttemptedAt`, `.providerIdempotencyKey`, e índice **único** em
+`SiteRevision.generationRunId`), `src/lib/generation/start.ts`,
 `src/lib/generation/poll.ts`.
 
 `start` **carrega** o run pelo `generationRunId` do job; ausência é erro de
@@ -674,9 +787,16 @@ decide pelas capacidades (repete, consulta ou `CONCILIACAO`) → preço → rese
 `startAttemptedAt` na mesma transação → `start` → grava `providerRunId` **e
 enfileira `generation.poll` na mesma transação**.
 
-`poll` observa e persiste. Ao concluir, cria a `SiteRevision` imutável **e
-enfileira `checks.poll` e `preview.poll` na mesma transação**. Nenhuma transição
-de projeto aqui.
+`poll` observa e persiste. Ao concluir, cria a `SiteRevision` imutável, grava a
+linha de `UsageLedger` com `reference = <generationRunId>` **e enfileira
+`checks.poll` e `preview.poll` na mesma transação**. Nenhuma transição de projeto
+aqui.
+
+Um run produz exatamente **uma** revisão, e quem garante isso é o banco:
+`SiteRevision.generationRunId` é único. Sem esse índice, um lease vencido com o
+handler anterior ainda vivo cria a segunda revisão — e a partir daí a barreira
+compara fatos de revisões diferentes, e ou nunca fecha, ou fecha sobre o
+`commitSha` errado.
 
 **Testes**
 - sem preço, nada é reservado nem chamado;
@@ -692,7 +812,12 @@ de projeto aqui.
   chama `start` e enfileira o poll;
 - `poll` executando → `deferJob` sem consumir tentativa; concluído cria **uma**
   `SiteRevision` e **dois** jobs irmãos; repetir não cria segunda revisão nem
-  jobs duplicados (chaves por etapa); prazo de 2 h estourado → `CONCILIACAO`.
+  jobs duplicados (chaves por etapa); prazo de 2 h estourado → `CONCILIACAO`;
+- **lease vencido, concorrente:** dois handlers do mesmo run concluindo ao mesmo
+  tempo, em duas transações reais — o índice único derruba o segundo, que relê,
+  reconhece a revisão existente e segue para o handoff. Nascem **uma**
+  `SiteRevision` e **uma** linha de `UsageLedger`, e os irmãos são enfileirados
+  uma vez só.
 
 **Janelas** — morte entre reservar e chamar; entre chamar e gravar
 `providerRunId`; entre gravar e enfileirar o poll; entre concluir e enfileirar os
@@ -712,11 +837,38 @@ gravar fatos que ainda não existem.
 A barreira é **pura**: recebe os três fatos lidos do banco e decide. Só conclui
 quando os três apontam para a **mesma `SiteRevision` e o mesmo `commitSha`**.
 
+**Quem aplica o que ela decidiu não é puro, e é aí que mora a corrida.** Checks
+e preview podem terminar no mesmo instante, em ciclos diferentes do consumidor,
+e os dois vão ler três fatos completos. Por isso `applySystemTransition` aplica
+uma **atualização condicional**:
+
+```sql
+UPDATE "SiteProject"
+   SET "status" = $resultado
+ WHERE "id" = $projeto
+   AND "status" = 'GERANDO'
+```
+
+Zero linhas não é erro: significa que o irmão chegou primeiro. Quem atualizou
+grava a auditoria **na mesma transação**; quem não atualizou relê o estado,
+reconhece que já é terminal e encerra sem escrever nada. Um observador
+transiciona, um audita, e a linha de auditoria nunca sai em dobro.
+
+**Falha terminal é terminal.** Quando o resultado é `FALHOU`, a mesma transação
+cancela o job irmão ainda vivo, com razão fechada. E como a condição exige
+`status = 'GERANDO'`, o irmão que terminasse depois com sucesso não teria como
+reverter: encontra `FALHOU`, não encontra `GERANDO`, e não escreve. Não existe
+caminho de volta de `FALHOU` para `PREVIA_PRONTA`.
+
 **Testes** — só a orquestração aplica transição de sistema; ator humano continua
 recusado; mudança e auditoria na mesma transação. Barreira: três alinhados →
 `PREVIA_PRONTA`; **check de outro commit** → não conclui; **preview de outra
 revisão** → não conclui; dois de três → não conclui; check falhando → `FALHOU`
 com razão fechada; a barreira não escreve.
+**Corrida:** dois observadores concluindo em transações concorrentes → **uma**
+transição e **uma** linha de auditoria, e o perdedor devolve o estado terminal
+sem erro; falha terminal cancela o job irmão vivo; o irmão que termina depois com
+sucesso **não** reverte `FALHOU`.
 
 ---
 
@@ -726,12 +878,14 @@ com razão fechada; a barreira não escreve.
 `src/lib/generation/checks.ts` (grava `GenerationCheck`, prazo **30 min**),
 `src/lib/generation/preview.ts` (grava `Deployment` ligado à `SiteRevision`,
 prazo **30 min**). Cada um chama a barreira ao terminar, na mesma transação do
-fato.
+fato, e aplica o que ela decidir pela atualização condicional do commit 13 — o
+cancelamento do irmão viaja nessa mesma transação.
 
 **Testes** — contrato de `listChecks` nos dois modos; pendente → `deferJob` sem
 consumir tentativa; falha grava o fato e a barreira decide; ausente além de 30
 min → `CONCILIACAO`; o nome vem de `REQUIRED_CHECK`.
-**Irmãos:** rodando em qualquer ordem, o último a gravar conclui; rodando duas
+**Irmãos:** rodando em qualquer ordem, o último a gravar conclui; **terminando
+juntos**, em transações concorrentes, só um transiciona e audita; rodando duas
 vezes, não duplicam fato (`@@unique([siteRevisionId, name])`).
 **Negativo:** o poll de um projeto nunca lê deployment de outro; deployment de
 outra organização é recusado.
@@ -756,30 +910,70 @@ ao mesmo estado final, só mais devagar; permissões nas duas telas.
 `STAGES_PENDING_ORCHESTRATOR` perde `GERANDO` (`PUBLICANDO` permanece);
 `PROVIDERS_PENDING_PHASE` perde `cursor` (`MODES_AVAILABLE` continua sem `LIVE`).
 
-`requestGeneration(actor, siteProjectId)`, numa transação só, **nesta ordem**:
+`requestGeneration(actor, siteProjectId, idempotencyKey)`, numa transação só,
+**nesta ordem**:
 
-1. `withIdempotency` no escopo `generation.request`, chave
-   `<siteProjectId>:<currentBriefVersionId>`, `sideEffect = LOCAL`;
-2. cria o `GenerationRun` em `PENDENTE`;
-3. aplica `BRIEFING_PRONTO → GERANDO`;
-4. enfileira `generation.start` com `generationRunId`, chave de etapa e
+1. a rota valida o cabeçalho `Idempotency-Key`: ausente ou fora do formato UUID
+   → `400`, antes de qualquer escrita;
+2. `withIdempotency` no escopo `generation.request`, chave a do cliente,
+   `sideEffect = LOCAL`; a mesma chave com `requestHash` diferente → `409`;
+3. cria o `GenerationRun` em `PENDENTE`;
+4. transiciona o projeto para `GERANDO` por **atualização condicional**;
+5. enfileira `generation.start` com `generationRunId`, chave de etapa e
    `concurrencyKey` de projeto.
 
 A idempotência vem **antes** do run porque é ela que impede o segundo run de
-existir. Depois do run seria tarde: a revisão 2 derivava a chave de uma linha
-criada na mesma transação, e duas transações concorrentes gerariam duas chaves
-diferentes.
+existir. Depois do run seria tarde: a chave sairia de uma linha criada na mesma
+transação, e duas transações concorrentes gerariam duas chaves diferentes.
+
+**O estado de partida não é só `BRIEFING_PRONTO`.** A pergunta certa é se existe
+transição autorizada para `GERANDO` na máquina de estados da Fase 1 — e existe a
+partir de `BRIEFING_PRONTO`, `PREVIA_PRONTA`, `EM_REVISAO`, `PUBLICADO` e
+`FALHOU`, todas com permissão `generation:run`. Repetir essa lista aqui seria
+manter a máquina de estados em dois lugares, que é como os dois divergem.
+`requestGeneration` pergunta a ela:
+
+```ts
+const origens = statesWithTransitionTo("GERANDO"); // de SITE_PROJECT_TRANSITIONS
+
+const { count } = await tx.siteProject.updateMany({
+  where: {
+    id: siteProjectId,
+    organizationId: actor.organizationId,
+    status: { in: origens },
+  },
+  data: { status: "GERANDO" },
+});
+if (count === 0) throw new GenerationRefusal("PROJETO_NAO_ELEGIVEL");
+```
+
+O `updateMany` condicionado ao estado **é** a trava. Duas transações
+concorrentes leem o mesmo `BRIEFING_PRONTO`, mas só uma o encontra ainda lá na
+hora de escrever; a perdedora recebe zero linhas e é recusada pelo estado. O
+vencedor não depende da fila, de lock de aplicação nem da ordem em que o
+consumidor acorda — e a permissão `generation:run` continua sendo verificada
+antes, no ator.
 
 **Testes**
 - run, transição e job caem juntos; falha em qualquer um desfaz os três;
-- **dois cliques simultâneos** produzem **um** `GenerationRun`, **um** job e a
-  mesma resposta — executado com duas transações reais, concorrentes;
-- clique repetido depois da conclusão, com **novo briefing**, cria uma geração
-  nova; com o mesmo briefing, devolve a anterior;
-- projeto em `GERANDO` é recusado pelo estado, não pela fila;
+- **sem `Idempotency-Key`** → `400`, e nenhuma linha escrita em lugar nenhum;
+- **mesma chave, mesmo corpo** → o **mesmo** `GenerationRun`, o mesmo job e a
+  mesma resposta; a segunda chamada não escreve nada;
+- **mesma chave, corpo diferente** → `409`, e o run da primeira permanece
+  intacto;
+- **duas chaves diferentes, simultâneas**, em duas transações reais → só **uma**
+  vence a atualização condicional e gera; a outra recebe zero linhas e é
+  recusada pelo estado, sem job órfão e sem reserva;
+- **chave nova, mesmo briefing, depois de um run terminal** → geração nova. É a
+  distinção que a revisão 3 não sabia expressar: a intenção é do cliente, não do
+  briefing;
+- todo estado com transição autorizada para `GERANDO` entra; `RASCUNHO`,
+  `APROVADO`, `PUBLICANDO` e o próprio `GERANDO` são recusados pelo estado,
+  não pela fila — e o teste deriva as duas listas de `SITE_PROJECT_TRANSITIONS`,
+  para quebrar se a máquina de estados mudar;
 - `generation-e2e-falso.test.ts` — cadeia inteira com o consumidor em ciclos:
   pedir → reservar → agente → poll → dois irmãos → barreira → `PREVIA_PRONTA`, e
-  a reserva conciliada ao fim;
+  a reserva **consumida** ao fim, sem `credit.threshold` vivo;
 - o mesmo em `SANDBOX`, com a guarda de rede ativa;
 - os testes da Fase 3 que fixam a lista de estados pendentes e a recusa do Cursor
   quebram de propósito e são atualizados aqui.
@@ -793,9 +987,29 @@ diferentes.
 
 ### Código
 
-`git revert` do commit. Migrations são aditivas e o código antigo nunca lê coluna
-nova, então reverter código com o banco à frente funciona. Reverter o 16 fecha
-`GERANDO` e recusa o Cursor; jobs existentes drenam ou vão a carta morta.
+**Um commit que aplicou migration não se desfaz com `git revert`.** O revert
+apaga o arquivo da migration, enquanto o `_prisma_migrations` do banco continua
+declarando que ela foi aplicada. O próximo `migrate deploy` encontra histórico e
+diretório em desacordo e recusa rodar — em todos os ambientes, inclusive nos que
+nada tinham a ver com o defeito.
+
+O que se desfaz é o **comportamento**:
+
+| Situação | Como se desfaz |
+| --- | --- |
+| Commit sem migration | `git revert` normal |
+| Commit com migration, defeito no código | reverter o código **preservando o arquivo da migration** (`git revert -n`, depois `git checkout HEAD -- prisma/migrations/`), ou nem isso: desligar por trava |
+| Commit com migration, defeito no schema | **migration compensatória nova**, escrita e revisada — nunca edição nem remoção da aplicada |
+
+Reverter só o código é seguro porque as migrations desta fase são aditivas: o
+código antigo não lê coluna nem tabela nova, e elas ficam onde estão. É para isso
+que a regra de aditividade existe.
+
+As travas vêm antes do revert sempre que resolvem: `NOX_INTEGRATIONS=disabled`,
+`crons` fora do `vercel.json`, `MODES_AVAILABLE` e `STAGES_PENDING_ORCHESTRATOR`.
+Desfazer o comportamento do 16 é devolver `GERANDO` a
+`STAGES_PENDING_ORCHESTRATOR` e `cursor` a `PROVIDERS_PENDING_PHASE` — sem tocar
+em migration alguma. Jobs existentes drenam ou vão a carta morta.
 
 ### Freios sem deploy
 
@@ -806,8 +1020,9 @@ tentativa — depois do commit 6 é seguro mantê-lo ligado indefinidamente. Rem
 ### Migrations
 
 Nenhuma migration desta fase remove coluna, tabela ou índice. Desfazer é
-**migration compensatória nova**, nunca edição de migration aplicada — a regra
-que o `SecretRef` da Fase 3 já estabeleceu.
+**migration compensatória nova** — nunca edição de migration aplicada, e nunca
+remoção do arquivo dela por revert. É a regra que o `SecretRef` da Fase 3 já
+estabeleceu.
 
 Cada compensação é escrita no commit que a origina, guardada em
 `prisma/compensations/<nome>.sql`, **não aplicada**, e revisada antes de qualquer
@@ -818,7 +1033,7 @@ uso. A ordem de queda é a inversa das dependências:
 | `fila_durable` | `Job_concurrency_ativo_uniq`, `Job_idempotency_uniq`, FKs, tabela | fila drenada; nenhum job vivo |
 | `idempotencia` | índices, FK, tabela | nenhuma chave `EM_ANDAMENTO` |
 | `creditos` | `CreditLedgerEntry`, `CreditReservation`, `CHECK`, `CreditAccount` | nenhuma reserva `RESERVADA` ou em `CONCILIACAO` |
-| `geracao_colunas` | as quatro colunas de `GenerationRun` | nenhum run em andamento |
+| `geracao_colunas` | `SiteRevision_generationRunId_uniq`, as quatro colunas de `GenerationRun` | nenhum run em andamento |
 | `generation_check` | `@@unique`, FK, tabela | nenhuma barreira pendente |
 
 **A pré-condição não é formalidade.** Derrubar `Job` com a fila viva perde
@@ -914,6 +1129,9 @@ Novos desta fase:
 - **Preço por run verificável.** Enquanto não existir, a política local é
   estimativa e a conciliação é administrativa.
 - **`CRON_SECRET` na Vercel** e confirmação do cabeçalho enviado pelo Cron.
+- **Granularidade do Cron na Vercel.** O consumidor a cada 1 minuto depende do
+  plano da conta. Sem essa cadência, o backoff de 30 s volta a ser decorativo e
+  os prazos de poll precisam ser relidos.
 - **Semântica de `FOR UPDATE SKIP LOCKED` no Postgres gerenciado.** Validado no
   local; um pooler em modo transação pode se comportar diferente, e isso precisa
   ser confirmado antes do primeiro consumidor em produção.
