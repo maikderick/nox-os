@@ -4,13 +4,14 @@ import { Prisma } from "@prisma/client";
 
 import { type Actor } from "@/lib/authz/dal";
 import { prisma } from "@/lib/db";
-import { ProviderPreflightError, ProviderResourceConflictError } from "@/lib/providers/errors";
+
 import type { HostingProvider } from "@/lib/providers/ports";
 import type { ProjectRef, RepoRef } from "@/lib/providers/types";
 import { writeAudit } from "@/lib/settings";
 
 import { hostingProviderFor, openProvisioningContext, runStep } from "./context";
 import { hostingProjectNameFor } from "./naming";
+import { ProvisioningRefusal } from "./reasons";
 import { recordStepSuccess } from "./state";
 
 export type HostingStepResult = {
@@ -58,9 +59,7 @@ async function reconcileOrCreate(
 
   if (remote) {
     if (!row.creationStartedAt) {
-      throw new ProviderResourceConflictError(
-        `O projeto de hospedagem ${row.name} já existe e não foi criado pelo NOX OS. Escolha outro nome para o cliente ou remova o projeto existente`,
-      );
+      throw new ProvisioningRefusal("RECURSO_DE_TERCEIRO", { project: row.name });
     }
     return { ref: remote, created: false };
   }
@@ -103,9 +102,7 @@ export async function provisionHosting(params: {
 
     const repository = context.project.repository;
     if (!repository) {
-      throw new ProviderPreflightError(
-        "Crie o repositório antes de criar o projeto de hospedagem.",
-      );
+      throw new ProvisioningRefusal("REPOSITORIO_INCOMPLETO");
     }
 
     const provider = await hostingProviderFor(context);
@@ -119,9 +116,10 @@ export async function provisionHosting(params: {
 
     const visible = await provider.canAccessRepository({ repo });
     if (!visible) {
-      throw new ProviderPreflightError(
-        `A instalação da Vercel ainda não enxerga ${repo.owner}/${repo.name}. Autorize o repositório na instalação do GitHub da Vercel e tente de novo.`,
-      );
+      throw new ProvisioningRefusal("HOSPEDAGEM_SEM_ACESSO_AO_REPOSITORIO", {
+        owner: repo.owner,
+        repository: repo.name,
+      });
     }
 
     const name = existing?.name ?? hostingProjectNameFor(context.project.client.slug);
@@ -139,9 +137,7 @@ export async function provisionHosting(params: {
         });
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-          throw new ProviderResourceConflictError(
-            `O nome ${name} já pertence a outro projeto de hospedagem. Renomeie o cliente`,
-          );
+          throw new ProvisioningRefusal("NOME_OCUPADO_POR_OUTRO_PROJETO", { project: name });
         }
         throw error;
       }

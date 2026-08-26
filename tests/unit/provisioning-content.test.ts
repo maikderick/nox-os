@@ -88,7 +88,7 @@ describe("provisioning step 2 — content", () => {
 
     await expect(
       provisionContent({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toMatchObject({ code: "PREFLIGHT_FALHOU" });
+    ).rejects.toMatchObject({ code: "REPOSITORIO_INCOMPLETO" });
   });
 
   it("refuses before a briefing exists", async () => {

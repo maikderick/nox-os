@@ -130,7 +130,7 @@ export async function recordStepFailure(params: {
   await ensureProvisioning(params.siteProjectId);
   // Only what this application composed itself is stored. Anything else keeps
   // a correlation id and nothing of its original text.
-  const stored = describeErrorForStorage(params.error);
+  const stored = describeErrorForStorage(params.error, { step: params.step });
 
   return prisma.siteProvisioning.update({
     where: { siteProjectId: params.siteProjectId },

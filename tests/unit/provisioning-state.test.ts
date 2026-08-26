@@ -111,15 +111,25 @@ describe("provisioning state", () => {
     expect(data.lastError).toContain("código de correlação");
   });
 
-  it("stores the message of an error it did build", async () => {
-    const { ProviderPreflightError } = await import("../../src/lib/providers/errors");
+  it("stores the message it rebuilds from a closed reason", async () => {
+    const { ProvisioningRefusal, buildReasonMessage } = await import(
+      "../../src/lib/provisioning/reasons"
+    );
 
     const data = (await recordStepFailure({
       siteProjectId: "project-1",
       step: "hosting",
-      error: new ProviderPreflightError("Autorize o repositório na instalação da Vercel."),
+      error: new ProvisioningRefusal("HOSPEDAGEM_SEM_ACESSO_AO_REPOSITORIO", {
+        owner: "nox-sites",
+        repository: "site-oficina",
+      }),
     })) as unknown as { lastError: string };
 
-    expect(data.lastError).toBe("Autorize o repositório na instalação da Vercel.");
+    expect(data.lastError).toBe(
+      buildReasonMessage("HOSPEDAGEM_SEM_ACESSO_AO_REPOSITORIO", {
+        owner: "nox-sites",
+        repository: "site-oficina",
+      }),
+    );
   });
 });

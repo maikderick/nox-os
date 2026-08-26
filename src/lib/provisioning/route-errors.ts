@@ -1,51 +1,53 @@
 import { NextResponse } from "next/server";
 
 import { authorizationResponse } from "@/lib/authz/route";
-import {
-  IntegrationDisabledError,
-  IntegrationModeUnsupportedError,
-  ProviderPreflightError,
-  ProviderResourceConflictError,
-  ProviderResourceNotFoundError,
-} from "@/lib/providers/errors";
 
-import { ProvisioningNotEligibleError } from "./eligibility";
+import { describeErrorForStorage } from "./error-record";
+import { isProvisioningRefusal, type ProvisioningReason } from "./reasons";
 
 /**
- * Turns a provider refusal into the response it describes.
+ * The status each refusal answers with.
  *
- * Every one carries a stable code, and every message passes through redaction on
- * the way out: an error from a provider frequently quotes the request that
- * caused it, and that request carried an authorization header.
+ * All of them are conflicts in the plain sense: the request is well formed and
+ * the caller is allowed, but the world is not in a state where the action means
+ * anything.
+ */
+const STATUS_BY_REASON: Record<ProvisioningReason, number> = {
+  SEM_AUTORIZACAO: 403,
+  INTEGRACAO_DESLIGADA: 409,
+  MODO_INDISPONIVEL: 409,
+  PROVEDOR_NAO_CONFIGURADO: 409,
+  PROJETO_NAO_ELEGIVEL: 409,
+  BRIEFING_VERSAO_ANTIGA: 409,
+  BRIEFING_ADULTERADO: 409,
+  SNAPSHOT_INVALIDO: 409,
+  NOME_OCUPADO_POR_OUTRO_PROJETO: 409,
+  RECURSO_DE_TERCEIRO: 409,
+  PROVENIENCIA_NAO_COMPROVADA: 409,
+  REPOSITORIO_INCOMPLETO: 409,
+  CONTEUDO_NAO_PUBLICADO: 409,
+  HOSPEDAGEM_SEM_ACESSO_AO_REPOSITORIO: 409,
+  HOSPEDAGEM_INCOMPLETA: 409,
+  HOSPEDAGEM_VINCULADA_A_OUTRO_REPOSITORIO: 409,
+};
+
+/**
+ * Turns a refusal into the response it describes.
+ *
+ * The body is produced by the same function that writes the database column, so
+ * the client and the audit trail can never disagree — and neither can carry text
+ * this application did not compose. Anything unrecognised returns null and
+ * reaches the client as a bare 500, with the detail nowhere but a correlation
+ * id.
  */
 export function provisioningErrorResponse(error: unknown): NextResponse | null {
-  // Every branch below is one of this application's own errors, so the message
-  // is already ours. An unrecognised error returns null and never reaches the
-  // client as text.
-  const answer = (status: number, code: string, message: string) =>
-    NextResponse.json({ error: message, code }, { status });
+  if (!isProvisioningRefusal(error)) return null;
 
-  if (error instanceof ProvisioningNotEligibleError) {
-    // The request is well formed and the caller is allowed; the project simply
-    // is not in a state where provisioning means anything.
-    return answer(409, error.code, error.message);
-  }
-  if (error instanceof IntegrationDisabledError) {
-    return answer(409, error.code, error.message);
-  }
-  if (error instanceof IntegrationModeUnsupportedError) {
-    return answer(409, error.code, error.message);
-  }
-  if (error instanceof ProviderPreflightError) {
-    return answer(409, error.code, error.message);
-  }
-  if (error instanceof ProviderResourceConflictError) {
-    return answer(409, error.code, error.message);
-  }
-  if (error instanceof ProviderResourceNotFoundError) {
-    return answer(404, error.code, error.message);
-  }
-  return null;
+  const stored = describeErrorForStorage(error);
+  return NextResponse.json(
+    { error: stored.message, code: stored.code },
+    { status: STATUS_BY_REASON[error.reason] },
+  );
 }
 
 export async function withProvisioningErrors<T>(

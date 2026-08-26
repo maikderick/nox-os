@@ -126,7 +126,7 @@ describe("provisioning step 4 — reconcile preview", () => {
 
     await expect(
       reconcilePreview({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toMatchObject({ code: "PREFLIGHT_FALHOU" });
+    ).rejects.toMatchObject({ code: "HOSPEDAGEM_INCOMPLETA" });
   });
 
   it("refuses when there is no commit to ask about", async () => {
@@ -134,7 +134,7 @@ describe("provisioning step 4 — reconcile preview", () => {
 
     await expect(
       reconcilePreview({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toMatchObject({ code: "PREFLIGHT_FALHOU" });
+    ).rejects.toMatchObject({ code: "CONTEUDO_NAO_PUBLICADO" });
   });
 
   it("asks the platform at that instant and records what it found", async () => {

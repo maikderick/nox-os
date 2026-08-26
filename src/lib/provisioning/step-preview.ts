@@ -1,11 +1,12 @@
 import "server-only";
 
 import { type Actor } from "@/lib/authz/dal";
-import { ProviderPreflightError } from "@/lib/providers/errors";
+
 import type { DeploymentInfo } from "@/lib/providers/types";
 import { writeAudit } from "@/lib/settings";
 
 import { hostingProviderFor, openProvisioningContext, runStep } from "./context";
+import { ProvisioningRefusal } from "./reasons";
 import { recordStepSuccess } from "./state";
 
 export type PreviewStepResult = {
@@ -57,16 +58,12 @@ export async function reconcilePreview(params: {
     async () => {
       const hosting = context.project.hostingProject;
       if (!hosting) {
-        throw new ProviderPreflightError(
-          "Crie o projeto de hospedagem antes de reconciliar a prévia.",
-        );
+        throw new ProvisioningRefusal("HOSPEDAGEM_INCOMPLETA");
       }
 
       const commitSha = context.project.provisioning?.commitSha;
       if (!commitSha) {
-        throw new ProviderPreflightError(
-          "Publique o conteúdo no repositório antes de reconciliar a prévia: não há commit para consultar.",
-        );
+        throw new ProvisioningRefusal("CONTEUDO_NAO_PUBLICADO");
       }
 
       const provider = await hostingProviderFor(context);

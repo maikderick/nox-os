@@ -171,7 +171,7 @@ describe("provisioning step 3 — hosting", () => {
 
     await expect(
       provisionHosting({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toMatchObject({ code: "PREFLIGHT_FALHOU" });
+    ).rejects.toMatchObject({ code: "REPOSITORIO_INCOMPLETO" });
     expect(store.create).not.toHaveBeenCalled();
   });
 
@@ -180,7 +180,7 @@ describe("provisioning step 3 — hosting", () => {
 
     await expect(
       provisionHosting({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toMatchObject({ code: "PREFLIGHT_FALHOU" });
+    ).rejects.toMatchObject({ code: "HOSPEDAGEM_SEM_ACESSO_AO_REPOSITORIO" });
 
     expect(store.create).not.toHaveBeenCalled();
     expect(sharedFakeWorld.projects.size).toBe(0);
@@ -286,7 +286,7 @@ describe("provisioning step 3 — hosting", () => {
 
     await expect(
       provisionHosting({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toMatchObject({ code: "RECURSO_JA_EXISTE" });
+    ).rejects.toMatchObject({ code: "RECURSO_DE_TERCEIRO" });
   });
 
   it("refuses while the hosting integration is off", async () => {

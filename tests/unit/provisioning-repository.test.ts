@@ -323,7 +323,7 @@ describe("provisioning step 1 — repository", () => {
 
     await expect(
       provisionRepository({ actor: admin, siteProjectId: "project-1" }),
-    ).rejects.toMatchObject({ code: "RECURSO_JA_EXISTE" });
+    ).rejects.toMatchObject({ code: "RECURSO_DE_TERCEIRO" });
 
     const failure = mocks.provUpdate.mock.calls.at(-1)?.[0].data as Record<string, unknown>;
     expect(failure.status).toBe("FALHOU");

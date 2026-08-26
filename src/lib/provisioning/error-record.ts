@@ -1,79 +1,96 @@
 import { randomUUID } from "node:crypto";
 
-import { AuthorizationError } from "@/lib/authz/errors";
-import {
-  IntegrationDisabledError,
-  IntegrationModeUnsupportedError,
-  ProviderPreflightError,
-  ProviderResourceConflictError,
-  ProviderResourceNotFoundError,
-} from "@/lib/providers/errors";
+import { Prisma } from "@prisma/client";
 
-import { ProvisioningNotEligibleError } from "./eligibility";
+import { AuthorizationError } from "@/lib/authz/errors";
+
+import {
+  buildReasonMessage,
+  isProvisioningRefusal,
+  type ProvisioningReason,
+} from "./reasons";
 
 /**
- * What may be written down about a failure.
+ * What may be written down about a failure — anywhere.
  *
- * The previous approach was a denylist of things that look like secrets, which
- * is a losing game: it only catches the shapes someone thought of, and a
- * provider that invents a new token format leaks by default. This is an
- * allowlist instead — a message is stored only when this application composed
- * it, from its own data, and everything else is replaced.
+ * A denylist of secret-shaped patterns only catches the shapes someone thought
+ * of. `instanceof` is no better on its own: `ProviderPreflightError` and its
+ * siblings accept arbitrary strings, so a provider response reaches a column
+ * simply by being wrapped in one of our own classes on the way out.
+ *
+ * So nothing is ever copied. A stored message is *rebuilt* from a closed reason
+ * and fields this application produced, and an error that carries no reason
+ * keeps none of its text — not in the database, not in the response, not in the
+ * log.
  */
 export type StoredError = {
   code: string;
   message: string;
-  /** Present only when the original was withheld. */
+  /** Present only when the original was withheld entirely. */
   correlationId?: string;
 };
 
 export const UNKNOWN_ERROR_CODE = "ERRO_INESPERADO";
 
 const GENERIC_MESSAGE =
-  "A etapa falhou por um erro inesperado. O detalhe técnico não é gravado; use o código de correlação para localizá-lo no log do servidor.";
+  "A etapa falhou por um erro inesperado. O detalhe técnico não é gravado nem registrado; use o código de correlação para localizar a ocorrência.";
 
 /**
- * Errors this application constructs itself.
+ * How an unrecognised failure is classified for the log.
  *
- * Every one of them builds its message from literals plus data the factory
- * already owns — an owner, a repository name, a project state. None of them ever
- * embeds a provider response, which is what makes them safe to store verbatim.
+ * A closed set, on purpose. Even a class name is a string from somewhere, and
+ * "somewhere" eventually includes a library that puts a URL in it.
  */
-const ALLOWED_ERRORS = [
-  AuthorizationError,
-  IntegrationDisabledError,
-  IntegrationModeUnsupportedError,
-  ProviderPreflightError,
-  ProviderResourceConflictError,
-  ProviderResourceNotFoundError,
-  ProvisioningNotEligibleError,
-] as const;
+type Classification = "banco" | "tipo-inesperado" | "desconhecido";
 
-function isAllowed(error: unknown): error is Error & { code?: string } {
-  return ALLOWED_ERRORS.some((candidate) => error instanceof candidate);
+function classify(error: unknown): Classification {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError ||
+    error instanceof Prisma.PrismaClientValidationError
+  ) {
+    return "banco";
+  }
+  if (!(error instanceof Error)) return "tipo-inesperado";
+  return "desconhecido";
 }
 
 /**
- * Reduces any thrown value to something safe to persist.
- *
- * An unrecognised error keeps nothing of its original text. The raw message goes
- * to the server log next to the correlation id, so debugging stays possible
- * without the database becoming the place a leaked token comes to rest.
+ * Authorization failures have fixed messages, but they are rebuilt rather than
+ * read: the constructor is public, so trusting `.message` would trust whatever
+ * a future caller passes it.
  */
+function authorizationReason(): ProvisioningReason {
+  return "SEM_AUTORIZACAO";
+}
+
 export function describeErrorForStorage(
   error: unknown,
-  log: (message: string) => void = console.error,
+  options: { step?: string; log?: (line: string) => void } = {},
 ): StoredError {
-  if (isAllowed(error)) {
+  const log = options.log ?? console.error;
+
+  if (isProvisioningRefusal(error)) {
+    // Rebuilt from the reason, not copied from the instance: the message and the
+    // details are both ours by construction.
     return {
-      code: error.code ?? UNKNOWN_ERROR_CODE,
-      message: error.message,
+      code: error.reason,
+      message: buildReasonMessage(error.reason, error.details),
     };
   }
 
+  if (error instanceof AuthorizationError) {
+    const reason = authorizationReason();
+    return { code: reason, message: buildReasonMessage(reason) };
+  }
+
   const correlationId = randomUUID();
-  const original = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  log(`[provisionamento] ${correlationId} ${original}`);
+
+  // The log line carries no part of the original either. A message that is
+  // unsafe for a column is unsafe for a log file that gets shipped, indexed and
+  // read by more people than the database ever is.
+  log(
+    `[provisionamento] correlacao=${correlationId} etapa=${options.step ?? "desconhecida"} classe=${classify(error)}`,
+  );
 
   return { code: UNKNOWN_ERROR_CODE, message: GENERIC_MESSAGE, correlationId };
 }

@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 
 import { type Actor } from "@/lib/authz/dal";
 import { prisma } from "@/lib/db";
-import { ProviderResourceConflictError } from "@/lib/providers/errors";
+
 import type { GitRepositoryProvider } from "@/lib/providers/ports";
 import type { RepoRef } from "@/lib/providers/types";
 import { writeAudit } from "@/lib/settings";
@@ -17,6 +17,7 @@ import {
   type ProvisioningContext,
 } from "./context";
 import { REQUIRED_CHECK, SITE_TEMPLATE, repositoryNameFor } from "./naming";
+import { ProvisioningRefusal } from "./reasons";
 import { ensureProvisioning, recordStepSuccess } from "./state";
 
 export type RepositoryStepResult = {
@@ -90,9 +91,10 @@ async function recordIntent(
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      throw new ProviderResourceConflictError(
-        `O nome ${input.owner}/${input.name} já pertence a outro projeto. Renomeie o cliente`,
-      );
+      throw new ProvisioningRefusal("NOME_OCUPADO_POR_OUTRO_PROJETO", {
+        owner: input.owner,
+        repository: input.name,
+      });
     }
     throw error;
   }
@@ -116,9 +118,10 @@ async function reconcileOrCreate(
     if (!row.creationStartedAt) {
       // The name was taken before we ever tried. Adopting it would mean
       // committing a client's site into somebody else's repository.
-      throw new ProviderResourceConflictError(
-        `O repositório ${row.owner}/${row.name} já existe e não foi criado pelo NOX OS. Escolha outro nome para o cliente ou mova o repositório existente`,
-      );
+      throw new ProvisioningRefusal("RECURSO_DE_TERCEIRO", {
+        owner: row.owner,
+        repository: row.name,
+      });
     }
     return { ref: remote, created: false };
   }

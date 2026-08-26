@@ -4,11 +4,12 @@ import { assertPermission, type Actor } from "@/lib/authz/dal";
 import { prisma } from "@/lib/db";
 import { getEffectiveMode } from "@/lib/integrations/settings-service";
 import type { IntegrationMode } from "@/lib/integrations/modes";
-import { IntegrationDisabledError, ProviderPreflightError } from "@/lib/providers/errors";
+
 import type { GitRepositoryProvider, HostingProvider } from "@/lib/providers/ports";
 import { getGitRepositoryProvider, getHostingProvider } from "@/lib/providers/registry";
 
 import { assertProvisioningEligible, type EligibleBrief } from "./eligibility";
+import { ProvisioningRefusal } from "./reasons";
 import { sitesOwnerFallback } from "./naming";
 import { loadProvisionableProject, recordStepFailure, type ProvisioningStep } from "./state";
 
@@ -34,7 +35,9 @@ export async function openProvisioningContext(params: {
 
   const project = await loadProvisionableProject(params.actor, params.siteProjectId);
   const mode = await getEffectiveMode(params.actor.organizationId, params.provider);
-  if (mode === "DESLIGADO") throw new IntegrationDisabledError(params.provider);
+  if (mode === "DESLIGADO") {
+    throw new ProvisioningRefusal("INTEGRACAO_DESLIGADA", { provider: params.provider });
+  }
 
   // The last gate before any provider is reachable. Every step opens its
   // context through here, so eligibility cannot be skipped by adding a step.
@@ -46,9 +49,7 @@ export async function openProvisioningContext(params: {
 export async function gitProviderFor(context: ProvisioningContext): Promise<GitRepositoryProvider> {
   const provider = getGitRepositoryProvider(context.mode);
   if (!(await provider.isConfigured())) {
-    throw new ProviderPreflightError(
-      "As credenciais do GitHub não estão completas. Verifique as variáveis de ambiente em Organização → Integrações.",
-    );
+    throw new ProvisioningRefusal("PROVEDOR_NAO_CONFIGURADO", { provider: "github" });
   }
   return provider;
 }
@@ -56,9 +57,7 @@ export async function gitProviderFor(context: ProvisioningContext): Promise<GitR
 export async function hostingProviderFor(context: ProvisioningContext): Promise<HostingProvider> {
   const provider = getHostingProvider(context.mode);
   if (!(await provider.isConfigured())) {
-    throw new ProviderPreflightError(
-      "As credenciais da Vercel não estão completas. Verifique as variáveis de ambiente em Organização → Integrações.",
-    );
+    throw new ProvisioningRefusal("PROVEDOR_NAO_CONFIGURADO", { provider: "vercel" });
   }
   return provider;
 }
@@ -87,9 +86,7 @@ export async function resolveSitesOwner(context: ProvisioningContext): Promise<s
   const fromEnv = ref ? process.env[ref.envVarName] : undefined;
   const owner = (fromEnv ?? sitesOwnerFallback()).trim();
   if (!owner) {
-    throw new ProviderPreflightError(
-      "A organização do GitHub que recebe os sites não está definida.",
-    );
+    throw new ProvisioningRefusal("PROVEDOR_NAO_CONFIGURADO", { provider: "github" });
   }
   return owner;
 }

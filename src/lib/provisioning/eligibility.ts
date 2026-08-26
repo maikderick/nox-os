@@ -5,24 +5,14 @@ import {
 } from "@/lib/site-factory/brief-schema";
 import { briefFactsHash } from "@/lib/site-factory/brief-service";
 
+import { ProvisioningRefusal } from "./reasons";
+
 /** Stable codes, so a client can tell the three refusals apart. */
 export const ELIGIBILITY_CODES = {
   projectNotReady: "PROJETO_NAO_ELEGIVEL",
   briefVersionTooOld: "BRIEFING_VERSAO_ANTIGA",
   briefTampered: "BRIEFING_ADULTERADO",
 } as const;
-
-export type EligibilityCode = (typeof ELIGIBILITY_CODES)[keyof typeof ELIGIBILITY_CODES];
-
-export class ProvisioningNotEligibleError extends Error {
-  readonly code: EligibilityCode;
-
-  constructor(code: EligibilityCode, message: string) {
-    super(message);
-    this.name = "ProvisioningNotEligibleError";
-    this.code = code;
-  }
-}
 
 export type EligibleBrief = {
   brief: SiteBriefV2;
@@ -53,18 +43,12 @@ export function assertProvisioningEligible(project: ProjectRow): EligibleBrief {
   //    A draft is still being written; anything past the briefing has moved on
   //    to states this phase does not implement.
   if (project.status !== "BRIEFING_PRONTO") {
-    throw new ProvisioningNotEligibleError(
-      ELIGIBILITY_CODES.projectNotReady,
-      `O projeto precisa estar em "Briefing pronto" para ser provisionado. Estado atual: ${project.status}.`,
-    );
+    throw new ProvisioningRefusal("PROJETO_NAO_ELEGIVEL", { state: project.status });
   }
 
   const briefVersion = project.currentBriefVersion;
   if (!briefVersion) {
-    throw new ProvisioningNotEligibleError(
-      ELIGIBILITY_CODES.projectNotReady,
-      "O projeto não tem uma versão de briefing atual.",
-    );
+    throw new ProvisioningRefusal("PROJETO_NAO_ELEGIVEL");
   }
 
   let parsed;
@@ -74,20 +58,14 @@ export function assertProvisioningEligible(project: ProjectRow): EligibleBrief {
     // Unparseable stored content is tampering as far as this gate cares: the
     // row was written by a schema that accepted it, so something changed it
     // outside the application.
-    throw new ProvisioningNotEligibleError(
-      ELIGIBILITY_CODES.briefTampered,
-      "O briefing armazenado não pode ser lido. Ele foi alterado fora do NOX OS.",
-    );
+    throw new ProvisioningRefusal("BRIEFING_ADULTERADO");
   }
 
   // 2. Only v2 can describe a publishable site. A v1 brief names services
   //    without describing them, so generating from it would mean inventing the
   //    copy — which the whole factory exists to prevent.
   if (!isSiteBriefV2(parsed)) {
-    throw new ProvisioningNotEligibleError(
-      ELIGIBILITY_CODES.briefVersionTooOld,
-      "Este projeto tem um briefing v1, que guarda apenas o nome de cada serviço. Crie uma versão v2 confirmando resumo, conteúdo e contato antes de provisionar.",
-    );
+    throw new ProvisioningRefusal("BRIEFING_VERSAO_ANTIGA");
   }
 
   // 3. The fingerprint still matches what was confirmed. If it does not, the
@@ -95,10 +73,7 @@ export function assertProvisioningEligible(project: ProjectRow): EligibleBrief {
   //    them would publish something nobody signed off.
   const recomputed = briefFactsHash(parsed);
   if (recomputed !== briefVersion.factsHash) {
-    throw new ProvisioningNotEligibleError(
-      ELIGIBILITY_CODES.briefTampered,
-      "A impressão digital do briefing não confere com o conteúdo armazenado. Confirme o briefing de novo antes de provisionar.",
-    );
+    throw new ProvisioningRefusal("BRIEFING_ADULTERADO");
   }
 
   return { brief: parsed, version: briefVersion.version, factsHash: briefVersion.factsHash };

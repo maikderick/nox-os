@@ -2,7 +2,7 @@ import "server-only";
 
 import { type Actor } from "@/lib/authz/dal";
 import { prisma } from "@/lib/db";
-import { ProviderPreflightError } from "@/lib/providers/errors";
+
 import {
   buildSiteContentSnapshot,
   buildSiteManifest,
@@ -14,6 +14,7 @@ import { writeAudit } from "@/lib/settings";
 
 import { gitProviderFor, openProvisioningContext, runStep } from "./context";
 import { hostingProjectNameFor } from "./naming";
+import { ProvisioningRefusal } from "./reasons";
 import { recordStepSuccess } from "./state";
 
 export const CONTENT_PATH = "content/site.json";
@@ -67,9 +68,7 @@ export async function provisionContent(params: {
   return runStep({ siteProjectId: params.siteProjectId, step: "content" }, async () => {
     const repository = context.project.repository;
     if (!repository) {
-      throw new ProviderPreflightError(
-        "Crie o repositório antes de publicar o conteúdo nele.",
-      );
+      throw new ProvisioningRefusal("REPOSITORIO_INCOMPLETO");
     }
 
     // Already parsed and verified by the eligibility gate; re-reading the row
@@ -101,11 +100,11 @@ export async function provisionContent(params: {
     // that violates an invariant would produce a site nobody can fix remotely.
     const issues = validateSnapshotInvariants(content);
     if (issues.length > 0) {
-      throw new ProviderPreflightError(
-        `O snapshot não passa no contrato: ${issues
-          .map((issue) => `${issue.path} — ${issue.message}`)
-          .join("; ")}`,
-      );
+      // Only the field paths, which come from our own contract — never the
+      // message text, which a future validator could source from elsewhere.
+      throw new ProvisioningRefusal("SNAPSHOT_INVALIDO", {
+        fields: issues.map((issue) => issue.path),
+      });
     }
 
     const contentSha256 = hashSiteContent(content);
