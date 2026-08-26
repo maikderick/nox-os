@@ -5,7 +5,7 @@ import { claimJob } from "@/lib/jobs/claim";
 import { runJobBatch } from "@/lib/jobs/consumer";
 import type { JobHandlers } from "@/lib/jobs/handlers";
 import { enqueueJob } from "@/lib/jobs/outbox";
-import { reclaimExpiredLeases } from "@/lib/jobs/reconcile";
+import { MAX_LEASE_RECOVERIES, reclaimExpiredLeases } from "@/lib/jobs/reconcile";
 
 import {
   createQueueFixture,
@@ -112,12 +112,13 @@ describeLocalDatabase("the consumer's scope", () => {
         },
       });
 
-      await runJobBatch({
+      const report = await runJobBatch({
         owner: "consumidor-a",
         organizationId: fx.organizationId,
         handlers: completing,
       });
 
+      expect(report.reclaimed).toBe(0);
       const stillStuck = await prisma.job.findUniqueOrThrow({ where: { id: b.id } });
       expect(stillStuck.status).toBe("EM_EXECUCAO");
       expect(stillStuck.leaseRecoveryCount).toBe(0);
@@ -160,6 +161,167 @@ describeLocalDatabase("the consumer's scope", () => {
       expect((await prisma.job.findUniqueOrThrow({ where: { id: b.id } })).status).toBe("CONCLUIDO");
     });
 
+    it("reclaims stuck jobs of both", async () => {
+      const { a, b } = await queueBoth();
+      await prisma.job.updateMany({
+        where: { id: { in: [a.id, b.id] } },
+        data: {
+          status: "EM_EXECUCAO",
+          leaseOwner: "consumidor-morto",
+          leaseExpiresAt: new Date(Date.now() - 1_000),
+        },
+      });
+
+      const report = await runJobBatch({ owner: "agendador", handlers: completing });
+
+      expect(report.reclaimed).toBe(2);
+      expect(report.claimed).toBe(2);
+    });
   });
 
+  describe("the reclaim happens inside the run", () => {
+    it("brings back an expired job and processes it, with no manual call", async () => {
+      // The point of doing it here: a job whose consumer was killed is
+      // invisible to `claimJob`. If reclaiming were a separate cron or a button
+      // someone remembers, the queue would look stuck for a reason nobody could
+      // see from the queue itself.
+      const { a } = await queueBoth();
+      await prisma.job.update({
+        where: { id: a.id },
+        data: {
+          status: "EM_EXECUCAO",
+          leaseOwner: "consumidor-morto",
+          leaseExpiresAt: new Date(Date.now() - 1_000),
+          pollCount: 4,
+        },
+      });
+
+      const report = await runJobBatch({
+        owner: "consumidor-vivo",
+        organizationId: fx.organizationId,
+        handlers: completing,
+      });
+
+      expect(report.reclaimed).toBe(1);
+      expect(report.claimed).toBe(1);
+      expect(report.outcomes).toEqual({ concluido: 1 });
+
+      const done = await prisma.job.findUniqueOrThrow({ where: { id: a.id } });
+      expect(done.status).toBe("CONCLUIDO");
+      expect(done.leaseRecoveryCount).toBe(1);
+      // The rescue costs a recovery and nothing else.
+      expect(done.attempts).toBe(0);
+      expect(done.pollCount).toBe(4);
+    });
+
+    it("does not rescue a job whose consumer is still alive", async () => {
+      const { a } = await queueBoth();
+      await prisma.job.update({
+        where: { id: a.id },
+        data: {
+          status: "EM_EXECUCAO",
+          leaseOwner: "consumidor-vivo",
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+
+      const report = await runJobBatch({
+        owner: "outro-consumidor",
+        organizationId: fx.organizationId,
+        handlers: completing,
+      });
+
+      expect(report.reclaimed).toBe(0);
+      expect(report.claimed).toBe(0);
+    });
+
+    it("stops rescuing at the cap, inside the run like anywhere else", async () => {
+      const { a } = await queueBoth();
+      await prisma.job.update({
+        where: { id: a.id },
+        data: {
+          status: "EM_EXECUCAO",
+          leaseOwner: "consumidor-morto",
+          leaseExpiresAt: new Date(Date.now() - 1_000),
+          leaseRecoveryCount: MAX_LEASE_RECOVERIES - 1,
+        },
+      });
+
+      const report = await runJobBatch({
+        owner: "consumidor-vivo",
+        organizationId: fx.organizationId,
+        handlers: completing,
+      });
+
+      expect(report.reclaimed).toBe(1);
+      // Reclaimed straight into conciliation, so there is nothing to acquire.
+      expect(report.claimed).toBe(0);
+      expect((await prisma.job.findUniqueOrThrow({ where: { id: a.id } })).status).toBe(
+        "CONCILIACAO",
+      );
+    });
+  });
+
+  describe("losing the lease is not an outcome", () => {
+    it("reports `lease_perdido` instead of the completion the handler asked for", async () => {
+      // The handler said "done". It was not done: the job had already been
+      // taken away, `completeJob` matched nothing, and the row is back in the
+      // queue. Recording a completion here would put one in the log for a job
+      // someone else is about to run.
+      const { a } = await queueBoth();
+
+      const report = await runJobBatch({
+        owner: "consumidor-a",
+        organizationId: fx.organizationId,
+        budgetMs: 60_000,
+        // One pass only: the loop would otherwise re-claim the same job.
+        elapsedMs: (() => {
+          let calls = 0;
+          return () => (calls++ === 0 ? 0 : 60_000);
+        })(),
+        handlers: {
+          "checks.poll": async (context) => {
+            await prisma.job.update({
+              where: { id: context.job.id },
+              data: { leaseOwner: "outro-consumidor" },
+            });
+            return { type: "concluido" };
+          },
+        },
+      });
+
+      expect(report.claimed).toBe(1);
+      expect(report.outcomes).toEqual({ lease_perdido: 1 });
+      expect(report.outcomes.concluido).toBeUndefined();
+
+      const job = await prisma.job.findUniqueOrThrow({ where: { id: a.id } });
+      expect(job.status).toBe("EM_EXECUCAO");
+      expect(job.leaseOwner).toBe("outro-consumidor");
+    });
+
+    it("reports it for a failure that could not be written either", async () => {
+      await queueBoth();
+
+      const report = await runJobBatch({
+        owner: "consumidor-a",
+        organizationId: fx.organizationId,
+        budgetMs: 60_000,
+        elapsedMs: (() => {
+          let calls = 0;
+          return () => (calls++ === 0 ? 0 : 60_000);
+        })(),
+        handlers: {
+          "checks.poll": async (context) => {
+            await prisma.job.update({
+              where: { id: context.job.id },
+              data: { leaseOwner: "outro-consumidor" },
+            });
+            throw new Error("falhou depois de perder o lease");
+          },
+        },
+      });
+
+      expect(report.outcomes).toEqual({ lease_perdido: 1 });
+    });
+  });
 });

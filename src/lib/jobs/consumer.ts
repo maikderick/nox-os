@@ -6,6 +6,7 @@ import { claimJob, DEFAULT_LEASE_SECONDS } from "./claim";
 import { extendLease, holdsLease } from "./heartbeat";
 import { JOB_HANDLERS, type JobHandlers, type JobOutcome } from "./handlers";
 import { isJobKind, type JobKind } from "./kinds";
+import { reclaimExpiredLeases } from "./reconcile";
 import {
   completeJob,
   deferJob,
@@ -71,6 +72,7 @@ export type JobBatchReport = {
   owner: string;
   /** Present only for a tenant-scoped run. */
   organizationId?: string;
+  reclaimed: number;
   claimed: number;
   outcomes: Record<string, number>;
   stoppedBecause: "sem_trabalho" | "orcamento";
@@ -82,33 +84,43 @@ function monotonic(): () => number {
   return () => performance.now() - started;
 }
 
+/**
+ * Applies an outcome, and says whether it actually landed.
+ *
+ * Every settling function matches on the lease, so all of them return `null`
+ * when this consumer no longer holds the job — reclaimed mid-handler, most
+ * likely. That is not the outcome the handler asked for; it is no outcome at
+ * all, and the report has to say so. Counting a `concluido` that wrote nothing
+ * would put a completion in the log for a job that is, at that moment, back in
+ * the queue for someone else to run.
+ */
 async function applyOutcome(
   outcome: JobOutcome,
   params: { jobId: string; owner: string; step: string },
-): Promise<void> {
+): Promise<boolean> {
   const { jobId, owner, step } = params;
 
   switch (outcome.type) {
     case "concluido":
-      await completeJob({ jobId, owner });
-      return;
+      return (await completeJob({ jobId, owner })) !== null;
     case "aguardar":
-      await deferJob({ jobId, owner, delaySeconds: outcome.delaySeconds });
-      return;
+      return (await deferJob({ jobId, owner, delaySeconds: outcome.delaySeconds })) !== null;
     case "pausar":
-      await pauseJob({
-        jobId,
-        owner,
-        reason: outcome.reason,
-        retryAfterSeconds: outcome.retryAfterSeconds,
-      });
-      return;
+      return (
+        (await pauseJob({
+          jobId,
+          owner,
+          reason: outcome.reason,
+          retryAfterSeconds: outcome.retryAfterSeconds,
+        })) !== null
+      );
     case "falha_recuperavel":
-      await failJobRecoverable({ jobId, owner, error: outcome.error, step });
-      return;
+      return (await failJobRecoverable({ jobId, owner, error: outcome.error, step })) !== null;
     case "falha_permanente":
-      await failJobPermanent({ jobId, owner, error: outcome.error, step, as: outcome.as });
-      return;
+      return (
+        (await failJobPermanent({ jobId, owner, error: outcome.error, step, as: outcome.as })) !==
+        null
+      );
   }
 }
 
@@ -122,6 +134,7 @@ export async function runJobBatch(params: RunJobBatchParams = {}): Promise<JobBa
   const report: JobBatchReport = {
     owner,
     ...(params.organizationId ? { organizationId: params.organizationId } : {}),
+    reclaimed: 0,
     claimed: 0,
     outcomes: {},
     stoppedBecause: "sem_trabalho",
@@ -131,6 +144,17 @@ export async function runJobBatch(params: RunJobBatchParams = {}): Promise<JobBa
   const count = (type: string) => {
     report.outcomes[type] = (report.outcomes[type] ?? 0) + 1;
   };
+
+  // Before anything else, and every cycle — not on a separate schedule.
+  //
+  // A job whose consumer was killed sits `EM_EXECUCAO` with a lapsed lease and
+  // is invisible to `claimJob`. If reclaiming were a separate cron, or a button
+  // someone remembers to press, that job would wait for it; the queue would
+  // look stuck and the reason would be a second moving part. Doing it here
+  // means the same invocation that finds nothing to do is the one that
+  // discovers why.
+  const reclaimed = await reclaimExpiredLeases({ organizationId: params.organizationId });
+  report.reclaimed = reclaimed.length;
 
   while (true) {
     // Checked *before* claiming, never after. Acquiring a job we have no time
@@ -174,8 +198,11 @@ export async function runJobBatch(params: RunJobBatchParams = {}): Promise<JobBa
     }
 
     try {
-      await applyOutcome(outcome, { jobId: job.id, owner, step: kind });
-      count(outcome.type);
+      const wrote = await applyOutcome(outcome, { jobId: job.id, owner, step: kind });
+      // What the handler decided is not what happened if the job was taken
+      // away mid-run. Recording the requested outcome would put a completion
+      // in the log for a job that is back in the queue.
+      count(wrote ? outcome.type : "lease_perdido");
     } catch (error) {
       // Settling itself failed — the database, most likely. The lease lapses
       // and the reclaim brings the job back; nothing is lost, and pretending
