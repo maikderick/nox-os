@@ -4,9 +4,12 @@
 > **Autoridade:** [spec da arquitetura-alvo](../specs/2026-08-25-fabrica-de-sites-arquitetura-alvo.md).
 > **Contexto:** [plano mestre das Fases 3 a 6](2026-08-25-fases-3-a-6-plano-mestre.md).
 > **Pré-requisito:** Fase 3 aprovada e encerrada em `30645e7`.
-> **Revisão 4** — chave de idempotência do cliente, vencedor único por
-> atualização condicional, destino da reserva em todo caminho, e a correção de
-> como se desfaz um commit que já aplicou migration.
+> **Revisão 5** — a tentativa de início vira disposição fechada, e a reserva
+> sobrevive à retentativa segura em vez de ser recriada.
+>
+> Revisão 4 — chave de idempotência do cliente, vencedor único por atualização
+> condicional, destino da reserva em todo caminho, e a correção de como se
+> desfaz um commit que já aplicou migration.
 
 **Objetivo:** dado um `SiteProject` provisionado, o NOX OS enfileira uma geração
 de forma durável, reserva crédito antes de qualquer operação paga, orquestra o
@@ -66,6 +69,15 @@ a ponta. Nenhum é de redação.
 
 ---
 
+## O que mudou desde a revisão 4
+
+| # | Defeito | Correção |
+| --- | --- | --- |
+| 1 | "Tentativa sem `providerRunId`" era inferido de `startAttemptedAt` e do erro — três situações diferentes lidas como uma | `GenerationRun.startDisposition`, domínio fechado, gravado antes da chamada |
+| 2 | Falha segura antes do `start` liberava a reserva e a próxima tentativa criava outra — com outro `credit.threshold` | Mesma reserva permanece `RESERVADA` e é reutilizada; o vigia continua vivo |
+
+---
+
 ## Decisões fixadas
 
 | Decisão | Valor |
@@ -96,10 +108,14 @@ contam `pollCount` e respeitam `pollDeadlineAt`. Não consomem tentativa, não
 aplicam backoff de falha, não caminham para carta morta. Estourar o prazo leva a
 `CONCILIACAO`.
 
-**Efeito remoto nunca é repetido às cegas.** `startAttemptedAt` antes da chamada.
-Tentativa sem `providerRunId` só é repetida se o provedor declarar
-`idempotentStart`; se declarar `reconcileByKey`, consulta antes de decidir. Sem
-nenhuma das duas, `CONCILIACAO`.
+**Efeito remoto nunca é repetido às cegas.** Quem decide isso é
+`GenerationRun.startDisposition`, uma **disposição fechada** gravada antes da
+chamada — nunca o texto de um erro. `EM_TENTATIVA` entra antes de qualquer byte
+sair; morrer ali deixa exatamente o estado que se lê como ambíguo. Só um erro
+interno tipado e seguro grava `SEM_EFEITO_COMPROVADO`, e só ele autoriza chamar
+de novo. Ambíguo só é repetido se o provedor declarar `idempotentStart`; se
+declarar `reconcileByKey`, consulta antes de decidir. Sem nenhuma das duas,
+`CONCILIACAO`.
 
 **Nenhum job espera à toa.** O consumidor adquire um job por vez, sob demanda.
 
@@ -158,23 +174,34 @@ Toda linha existe. Nenhuma saída deixa reserva esquecida.
 | Situação | Job | Projeto | `GenerationRun` | Reserva |
 | --- | --- | --- | --- | --- |
 | Falha **antes** de `start` — sem preço, sem crédito, preflight | `FALHOU` ou `CARTA_MORTA` | `FALHOU` | `FALHOU` | **liberada** (ou nunca criada) |
-| `start` falhou comprovadamente sem efeito remoto | `PENDENTE` com backoff | `GERANDO` | `PENDENTE` | **liberada** |
+| `start` falhou em `SEM_EFEITO_COMPROVADO`, com tentativa sobrando | `PENDENTE` com backoff | `GERANDO` | `PENDENTE` | **mantida em `RESERVADA`**, reutilizada na próxima tentativa |
+| Tentativas esgotadas, ainda em `SEM_EFEITO_COMPROVADO` | `CARTA_MORTA` | `FALHOU` | `FALHOU` | **liberada** |
 | Run confirmado em execução, limiar vencido | `PENDENTE` via `deferJob` | `GERANDO` | `EXECUTANDO` | **renovada** |
 | Agente concluiu, checks e preview verdes | `CONCLUIDO` | `PREVIA_PRONTA` | `CONCLUIDO` | **consumida** pelo preço configurado |
 | Agente concluiu, check ou preview falhou | `CONCLUIDO`; o irmão vivo é **cancelado** | `FALHOU` | `CONCLUIDO` | **consumida** — o trabalho pago aconteceu |
 | Prazo de poll estourado | `CONCILIACAO` | `GERANDO` | `EXECUTANDO` | **conciliação**, conta bloqueada |
-| Efeito remoto ambíguo — tentativa sem `providerRunId` | `CONCILIACAO` | `GERANDO` | `PENDENTE` | **conciliação**, conta bloqueada |
+| Efeito remoto ambíguo — `AMBIGUO`, ou `EM_TENTATIVA` reencontrado | `CONCILIACAO` | `GERANDO` | `PENDENTE` | **conciliação**, conta bloqueada |
 | Custo real acima da reserva, sem espaço | `CONCLUIDO` | conforme a barreira | `CONCLUIDO` | **conciliação**, conta bloqueada |
-| Carta morta por esgotar tentativas | `CARTA_MORTA` | `FALHOU` | `FALHOU` | **conciliação** se houve `startAttemptedAt`; **liberada** se não |
+| Carta morta por esgotar tentativas | `CARTA_MORTA` | `FALHOU` | `FALHOU` | **liberada** em `NAO_TENTADO` e `SEM_EFEITO_COMPROVADO`; **conciliação** nas demais |
 
 Sucesso em `FALSO` e `SANDBOX` consome o preço configurado como qualquer
 outro — o modo muda quem responde, não a contabilidade. Um caminho que não
 cobrasse em modo falso deixaria a conciliação sem nada para comparar quando o
 modo virasse.
 
-A última linha é a razão de `startAttemptedAt` existir: sem ela, uma carta
-morta não distingue "nunca chamou" de "chamou e não soube", e liberar no segundo
-caso é reembolsar trabalho que aconteceu.
+As duas últimas linhas são a razão de a disposição existir. Uma carta morta
+precisa distinguir "nunca chamou", "chamou e não pegou" e "chamou e não soube":
+liberar na terceira é reembolsar trabalho que aconteceu, e conciliar na primeira
+é mandar gente olhar o que não existe.
+
+**A reserva atravessa a retentativa segura.** Em `SEM_EFEITO_COMPROVADO` com
+tentativa sobrando, a reserva **não** é liberada e recriada: continua
+`RESERVADA`, e a próxima tentativa reusa a mesma, pela mesma `operationKey`.
+Liberar e recriar teria três defeitos — abriria uma janela em que o crédito pode
+ser tomado por outra geração, criaria um segundo `credit.threshold` para a mesma
+intenção, e encheria o ledger de pares liberação/reserva que não descrevem
+movimento nenhum. O vigia que nasceu com a reserva continua vivo e continua
+sendo o mesmo job.
 
 **Não existe volta de `GERANDO` para o estado de origem.** A máquina de estados
 da Fase 1 autoriza `GERANDO → PREVIA_PRONTA` e `GERANDO → FALHOU`, e nada mais.
@@ -466,6 +493,33 @@ e a única chave estrangeira continua sendo `CreditReservation.generationRunId`,
 handlers do mesmo run concluem sob lease vencido. Aqui também a FK é de um lado
 só — a revisão aponta para o run, nunca o contrário.
 
+### Disposição da tentativa de início
+
+`GenerationRun.startDisposition` é coluna aditiva, `NAO_TENTADO` por padrão, com
+**domínio fechado**. Nenhum texto de provedor entra nela.
+
+| Disposição | O que aconteceu | O que a retentativa pode fazer |
+| --- | --- | --- |
+| `NAO_TENTADO` | nada saiu daqui | chamar |
+| `EM_TENTATIVA` | gravado **antes** da chamada; o processo pode ter morrido com ela em voo | tratar como ambíguo |
+| `SEM_EFEITO_COMPROVADO` | erro interno tipado, anterior à chamada | chamar de novo, **com a mesma reserva** |
+| `INICIADO` | `providerRunId` gravado | não chamar; seguir para o poll |
+| `AMBIGUO` | erro desconhecido, ou efeito impossível de descartar | `CONCILIACAO` |
+
+`startAttemptedAt` continua existindo, como carimbo de tempo. O que ele não faz
+é decidir: "houve tentativa" não separa as três coisas que importam — não
+chamou, chamou e não pegou, chamou e não soube.
+
+**A janela do crash fecha porque `EM_TENTATIVA` é escrito antes.** Quem morre
+com a chamada em voo não deixa silêncio para interpretar: deixa `EM_TENTATIVA`,
+e a leitura dessa disposição é ambiguidade, não permissão para repetir.
+
+**Só erro nosso, tipado, grava `SEM_EFEITO_COMPROVADO`** — preço não
+configurado, crédito insuficiente, payload inválido, provedor não configurado,
+tudo que acontece antes de qualquer byte sair. Timeout, erro de rede, resposta
+que não se entende: `AMBIGUO`. A classificação olha o **tipo** do erro, nunca a
+mensagem — a mesma regra de razões fechadas que a Fase 3 estabeleceu.
+
 ### Invariantes no banco
 
 ```sql
@@ -474,6 +528,15 @@ ALTER TABLE "CreditAccount" ADD CONSTRAINT "CreditAccount_nao_negativo_ck"
        AND "reservedCents" >= 0
        AND "consumedThisMonthCents" >= 0
        AND "reservedCents" <= "balanceCents");
+
+-- Domínio fechado no banco, não só no TypeScript.
+ALTER TABLE "GenerationRun" ADD CONSTRAINT "GenerationRun_disposicao_ck"
+    CHECK ("startDisposition" IN ('NAO_TENTADO', 'EM_TENTATIVA',
+        'SEM_EFEITO_COMPROVADO', 'INICIADO', 'AMBIGUO'));
+
+-- `INICIADO` e `providerRunId` andam juntos, nos dois sentidos.
+ALTER TABLE "GenerationRun" ADD CONSTRAINT "GenerationRun_iniciado_ck"
+    CHECK (("startDisposition" = 'INICIADO') = ("providerRunId" IS NOT NULL));
 ```
 
 ---
@@ -700,11 +763,13 @@ morte entre mover a conta e gravar o ledger.
   `credit:<reservationId>` é única e permanente — um segundo vigia para a mesma
   reserva não caberia no índice.
 
-  Ao vencer as 2 h ele **decide**, e as decisões saem da tabela de desfechos:
-  reserva já liquidada → encerra sem renovar; run confirmado em execução →
-  renova; falha comprovadamente anterior ao `start`, com `startAttemptedAt` nulo
-  → libera; qualquer ambiguidade sobre efeito remoto ou custo → bloqueia a conta
-  e manda para `CONCILIACAO`.
+  Ao vencer as 2 h ele **decide**, e as decisões saem da tabela de desfechos,
+  lendo `startDisposition`: reserva já liquidada → encerra sem renovar;
+  `INICIADO` com run em execução → renova; `NAO_TENTADO` ou
+  `SEM_EFEITO_COMPROVADO` com o job ainda vivo → **renova também**, porque a
+  reserva atravessa a retentativa segura; as mesmas disposições com o job já
+  terminal → libera; `EM_TENTATIVA` e `AMBIGUO` → bloqueia a conta e manda para
+  `CONCILIACAO`.
 - `src/lib/credits/reconcile.ts`, `src/app/api/organizations/credits/route.ts`,
   `src/app/organizacao/creditos/page.tsx`, permissão `credit:manage`.
 
@@ -776,16 +841,37 @@ cancelável por ator de B; o escopo carrega `purpose`, nunca valor resolvido;
 ### Commit 12 — `feat(geracao)`: iniciar, acompanhar e passar adiante
 
 **Arquivos** — migration aditiva (`GenerationRun.branch`, `.pullRequestUrl`,
-`.startAttemptedAt`, `.providerIdempotencyKey`, e índice **único** em
-`SiteRevision.generationRunId`), `src/lib/generation/start.ts`,
-`src/lib/generation/poll.ts`.
+`.startAttemptedAt`, `.startDisposition`, `.providerIdempotencyKey`, os dois
+`CHECK` da disposição, e índice **único** em `SiteRevision.generationRunId`),
+`src/lib/generation/start.ts`, `src/lib/generation/poll.ts`,
+`src/lib/generation/disposition.ts` (o domínio fechado e a classificação por
+tipo de erro).
 
 `start` **carrega** o run pelo `generationRunId` do job; ausência é erro de
-programação. Em ordem: provisionamento completo → **se já há `providerRunId`,
-pula direto para o handoff** → se há `startAttemptedAt` sem `providerRunId`,
-decide pelas capacidades (repete, consulta ou `CONCILIACAO`) → preço → reserva e
-`startAttemptedAt` na mesma transação → `start` → grava `providerRunId` **e
-enfileira `generation.poll` na mesma transação**.
+programação. Em ordem, decidindo sempre pela disposição:
+
+1. `INICIADO` → não chama nada; segue direto para o handoff;
+2. `EM_TENTATIVA` ou `AMBIGUO` → só repete se o provedor declarar
+   `idempotentStart`; com `reconcileByKey`, consulta antes; sem nenhuma das
+   duas, `CONCILIACAO`;
+3. `SEM_EFEITO_COMPROVADO` → **reusa a reserva existente**, pela mesma
+   `operationKey`, e segue como se fosse a primeira chamada;
+4. `NAO_TENTADO` → provisionamento completo → preço → reserva, `credit.threshold`
+   e `startAttemptedAt` na mesma transação;
+5. grava `EM_TENTATIVA` **e comita**, antes da chamada;
+6. chama o provedor;
+7. sucesso → `INICIADO` e `providerRunId`, **enfileirando `generation.poll` na
+   mesma transação**; erro interno tipado e seguro →
+   `SEM_EFEITO_COMPROVADO` e `failJobRecoverable`, com a reserva intacta;
+   qualquer outro erro → `AMBIGUO` e `CONCILIACAO`.
+
+O passo 5 é uma transação própria de propósito. Escrever `EM_TENTATIVA` junto
+com a chamada não protegeria de nada: o que precisa estar no banco **antes** do
+efeito é justamente a marca de que ele pode ter acontecido.
+
+Esgotar as tentativas ainda em `SEM_EFEITO_COMPROVADO` é a única carta morta que
+**libera** a reserva — nesse ponto, e só nesse, está provado que nada foi
+chamado.
 
 `poll` observa e persiste. Ao concluir, cria a `SiteRevision` imutável, grava a
 linha de `UsageLedger` com `reference = <generationRunId>` **e enfileira
@@ -802,9 +888,26 @@ compara fatos de revisões diferentes, e ou nunca fecha, ou fecha sobre o
 - sem preço, nada é reservado nem chamado;
 - sem crédito, `start` nunca é chamado;
 - falha ao gravar o run libera a reserva;
-- **janela do lease:** `startAttemptedAt` sem `providerRunId`, provedor sem as
+- **janela do lease:** disposição `EM_TENTATIVA` reencontrada, provedor sem as
   duas capacidades → `CONCILIACAO` e `start` **não** é chamado; com
   `idempotentStart` → repete; com `reconcileByKey` → `findRunByKey` e adota;
+- **disposição:** `EM_TENTATIVA` é gravado e comitado **antes** da chamada — o
+  teste injeta a morte entre os dois e encontra `EM_TENTATIVA` no banco;
+  sucesso grava `INICIADO` com `providerRunId`; o `CHECK` recusa `INICIADO` sem
+  `providerRunId` e `providerRunId` sem `INICIADO`;
+- **falha segura sem efeito → mesma reserva:** erro interno tipado grava
+  `SEM_EFEITO_COMPROVADO`, e a retentativa reusa a reserva existente pela
+  `operationKey`. A conta não oscila entre as duas tentativas;
+- **nenhuma segunda reserva, nenhum segundo vigia:** depois de três
+  retentativas seguras existe **uma** `CreditReservation` e **um**
+  `credit.threshold`, e o ledger não tem par liberação/reserva no meio;
+- **crash em `EM_TENTATIVA` → ambiguidade:** o run reencontrado nessa disposição
+  vai a `CONCILIACAO` sem repetição cega, mesmo com a reserva viva;
+- **esgotamento em `SEM_EFEITO_COMPROVADO` → libera:** consumidas as tentativas,
+  a carta morta libera a reserva, grava o ledger e encerra o `credit.threshold`;
+- **erro desconhecido → conciliação:** um erro que a classificação não reconhece
+  grava `AMBIGUO`, nunca `SEM_EFEITO_COMPROVADO`, e a reserva vai a conciliação
+  com a conta bloqueada;
 - **handoff:** falha ao enfileirar `generation.poll` desfaz a gravação do
   `providerRunId`, e a retentativa encontra o run pelo provedor em vez de
   disparar outro;
