@@ -28,9 +28,14 @@ export function createFakeHostingProvider(
 
     async getProject(input): Promise<ProjectRef | null> {
       const project = world.projects.get(input.name);
-      return project
-        ? { externalId: project.externalId, name: project.name, url: project.url }
-        : null;
+      if (!project) return null;
+      const [owner, name] = project.repoKey.split("/");
+      return {
+        externalId: project.externalId,
+        name: project.name,
+        url: project.url,
+        linkedRepository: owner && name ? { owner, name } : null,
+      };
     },
 
     async createProject(input): Promise<ProjectRef> {
@@ -54,7 +59,12 @@ export function createFakeHostingProvider(
         deployments: [] as DeploymentInfo[],
       };
       world.projects.set(input.name, project);
-      return { externalId: project.externalId, name: project.name, url: project.url };
+      return {
+        externalId: project.externalId,
+        name: project.name,
+        url: project.url,
+        linkedRepository: { owner: input.repo.owner, name: input.repo.name },
+      };
     },
 
     async setEnvironmentVariables(input) {

@@ -54,6 +54,10 @@ export function createSandboxGitRepositoryProvider(
         name: input.name,
         owner: { login: input.owner },
         html_url: `https://github.com/${input.owner}/${input.name}`,
+        template_repository: {
+          name: input.templateRepo,
+          owner: { login: input.templateOwner },
+        },
       });
     },
 
@@ -71,6 +75,12 @@ export function createSandboxGitRepositoryProvider(
         name: input.name,
         owner: { login: input.owner },
         html_url: `https://github.com/${input.owner}/${input.name}`,
+        template_repository: existing.templateRepository
+          ? {
+              name: existing.templateRepository.name,
+              owner: { login: existing.templateRepository.owner },
+            }
+          : null,
       });
     },
 
@@ -112,6 +122,11 @@ export function createSandboxHostingProvider(
       return mapVercelProject({
         ...payload,
         name: input.name,
+        // The link is what a resume checks, so it has to reflect the project
+        // that actually exists rather than the fixture's example.
+        link: existing.linkedRepository
+          ? { org: existing.linkedRepository.owner, repo: existing.linkedRepository.name }
+          : null,
         targets: { production: { alias: [`${input.name}.vercel.app`] } },
       });
     },
@@ -123,6 +138,7 @@ export function createSandboxHostingProvider(
       return mapVercelProject({
         ...payload,
         name: input.name,
+        link: { org: input.repo.owner, repo: input.repo.name },
         targets: { production: { alias: [`${input.name}.vercel.app`] } },
       });
     },

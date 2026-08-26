@@ -302,6 +302,40 @@ describe("provisioning step 1 — repository", () => {
     });
   });
 
+  it("refuses to adopt a repository generated from another template", async () => {
+    // The attempt happened, and a repository with that name is standing there.
+    // creationStartedAt proves an attempt, not that this is its result: a third
+    // party can take the name between the lookup and the create.
+    store.failures.updateWhen = (data) => "protectedAt" in data;
+    await provisionRepository({ actor: admin, siteProjectId: "project-1" }).catch(() => null);
+
+    const created = [...sharedFakeWorld.repositories.values()][0];
+    created.templateRepository = { owner: "outra-pessoa", name: "outro-template" };
+    refreshProject();
+    mocks.auditCreate.mockClear();
+
+    await expect(
+      provisionRepository({ actor: admin, siteProjectId: "project-1" }),
+    ).rejects.toMatchObject({ code: "PROVENIENCIA_NAO_COMPROVADA" });
+
+    // Nothing was written and nothing was audited: it stopped for a person.
+    expect(auditedActions()).toEqual([]);
+    expect(store.rows.get("project-1")!.externalId).toBeNull();
+  });
+
+  it("refuses to adopt a repository the host claims no template for", async () => {
+    store.failures.updateWhen = (data) => "protectedAt" in data;
+    await provisionRepository({ actor: admin, siteProjectId: "project-1" }).catch(() => null);
+
+    // Absence of evidence, not evidence of absence — and still not enough.
+    [...sharedFakeWorld.repositories.values()][0].templateRepository = null;
+    refreshProject();
+
+    await expect(
+      provisionRepository({ actor: admin, siteProjectId: "project-1" }),
+    ).rejects.toMatchObject({ code: "PROVENIENCIA_NAO_COMPROVADA" });
+  });
+
   it("refuses to adopt a repository the factory never created", async () => {
     // The name is taken, and there is no record of us ever trying.
     await store.create({

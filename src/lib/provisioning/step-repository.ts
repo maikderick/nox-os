@@ -107,6 +107,24 @@ async function recordIntent(
  * the same: ask the host what is there, adopt it if it exists, create it if it
  * does not, then protect. Nothing has to be renamed or deleted by hand.
  */
+/**
+ * Whether a repository found by name is one this factory generated.
+ *
+ * `creationStartedAt` only proves that *an attempt happened* — it says nothing
+ * about the thing standing there now. A third party can take the name between
+ * the lookup and the create, and a create can answer conflict for a repository
+ * that was never ours. So the evidence has to come from the host: a repository
+ * generated from our template says so.
+ */
+function wasGeneratedByUs(remote: RepoRef): boolean {
+  const template = remote.templateRepository;
+  if (!template) return false;
+  return (
+    template.owner.toLowerCase() === SITE_TEMPLATE.owner.toLowerCase() &&
+    template.name.toLowerCase() === SITE_TEMPLATE.repo.toLowerCase()
+  );
+}
+
 async function reconcileOrCreate(
   provider: GitRepositoryProvider,
   row: RepositoryRow,
@@ -123,6 +141,18 @@ async function reconcileOrCreate(
         repository: row.name,
       });
     }
+
+    if (!wasGeneratedByUs(remote)) {
+      // An attempt happened and something is there, but nothing proves the two
+      // are the same event. This stops for a person rather than guessing: the
+      // cost of guessing wrong is a client's site committed into a stranger's
+      // repository.
+      throw new ProvisioningRefusal("PROVENIENCIA_NAO_COMPROVADA", {
+        owner: row.owner,
+        repository: row.name,
+      });
+    }
+
     return { ref: remote, created: false };
   }
 

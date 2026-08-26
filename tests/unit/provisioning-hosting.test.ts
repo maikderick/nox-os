@@ -265,6 +265,40 @@ describe("provisioning step 3 — hosting", () => {
     });
   });
 
+  it("refuses a homonymous project wired to another repository", async () => {
+    // The attempt happened and a project with that name exists — but it builds
+    // from somebody else. Applying variables to it is a live misconfiguration
+    // on a site that is not ours.
+    store.failures.updateWhen = failFinalWrite;
+    await provisionHosting({ actor: admin, siteProjectId: "project-1" }).catch(() => null);
+
+    const project = [...sharedFakeWorld.projects.values()][0];
+    project.repoKey = "outra-pessoa/outro-repo";
+    project.envVars.clear();
+    refreshProject();
+    mocks.auditCreate.mockClear();
+
+    await expect(
+      provisionHosting({ actor: admin, siteProjectId: "project-1" }),
+    ).rejects.toMatchObject({ code: "HOSPEDAGEM_VINCULADA_A_OUTRO_REPOSITORIO" });
+
+    // No variables were applied to the stranger, and nothing was audited.
+    expect(project.envVars.size).toBe(0);
+    expect(auditedActions()).toEqual([]);
+    expect(store.rows.get("project-1")!.linkedAt).toBeNull();
+  });
+
+  it("resumes when the project provably came from the previous attempt", async () => {
+    store.failures.updateWhen = failFinalWrite;
+    await provisionHosting({ actor: admin, siteProjectId: "project-1" }).catch(() => null);
+    refreshProject();
+
+    const resumed = await provisionHosting({ actor: admin, siteProjectId: "project-1" });
+
+    expect(resumed).toMatchObject({ alreadyDone: false, reconciled: true });
+    expect(sharedFakeWorld.projects.size).toBe(1);
+  });
+
   it("refuses to adopt a hosting project the factory never created", async () => {
     await store.create({
       data: {

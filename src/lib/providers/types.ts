@@ -6,6 +6,12 @@
  * that needs them.
  */
 
+/** Owner and name of a repository, as the factory writes them. */
+export type RepoCoordinates = {
+  owner: string;
+  name: string;
+};
+
 export type RepoRef = {
   owner: string;
   name: string;
@@ -13,6 +19,15 @@ export type RepoRef = {
   externalId: string | null;
   url: string | null;
   defaultBranch: string;
+  /**
+   * The template this repository was generated from, as the host reports it.
+   *
+   * This is the evidence that a repository found by name is one the factory
+   * created. Null means the host does not claim any template — which is not
+   * proof of the opposite, only absence of proof, and the difference decides
+   * whether a run may adopt it or has to stop for a person.
+   */
+  templateRepository: RepoCoordinates | null;
 };
 
 export type CommitRef = {
@@ -29,6 +44,14 @@ export type ProjectRef = {
   externalId: string;
   name: string;
   url: string | null;
+  /**
+   * The repository this project builds from.
+   *
+   * A project found by name is worthless as evidence on its own: names collide,
+   * and applying environment variables to a homonym wired to somebody else's
+   * repository is a live misconfiguration, not a recoverable mistake.
+   */
+  linkedRepository: RepoCoordinates | null;
 };
 
 export type EnvVarTarget = "preview" | "production";

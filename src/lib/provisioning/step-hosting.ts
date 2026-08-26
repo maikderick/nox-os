@@ -50,6 +50,16 @@ function toResult(row: HostingRow, flags: { alreadyDone: boolean; reconciled: bo
   };
 }
 
+/** Whether the project found by name builds from the repository we expect. */
+function linksToOurRepository(remote: ProjectRef, repo: RepoRef): boolean {
+  const link = remote.linkedRepository;
+  if (!link) return false;
+  return (
+    link.owner.toLowerCase() === repo.owner.toLowerCase() &&
+    link.name.toLowerCase() === repo.name.toLowerCase()
+  );
+}
+
 async function reconcileOrCreate(
   provider: HostingProvider,
   row: HostingRow,
@@ -61,6 +71,16 @@ async function reconcileOrCreate(
     if (!row.creationStartedAt) {
       throw new ProvisioningRefusal("RECURSO_DE_TERCEIRO", { project: row.name });
     }
+
+    // Names collide. Applying environment variables to a homonym wired to
+    // somebody else's repository is a live misconfiguration on someone else's
+    // site, not a recoverable local mistake.
+    if (!linksToOurRepository(remote, input.repo)) {
+      throw new ProvisioningRefusal("HOSPEDAGEM_VINCULADA_A_OUTRO_REPOSITORIO", {
+        project: row.name,
+      });
+    }
+
     return { ref: remote, created: false };
   }
 
@@ -112,6 +132,7 @@ export async function provisionHosting(params: {
       externalId: repository.externalId,
       url: repository.url,
       defaultBranch: repository.defaultBranch,
+      templateRepository: null,
     };
 
     const visible = await provider.canAccessRepository({ repo });

@@ -72,6 +72,7 @@ export async function reconcilePreview(params: {
           externalId: hosting.externalId ?? "",
           name: hosting.name,
           url: hosting.url,
+          linkedRepository: null,
         },
         commitSha,
       });

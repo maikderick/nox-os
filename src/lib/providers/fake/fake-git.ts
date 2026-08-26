@@ -20,6 +20,7 @@ function toRef(repo: {
   externalId: string;
   url: string;
   defaultBranch: string;
+  templateRepository: { owner: string; name: string } | null;
 }): RepoRef {
   return {
     owner: repo.owner,
@@ -27,6 +28,7 @@ function toRef(repo: {
     externalId: repo.externalId,
     url: repo.url,
     defaultBranch: repo.defaultBranch,
+    templateRepository: repo.templateRepository,
   };
 }
 
@@ -66,6 +68,8 @@ export function createFakeGitRepositoryProvider(options: {
         externalId: deterministicId("repo", input.owner, input.name),
         url: `https://github.example/${input.owner}/${input.name}`,
         defaultBranch: "main",
+        // The host remembers what a repository was generated from; so does this.
+        templateRepository: { owner: input.templateOwner, name: input.templateRepo },
         protectedChecks: null as string[] | null,
         files: new Map<string, string>([
           [".github/workflows/ci.yml", `# copiado de ${input.templateOwner}/${input.templateRepo}`],

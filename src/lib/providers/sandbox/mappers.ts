@@ -16,6 +16,8 @@ export type GitHubRepositoryPayload = {
   owner: { login: string };
   html_url: string;
   default_branch: string;
+  /** GitHub reports this on a repository generated from a template. */
+  template_repository?: { name: string; owner: { login: string } } | null;
 };
 
 export function mapGitHubRepository(payload: GitHubRepositoryPayload): RepoRef {
@@ -26,6 +28,14 @@ export function mapGitHubRepository(payload: GitHubRepositoryPayload): RepoRef {
     externalId: String(payload.id),
     url: payload.html_url,
     defaultBranch: payload.default_branch,
+    // Absent on a repository nobody generated, which is exactly the case a
+    // resume has to be able to tell apart.
+    templateRepository: payload.template_repository
+      ? {
+          owner: payload.template_repository.owner.login,
+          name: payload.template_repository.name,
+        }
+      : null,
   };
 }
 
@@ -41,6 +51,8 @@ export function mapGitHubCommit(payload: GitHubCommitPayload): CommitRef {
 export type VercelProjectPayload = {
   id: string;
   name: string;
+  /** Vercel calls the connected repository `link`. */
+  link?: { org?: string; repo?: string } | null;
   targets?: { production?: { alias?: string[] } };
 };
 
@@ -51,6 +63,10 @@ export function mapVercelProject(payload: VercelProjectPayload): ProjectRef {
     name: payload.name,
     // Vercel returns bare hostnames, without a scheme.
     url: alias ? `https://${alias}` : null,
+    linkedRepository:
+      payload.link?.org && payload.link?.repo
+        ? { owner: payload.link.org, name: payload.link.repo }
+        : null,
   };
 }
 

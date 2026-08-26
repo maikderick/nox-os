@@ -139,6 +139,7 @@ export async function provisionContent(params: {
         externalId: repository.externalId,
         url: repository.url,
         defaultBranch: repository.defaultBranch,
+        templateRepository: null,
       },
       branch: repository.defaultBranch,
       message: `conteúdo: briefing v${briefVersion}`,

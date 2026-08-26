@@ -46,6 +46,19 @@ export function runProviderContract(harness: ProviderHarness): void {
         expect(repo.url).toContain(NAME);
       });
 
+      it("relata de qual template o repositório saiu", async () => {
+        // A retomada depende disso: sem a origem, um recurso encontrado pelo
+        // nome não prova nada sobre quem o criou.
+        const repo = await createRepo();
+        expect(repo.templateRepository).toEqual({
+          owner: TEMPLATE.templateOwner,
+          name: TEMPLATE.templateRepo,
+        });
+
+        const found = await harness.git().getRepository({ owner: OWNER, name: NAME });
+        expect(found?.templateRepository).toEqual(repo.templateRepository);
+      });
+
       it("recusa criar duas vezes o mesmo nome", async () => {
         await createRepo();
         await expect(createRepo()).rejects.toMatchObject({ code: "RECURSO_JA_EXISTE" });
@@ -193,6 +206,15 @@ export function runProviderContract(harness: ProviderHarness): void {
         await expect(
           harness.hosting().createProject({ name: NAME, repo }),
         ).rejects.toMatchObject({ code: "RECURSO_JA_EXISTE" });
+      });
+
+      it("relata a qual repositório o projeto está ligado", async () => {
+        const repo = await createRepo();
+        const created = await harness.hosting().createProject({ name: NAME, repo });
+        expect(created.linkedRepository).toEqual({ owner: OWNER, name: NAME });
+
+        const found = await harness.hosting().getProject({ name: NAME });
+        expect(found?.linkedRepository).toEqual({ owner: OWNER, name: NAME });
       });
 
       it("guarda variáveis de ambiente sem devolvê-las", async () => {
