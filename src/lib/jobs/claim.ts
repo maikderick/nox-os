@@ -30,12 +30,17 @@ import { prisma } from "@/lib/db";
 /**
  * How long a claim is good for, in seconds.
  *
- * Tied to the consumer's own ceiling: `maxDuration = 300` on the route, so a
- * five-minute lease cannot expire while the holder is still legitimately
- * running. Longer would leave a dead consumer's work parked; shorter would let
- * a live one be reclaimed underneath itself.
+ * **Above the platform ceiling, not equal to it.** The route runs with
+ * `maxDuration = 300`, so a consumer may legitimately still be working at
+ * second 299. A lease of exactly 300 would expire in that same instant: the
+ * reclaim would hand the job to a second consumer while the first is still
+ * mid-call, and both would act on the same remote resource — the precise
+ * duplicate the lease exists to prevent, produced by the lease itself.
+ *
+ * 360 leaves a minute of margin. Longer would park a dead consumer's work for
+ * no reason; that minute is the price of never overlapping.
  */
-export const DEFAULT_LEASE_SECONDS = 300;
+export const DEFAULT_LEASE_SECONDS = 360;
 
 export type ClaimJobParams = {
   /** Identifies the consumer holding the lease. Never a secret. */

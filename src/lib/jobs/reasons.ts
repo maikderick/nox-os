@@ -26,6 +26,7 @@ export const JOB_REASONS = [
   "JOB_NAO_REPROCESSAVEL",
   "MOTIVO_DE_PAUSA_DESCONHECIDO",
   "RESGATES_SUCESSIVOS",
+  "SEM_HANDLER",
 ] as const;
 
 export type JobReason = (typeof JOB_REASONS)[number];
@@ -101,6 +102,9 @@ const BUILDERS: Record<JobReason, (details: JobDetails) => string> = {
 
   RESGATES_SUCESSIVOS: () =>
     "Consumidores morreram seguidas vezes executando este job, e ele foi para conciliação em vez de ser resgatado de novo. Um trabalho que derruba quem o executa não se resolve tentando mais uma vez.",
+
+  SEM_HANDLER: (d) =>
+    `Não há nesta versão do NOX OS quem execute ${d.kind ?? "esta etapa"}. O job foi para conciliação em vez de ser repetido: repetir não faz aparecer código que não existe.`,
 };
 
 export function buildJobReasonMessage(reason: JobReason, details: JobDetails = {}): string {
