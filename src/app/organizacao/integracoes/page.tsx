@@ -5,7 +5,6 @@ import { IntegrationModePicker } from "@/components/organizacao/integration-mode
 import {
   INTEGRATION_MODE_LABELS,
   INTEGRATION_PROVIDER_LABELS,
-  MODES_AVAILABLE,
   environmentForcesDisabled,
 } from "@/lib/integrations/modes";
 import { SECRET_PURPOSE_LABELS, type SecretPurpose } from "@/lib/integrations/secret-ref";
@@ -90,11 +89,16 @@ export default async function IntegrationsPage() {
               </span>
             </div>
 
-            {canManage ? (
+            {integration.pendingPhase ? (
+              <p className="mt-4 text-sm leading-6 text-nox-muted">
+                Ainda não é operável: depende da fila durável e do controle de créditos, que
+                chegam em uma fase posterior. Nenhum modo além de desligado é aceito.
+              </p>
+            ) : canManage ? (
               <IntegrationModePicker
                 provider={integration.provider}
                 mode={integration.storedMode}
-                available={[...MODES_AVAILABLE]}
+                available={[...integration.availableModes]}
               />
             ) : (
               <p className="mt-4 text-xs text-nox-muted">

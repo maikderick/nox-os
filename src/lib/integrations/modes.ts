@@ -35,6 +35,25 @@ export const INTEGRATION_MODE_LABELS: Record<IntegrationMode, string> = {
  */
 export const MODES_AVAILABLE: readonly IntegrationMode[] = ["DESLIGADO", "FALSO", "SANDBOX"];
 
+/**
+ * Cursor is in the vocabulary and nowhere else.
+ *
+ * It belongs to the phase that builds the durable queue and the credit ledger,
+ * and a generation agent without either is an unbounded, unbilled spend. Keeping
+ * the name while refusing every mode is deliberate: the domain can already talk
+ * about it, and no one can switch it on by clicking.
+ */
+export const PROVIDERS_PENDING_PHASE: readonly IntegrationProvider[] = ["cursor"];
+
+export function isProviderPending(provider: IntegrationProvider): boolean {
+  return PROVIDERS_PENDING_PHASE.includes(provider);
+}
+
+/** What a given provider may be set to right now. */
+export function modesAvailableFor(provider: IntegrationProvider): readonly IntegrationMode[] {
+  return isProviderPending(provider) ? ["DESLIGADO"] : MODES_AVAILABLE;
+}
+
 export function isIntegrationMode(value: unknown): value is IntegrationMode {
   return typeof value === "string" && (INTEGRATION_MODES as readonly string[]).includes(value);
 }
@@ -45,8 +64,8 @@ export function isIntegrationProvider(value: unknown): value is IntegrationProvi
   );
 }
 
-export function isModeAvailable(mode: IntegrationMode): boolean {
-  return MODES_AVAILABLE.includes(mode);
+export function isModeAvailable(mode: IntegrationMode, provider?: IntegrationProvider): boolean {
+  return (provider ? modesAvailableFor(provider) : MODES_AVAILABLE).includes(mode);
 }
 
 /**
@@ -70,9 +89,10 @@ export function environmentForcesDisabled(
 export function resolveIntegrationMode(
   storedMode: string | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
+  provider?: IntegrationProvider,
 ): IntegrationMode {
   if (environmentForcesDisabled(env)) return "DESLIGADO";
   if (!isIntegrationMode(storedMode)) return "DESLIGADO";
-  if (!isModeAvailable(storedMode)) return "DESLIGADO";
+  if (!isModeAvailable(storedMode, provider)) return "DESLIGADO";
   return storedMode;
 }

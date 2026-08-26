@@ -7,6 +7,8 @@ import { writeAudit } from "@/lib/settings";
 import {
   INTEGRATION_PROVIDERS,
   isModeAvailable,
+  isProviderPending,
+  modesAvailableFor,
   resolveIntegrationMode,
   type IntegrationMode,
   type IntegrationProvider,
@@ -20,9 +22,11 @@ export class IntegrationModeNotAvailableError extends Error {
   readonly code = "MODO_INDISPONIVEL";
   readonly mode: IntegrationMode;
 
-  constructor(mode: IntegrationMode) {
+  constructor(mode: IntegrationMode, provider?: IntegrationProvider) {
     super(
-      `O modo ${mode} não está disponível nesta fase. Ligar um provedor real é uma decisão separada, aprovada e auditada.`,
+      provider && isProviderPending(provider)
+        ? `O provedor ${provider} não é operável nesta fase: ele depende da fila durável e do controle de créditos. Nenhum modo além de DESLIGADO é aceito.`
+        : `O modo ${mode} não está disponível nesta fase. Ligar um provedor real é uma decisão separada, aprovada e auditada.`,
     );
     this.name = "IntegrationModeNotAvailableError";
     this.mode = mode;
@@ -36,6 +40,10 @@ export type IntegrationStatus = {
   /** What actually applies, after the environment kill switch. */
   effectiveMode: IntegrationMode;
   forcedOffByEnvironment: boolean;
+  /** What this provider may be set to right now. */
+  availableModes: readonly IntegrationMode[];
+  /** True while the provider belongs to a phase that has not happened yet. */
+  pendingPhase: boolean;
   enabledAt: Date | null;
   secrets: SecretRefStatus[];
 };
@@ -83,8 +91,10 @@ export async function listIntegrations(actor: Actor): Promise<IntegrationStatus[
     return {
       provider,
       storedMode: stored,
-      effectiveMode: resolveIntegrationMode(stored),
-      forcedOffByEnvironment: resolveIntegrationMode(stored) !== stored,
+      effectiveMode: resolveIntegrationMode(stored, process.env, provider),
+      forcedOffByEnvironment: resolveIntegrationMode(stored, process.env, provider) !== stored,
+      availableModes: modesAvailableFor(provider),
+      pendingPhase: isProviderPending(provider),
       enabledAt: setting?.enabledAt ?? null,
       secrets: refs
         .filter((ref) => purposes.includes(ref.purpose))
@@ -102,7 +112,7 @@ export async function getEffectiveMode(
     where: { organizationId_provider: { organizationId, provider } },
     select: { mode: true },
   });
-  return resolveIntegrationMode(setting?.mode);
+  return resolveIntegrationMode(setting?.mode, process.env, provider);
 }
 
 export async function setIntegrationMode(params: {
@@ -111,7 +121,9 @@ export async function setIntegrationMode(params: {
   mode: IntegrationMode;
 }): Promise<IntegrationStatus> {
   assertPermission(params.actor, "integration:manage");
-  if (!isModeAvailable(params.mode)) throw new IntegrationModeNotAvailableError(params.mode);
+  if (!isModeAvailable(params.mode, params.provider)) {
+    throw new IntegrationModeNotAvailableError(params.mode, params.provider);
+  }
 
   const key = {
     organizationId_provider: {

@@ -136,6 +136,47 @@ describe("integrations route", () => {
     expect(mocks.transaction).toHaveBeenCalledOnce();
   });
 
+  it.each(["FALSO", "SANDBOX", "LIVE"])(
+    "refuses %s for Cursor, which is not operable in this phase",
+    async (mode) => {
+      const response = await PATCH(patchRequest({ provider: "cursor", mode }));
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "MODO_INDISPONIVEL" });
+      expect(mocks.settingUpsert).not.toHaveBeenCalled();
+      expect(mocks.auditCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("still accepts turning Cursor off, which is where it already is", async () => {
+    const response = await PATCH(patchRequest({ provider: "cursor", mode: "DESLIGADO" }));
+    expect(response.status).toBe(200);
+  });
+
+  it("reports Cursor as pending, with nothing to choose from", async () => {
+    const payload = (await (await GET()).json()) as {
+      integrations: Array<{ provider: string; pendingPhase: boolean; availableModes: string[] }>;
+    };
+    const cursor = payload.integrations.find((i) => i.provider === "cursor");
+    const github = payload.integrations.find((i) => i.provider === "github");
+
+    expect(cursor).toMatchObject({ pendingPhase: true, availableModes: ["DESLIGADO"] });
+    expect(github).toMatchObject({ pendingPhase: false });
+    expect(github!.availableModes).toEqual(["DESLIGADO", "FALSO", "SANDBOX"]);
+  });
+
+  it("treats a Cursor mode written straight into the database as off", async () => {
+    mocks.settingFindMany.mockResolvedValue([{ provider: "cursor", mode: "FALSO" }]);
+
+    const payload = (await (await GET()).json()) as {
+      integrations: Array<{ provider: string; effectiveMode: string }>;
+    };
+
+    expect(payload.integrations.find((i) => i.provider === "cursor")?.effectiveMode).toBe(
+      "DESLIGADO",
+    );
+  });
+
   it("rejects an unknown provider before touching the database", async () => {
     const response = await PATCH(patchRequest({ provider: "railway", mode: "FALSO" }));
 
