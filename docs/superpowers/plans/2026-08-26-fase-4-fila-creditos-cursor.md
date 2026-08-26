@@ -4,138 +4,203 @@
 > **Autoridade:** [spec da arquitetura-alvo](../specs/2026-08-25-fabrica-de-sites-arquitetura-alvo.md).
 > **Contexto:** [plano mestre das Fases 3 a 6](2026-08-25-fases-3-a-6-plano-mestre.md).
 > **Pré-requisito:** Fase 3 aprovada e encerrada em `30645e7`.
+> **Revisão 2** — incorpora as doze correções e as seis decisões aprovadas.
 
-**Objetivo:** dado um `SiteProject` provisionado — repositório criado, conteúdo
-commitado, hospedagem ligada —, o NOX OS enfileira uma geração de forma durável,
-reserva crédito antes de qualquer operação paga, orquestra o Cursor Cloud Agent
-por polling, acompanha os checks do GitHub e a preview da Vercel, e move o
-projeto de `GERANDO` para `PREVIA_PRONTA` ou `FALHOU` com base em fatos
-verificados.
+**Objetivo:** dado um `SiteProject` provisionado, o NOX OS enfileira uma geração
+de forma durável, reserva crédito antes de qualquer operação paga, orquestra o
+Cursor Cloud Agent por polling, acompanha checks do GitHub e preview da Vercel, e
+move o projeto de `GERANDO` para `PREVIA_PRONTA` ou `FALHOU` com base em fatos
+verificados — nunca em suposição.
 
 ## O que fica ligado ao fim da fase
 
-Nada externo. Os provedores continuam em `DESLIGADO` (padrão), `FALSO` ou
-`SANDBOX`. Nenhuma chamada paga, nenhum repositório remoto, nenhum projeto
-Vercel, nenhum agente Cursor. A fase termina com o caminho inteiro exercitado
-contra implementações falsas e fixtures gravadas.
+Nada externo. Provedores em `DESLIGADO` (padrão), `FALSO` ou `SANDBOX`. Nenhuma
+chamada paga, repositório remoto, projeto Vercel ou agente Cursor.
 
-## Fora de escopo, explicitamente
+## Fora de escopo
 
-- Aprovação, publicação, promoção a produção, rollback de site — Fase 5.
-- Domínio e SSL — Fase 5.
-- Modo `LIVE` de qualquer provedor — Fase 6.
-- Webhooks e SSE como fonte de verdade. Podem entrar como **aceleradores
-  opcionais** (commit 15), e mesmo assim nada depende deles.
+Aprovação, publicação, promoção a produção, rollback de site, domínio e SSL —
+Fase 5. Modo `LIVE` — Fase 6. Expurgo automático de jobs — fora desta fase por
+decisão. Webhook e SSE entram apenas como aceleradores opcionais (commit 15).
 
-Se durante a implementação algo parecer exigir um destes, **pare e reporte** em
-vez de trazer meia Fase 5 para dentro.
+Se algo parecer exigir um destes, **pare e reporte**.
 
 ---
 
-## Decisões arquiteturais que o plano assume
+## Decisões aprovadas
 
-### Não existe worker em processo
+| Decisão | Valor |
+| --- | --- |
+| Cursor ao fim da fase | `FALSO` e `SANDBOX` no commit 16; `LIVE` continua fora |
+| `SANDBOX` do Cursor | **replay local de fixtures, sem HTTP** |
+| Consumidor | Vercel Cron |
+| Retentativas de falha real | 5, base 30 s, teto 15 min, full jitter |
+| Preço | política **local** configurável; sem configuração, geração recusada |
+| Reserva de crédito | limiar **renovável** de 2 h |
+| Expurgo de jobs concluídos | não existe na Fase 4 |
 
-O NOX OS roda na Vercel. Uma aplicação serverless não sustenta um laço vivo
-consumindo fila — a importação Overpass já aprendeu isso, e o resultado é
-`INFINITE_LOOP_DETECTED`. O consumidor é uma **rota que processa um lote
-limitado por tempo e retorna**, acionada por Vercel Cron. Nenhum job depende de
-o processo continuar vivo; o que garante progresso é o lease e a reconciliação
-de lease expirado.
+---
 
-O padrão já existe no repositório: `runOverpassImportBurst(jobId, budgetMs =
-235_000)` com `maxDuration = 300` em `src/app/api/import/route.ts`. A fila usa a
-mesma forma.
+## Princípios que este plano leva a sério
 
-### `FOR UPDATE SKIP LOCKED` é SQL cru
+### Espera não é falha
 
-O Prisma 5.22 não expressa isso. A aquisição de jobs usa `$queryRaw` com
-`Prisma.sql`, dentro de uma transação. É o único lugar do projeto que precisa de
-SQL cru no caminho quente, e por isso ganha teste de integração próprio contra o
-PostgreSQL local — a correção depende de semântica do banco, não de TypeScript.
+Cursor executando, check pendente e preview construindo são **estados normais**.
+Eles não consomem tentativa, não aplicam backoff de falha e nunca caminham para
+carta morta. Contam `pollCount` e respeitam `pollDeadlineAt`; estourar o prazo
+leva a `CONCILIACAO`, não a carta morta. Só falha real de execução mexe em
+`attempts`.
+
+### Efeito remoto nunca é repetido às cegas
+
+Um lease expirado prova que o consumidor morreu, não que a chamada não
+aconteceu. Antes de qualquer chamada que crie efeito remoto, grava-se
+`startAttemptedAt`. Encontrar tentativa registrada sem `providerRunId` significa
+ambiguidade: repetir só é permitido se o provedor declarar idempotência ou
+reconciliação por chave. Caso contrário, `CONCILIACAO`.
+
+O mesmo vale para TTL: uma chave de idempotência expirada **não** autoriza
+repetir uma operação externa ambígua. Autoriza assumir trabalho local ou puro.
+
+### Nenhum job espera à toa
+
+O consumidor adquire **um job por vez, sob demanda**, dentro do orçamento. Não
+existe lote pré-adquirido: um job com lease que nunca vai ser executado é um job
+parado até o lease expirar, e isso é latência inventada.
 
 ### Polling é a verdade
 
-O job pergunta ao provedor o que aconteceu e grava o que encontrou. Webhook e SSE
-podem acelerar a próxima passada, nunca substituí-la. Um job cuja conclusão
-dependesse de uma conexão aberta seria um job que trava quando ela cai.
+Checks e preview **apenas registram fatos**. A transição para `PREVIA_PRONTA`
+acontece numa barreira que confere os três fatos contra a mesma `SiteRevision` e
+o mesmo `commitSha`. Webhook e SSE só antecipam `runAfter`.
 
-### `GERANDO` continua fechado até o último commit
+### `GERANDO` fecha até o último commit
 
-`STAGES_PENDING_ORCHESTRATOR` em `src/lib/site-factory/states.ts` só perde
-`GERANDO` no commit 16, quando a orquestração inteira estiver comprovada.
-`PUBLICANDO` continua na lista — é Fase 5.
+`STAGES_PENDING_ORCHESTRATOR` só perde `GERANDO` no commit 16. `PUBLICANDO`
+permanece — é Fase 5. Consequência: os testes dos commits 11 a 14 **constroem** o
+estado (`status: "GERANDO"` no fixture) em vez de transicionar para ele. O
+caminho de entrada é ligado e testado ponta a ponta no commit 16. A trava não é
+enfraquecida para acomodar teste.
 
-Isso tem uma consequência prática nos testes dos commits 11 a 14: eles não podem
-entrar em `GERANDO` pela transição humana, que segue recusada. Os fixtures
-constroem o estado diretamente (`status: "GERANDO"` na linha do projeto) e
-exercitam o serviço de orquestração. O caminho de entrada — `requestGeneration`
-criando o job na mesma transação da transição — é ligado e testado ponta a ponta
-no commit 16. Isso é deliberado: a trava não é enfraquecida para acomodar teste.
+### Não existe worker em processo
 
-### Cursor segue indisponível durante toda a implementação
+Serverless não sustenta laço vivo — a importação Overpass já aprendeu, e o
+resultado é `INFINITE_LOOP_DETECTED`. O consumidor é rota com orçamento de tempo,
+acionada por Cron, no mesmo formato de `runOverpassImportBurst(jobId, budgetMs =
+235_000)` com `maxDuration = 300`.
 
-`PROVIDERS_PENDING_PHASE` em `src/lib/integrations/modes.ts` mantém `cursor` até
-o commit 16, e mesmo lá ele passa a aceitar apenas `FALSO` e `SANDBOX`. `LIVE`
-continua fora de `MODES_AVAILABLE` — é decisão da Fase 6.
+### `FOR UPDATE SKIP LOCKED` é SQL cru
+
+Prisma 5.22 não expressa. Vai de `$queryRaw`, e por isso ganha teste de
+integração próprio contra o PostgreSQL local: a correção depende da semântica do
+banco, não de TypeScript.
 
 ---
 
 ## Modelo de dados
 
-Todas as migrations são aditivas e validadas apenas no PostgreSQL local
-(`docker compose up -d`, `DATABASE_URL` em `localhost`).
+Migrations aditivas, validadas **apenas** no PostgreSQL local. Todo modelo novo
+tem FK e relação explícita; a coerência **entre organizações** é do serviço, e
+tem teste negativo — uma FK garante que a linha existe, não que ela seja da
+mesma organização.
 
 ```prisma
-/// Outbox transacional. O job nasce na mesma transação da mudança de domínio
-/// que o justifica — nunca depois, nunca em outro comando.
 model Job {
   id             String   @id @default(cuid())
+
   organizationId String
-  /// generation.run | checks.poll | preview.poll | credit.reconcile
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId  String?
+  siteProject    SiteProject? @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  /// O job aponta para a intenção que já existe. O handler nunca cria outra.
+  generationRunId String?
+  generationRun   GenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: Cascade)
+
+  // generation.start | generation.poll | checks.poll | preview.poll | credit.reconcile
   kind           String
-  /// PENDENTE | EM_EXECUCAO | CONCLUIDO | FALHOU | CARTA_MORTA | CONCILIACAO
+  // PENDENTE | EM_EXECUCAO | PAUSADO | CONCILIACAO | CONCLUIDO | FALHOU | CARTA_MORTA
   status         String   @default("PENDENTE")
-  /// Ids e referências. Nunca um segredo — quando precisa de um, carrega o
-  /// `purpose` do SecretRef, e o handler resolve no servidor.
+
+  /// Identifica o trabalho lógico. Dois cliques produzem a mesma chave.
+  idempotencyKey String
+  /// Impede execução simultânea. Um por projeto, enquanto ativo.
+  concurrencyKey String
+
+  /// Ids e referências. Nunca um segredo — carrega o `purpose` do SecretRef.
   payloadJson    String
-  /// Agrupa jobs que não podem correr em paralelo: um por SiteProject.
-  dedupeKey      String
+
+  /// Só falha real de execução incrementa.
   attempts       Int      @default(0)
   maxAttempts    Int      @default(5)
-  /// Quando o job volta a ser elegível. Backoff com jitter escreve aqui.
+  /// Espera normal: agente executando, check pendente, preview construindo.
+  pollCount      Int      @default(0)
+  /// Até quando esperar antes de mandar para conciliação.
+  pollDeadlineAt DateTime?
+
   runAfter       DateTime @default(now())
   leaseOwner     String?
   leaseExpiresAt DateTime?
-  /// Só a versão segura, pela mesma allowlist da Fase 3.
+  /// Motivo da pausa, quando PAUSADO. Nunca texto de provedor.
+  pausedReason   String?
+
   lastError      String?
   lastErrorCode  String?
   correlationId  String?
-  siteProjectId  String?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   finishedAt     DateTime?
 
+  reservations   CreditReservation[]
+
   @@index([status, runAfter])
   @@index([organizationId, kind, status])
-  @@index([dedupeKey])
   @@index([leaseExpiresAt])
 }
+```
 
-/// Chave de idempotência, escopada por organização.
+### Os dois índices, e por que têm formas diferentes
+
+```sql
+-- Um job por trabalho lógico, para sempre. Dois cliques colidem aqui.
+CREATE UNIQUE INDEX "Job_idempotency_uniq"
+    ON "Job" ("organizationId", "idempotencyKey");
+
+-- Um job ativo por projeto. Terminais não bloqueiam nada, então uma geração
+-- futura do mesmo site continua possível.
+CREATE UNIQUE INDEX "Job_concurrency_ativo_uniq"
+    ON "Job" ("concurrencyKey")
+    WHERE "status" IN ('PENDENTE', 'EM_EXECUCAO', 'PAUSADO', 'CONCILIACAO');
+```
+
+A idempotência é **total** porque `idempotencyKey` é
+`generation:<generationRunId>` — um `GenerationRun` é uma intenção única, e
+reprocessar carta morta reaproveita a mesma linha em vez de criar outra.
+
+A concorrência é **parcial** porque `concurrencyKey` é
+`project:<siteProjectId>` — precisa bloquear enquanto há trabalho vivo e liberar
+quando não há. `CONCILIACAO` conta como vivo de propósito: um estado ambíguo não
+pode ganhar uma segunda geração ao lado.
+
+Escrito à mão, como o `SecretRef` da Fase 3: o Prisma não expressa índice
+parcial. O schema leva a anotação, e o teste de drift confere que o próximo diff
+sai vazio.
+
+```prisma
 model IdempotencyKey {
   id             String   @id @default(cuid())
   organizationId String
-  /// generation.start | credit.reserve | ...
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   scope          String
   key            String
-  /// SHA-256 do corpo, para detectar chave repetida com corpo diferente.
   requestHash    String
   // EM_ANDAMENTO | CONCLUIDA
   status         String   @default("EM_ANDAMENTO")
-  /// Resposta gravada, pela allowlist. Nula enquanto EM_ANDAMENTO.
+  /// LOCAL — trabalho puro, assumível ao expirar.
+  /// EXTERNO_RECONCILIAVEL — o provedor responde "o que existe para esta chave".
+  /// EXTERNO_AMBIGUO — não dá para saber; expirar nunca autoriza repetir.
+  sideEffect     String   @default("EXTERNO_AMBIGUO")
   responseJson   String?
-  /// Um registro EM_ANDAMENTO órfão expira e é assumido pela próxima tentativa.
   expiresAt      DateTime
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -144,546 +209,633 @@ model IdempotencyKey {
   @@index([status, expiresAt])
 }
 
-/// Saldo e teto por organização. Uma linha por organização.
+/// Saldo, exposição e consumo. Uma linha por organização.
 model CreditAccount {
   organizationId       String   @id
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Tudo que a organização tem. Reserva não desconta daqui.
   balanceCents         Int      @default(0)
+  /// Comprometido em reservas vivas. Disponível = balance - reserved.
+  reservedCents        Int      @default(0)
+  /// Efetivamente gasto no período. Exposição ao teto = consumed + reserved.
+  consumedThisMonthCents Int    @default(0)
   monthlyCapCents      Int      @default(0)
-  /// Zerado pela conciliação mensal, nunca por cálculo derivado em leitura.
-  spentThisMonthCents  Int      @default(0)
   periodStartedAt      DateTime @default(now())
-  /// Enquanto houver reserva não conciliada, nova geração paga é recusada.
   blockedAt            DateTime?
-  blockedReason        String?
+  /// Razão de conjunto fechado, nunca texto de provedor.
+  blockedReasonCode    String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+
+  reservations CreditReservation[]
 }
 
-/// Uma reserva por operação. A unicidade é por operação, não por estado.
 model CreditReservation {
   id              String   @id @default(cuid())
   organizationId  String
+  account         CreditAccount @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
+  /// Uma reserva por operação — `generation:<generationRunId>`.
   operationKey    String
+  jobId           String?
+  job             Job? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  generationRunId String?
+  generationRun   GenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: SetNull)
+
   amountCents     Int
-  // RESERVADA | CONSUMIDA | LIBERADA | EXPIRADA
+  // RESERVADA | CONSUMIDA | LIBERADA | CONCILIACAO
   status          String   @default("RESERVADA")
-  /// Como o valor foi estimado, para a conciliação saber o que comparar.
+  /// Qual política local produziu o valor.
   estimatedBy     String
   reconciledCents Int?
   reconciledById  String?
   reconciledAt    DateTime?
+  /// Limiar renovável. Vencer não libera nada por si só.
   expiresAt       DateTime
-  jobId           String?
+  renewedAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@unique([organizationId, operationKey])
   @@index([organizationId, status])
+  @@index([status, expiresAt])
 }
 ```
 
-`GenerationRun` e `SiteRevision` **não mudam de forma**. `GenerationRun` já tem
-`provider`, `providerRunId`, `status`, `requestJson`, `resultJson`,
-`startedAt`/`finishedAt`. A Fase 4 acrescenta apenas colunas nulas para
-branch/PR (commit 11), aditivas.
+`EXPIRADA` sumiu de propósito do enum da reserva: vencer o limiar não é um
+desfecho, é um gatilho de decisão. O desfecho é `CONSUMIDA`, `LIBERADA` ou
+`CONCILIACAO`.
+
+`GenerationRun` ganha colunas nulas e aditivas: `branch`, `pullRequestUrl`,
+`startAttemptedAt`, `reservationId`.
+
+### Invariantes no banco
+
+```sql
+ALTER TABLE "CreditAccount" ADD CONSTRAINT "CreditAccount_nao_negativo_ck"
+    CHECK ("balanceCents" >= 0
+       AND "reservedCents" >= 0
+       AND "consumedThisMonthCents" >= 0
+       AND "reservedCents" <= "balanceCents");
+```
+
+Saldo negativo e reserva maior que o saldo deixam de ser possíveis mesmo por
+escrita fora da aplicação.
 
 ---
 
 ## Sequência de commits
 
-Cada um verde sozinho. Nenhum liga integração. Nenhum cria recurso remoto.
+Cada um verde sozinho. Nenhum liga integração ou cria recurso remoto.
 
-### Commit 1 — `feat(fila)`: modelo, outbox e vocabulário
+### Commit 1 — `feat(fila)`: modelo, outbox e as duas chaves
 
 **Arquivos**
-- `prisma/schema.prisma` — `Job`.
-- `prisma/migrations/<ts>_fila_durable/migration.sql` — aditiva.
-- `src/lib/jobs/kinds.ts` — `JOB_KINDS`, `JOB_STATUSES`, rótulos, type guards.
-- `src/lib/jobs/payload.ts` — allowlist de campos do payload por `kind`; recusa
-  campo desconhecido em vez de ignorá-lo.
-- `src/lib/jobs/outbox.ts` — `enqueueJob(tx, { organizationId, kind, payload, dedupeKey, siteProjectId })`, exigindo `Prisma.TransactionClient`.
+- `prisma/schema.prisma` — `Job`, com FKs para `Organization`, `SiteProject` e
+  `GenerationRun`.
+- `prisma/migrations/<ts>_fila_durable/migration.sql` — tabela, FKs, o índice
+  único total de idempotência e o **índice parcial** de concorrência, escritos à
+  mão.
+- `src/lib/jobs/kinds.ts` — `JOB_KINDS`, `JOB_STATUSES`, `ACTIVE_JOB_STATUSES`
+  (a mesma lista do índice parcial, exportada para o serviço não divergir do
+  banco), rótulos e type guards.
+- `src/lib/jobs/keys.ts` — `idempotencyKeyForGeneration(runId)`,
+  `concurrencyKeyForProject(siteProjectId)`.
+- `src/lib/jobs/payload.ts` — allowlist por `kind`; campo desconhecido é recusado
+  na escrita.
+- `src/lib/jobs/outbox.ts` — `enqueueJob(tx, …)` exigindo
+  `Prisma.TransactionClient`; conflito de idempotência devolve o job existente;
+  conflito de concorrência recusa com razão fechada.
 
 **Testes**
-- `tests/unit/jobs-payload.test.ts` — allowlist aceita o esperado, recusa campo
-  extra, recusa qualquer chave cujo nome sugira segredo, e um teste que tenta
-  passar `privateKey`/`token` e falha.
-- `tests/unit/jobs-outbox.test.ts` — `enqueueJob` **exige** um cliente
-  transacional; chamada com o cliente pooled não compila e, em runtime, lança.
-- `tests/unit/jobs-outbox-db.test.ts` — contra o Postgres local: a mudança de
-  domínio e o job caem juntos; falha depois de enfileirar desfaz os dois.
+- `tests/unit/jobs-payload.test.ts` — allowlist aceita o declarado, recusa extra,
+  recusa qualquer chave com cara de segredo (`token`, `privateKey`, `secret`).
+- `tests/unit/jobs-keys.test.ts` — a mesma geração produz a mesma
+  `idempotencyKey`; projetos diferentes produzem `concurrencyKey` diferentes.
+- `tests/unit/jobs-outbox-db.test.ts` — contra o Postgres local:
+  - **dois cliques não duplicam:** duas chamadas com a mesma `idempotencyKey`
+    deixam um job só, e a segunda devolve o primeiro;
+  - **projeto ocupado:** um segundo job com a mesma `concurrencyKey` enquanto o
+    primeiro está ativo é recusado;
+  - **geração futura continua possível:** com o primeiro job em `CONCLUIDO`,
+    `FALHOU` ou `CARTA_MORTA`, um novo job para o mesmo projeto entra;
+  - `CONCILIACAO` **bloqueia** um segundo job do mesmo projeto;
+  - `enqueueJob` exige transação; a mudança de domínio e o job caem juntos.
+- `tests/unit/jobs-cross-org-db.test.ts` — **negativo:** job da organização A
+  referenciando projeto da B é recusado pelo serviço; a FK sozinha não protege,
+  e o teste diz isso explicitamente.
+- Teste de drift: `migrate diff` sai vazio apesar do índice parcial.
 
-**Aceite**
-- Nenhum job pode ser criado fora de uma transação.
-- Payload com campo fora da allowlist é recusado na escrita, não na leitura.
-- `migrate status` limpo; nenhum `DROP`.
+**Aceite** — nenhum job criado fora de transação; nenhuma duplicata por clique
+duplo; nenhuma geração futura bloqueada por trabalho terminal.
 
-**Janelas cobertas** — processo morre entre gravar o domínio e enfileirar o job:
-impossível por construção, porque é uma escrita só.
+**Janelas** — dois cliques simultâneos; duas abas do mesmo operador.
 
 ---
 
-### Commit 2 — `feat(fila)`: aquisição com lease
+### Commit 2 — `feat(fila)`: aquisição com lease, sem contar tentativa
 
 **Arquivos**
-- `src/lib/jobs/claim.ts` — `claimJobs({ owner, kinds, limit, leaseMs })` usando
-  `$queryRaw` com `FOR UPDATE SKIP LOCKED`, dentro de transação; grava
-  `leaseOwner`, `leaseExpiresAt`, incrementa `attempts`, marca `EM_EXECUCAO`.
-- `src/lib/jobs/heartbeat.ts` — `extendLease(jobId, owner, ms)`, que só estende
-  se o dono ainda for o mesmo.
+- `src/lib/jobs/claim.ts` — `claimJob({ owner, kinds, leaseMs })` devolvendo
+  **um** job, com `$queryRaw` e `FOR UPDATE SKIP LOCKED`. Marca `EM_EXECUCAO`,
+  grava `leaseOwner` e `leaseExpiresAt`. **Não** incrementa `attempts`:
+  adquirir não é falhar.
+- `src/lib/jobs/heartbeat.ts` — `extendLease(jobId, owner, ms)`, só para o dono.
 
 **Testes**
 - `tests/unit/jobs-claim-db.test.ts` — contra o Postgres local:
   - dois consumidores concorrentes não pegam o mesmo job;
-  - job com `runAfter` no futuro não é pego;
-  - job `EM_EXECUCAO` com lease vivo não é pego;
-  - `limit` é respeitado;
-  - `dedupeKey` igual não produz dois jobs em execução ao mesmo tempo;
-  - `extendLease` de outro dono não altera nada.
+  - `runAfter` futuro não é pego; lease vivo não é pego;
+  - adquirir e devolver **não** mexe em `attempts`;
+  - `extendLease` de outro dono não altera nada;
+  - `PAUSADO` não é adquirido enquanto a pausa valer.
 
-**Aceite**
-- A concorrência é provada com duas transações reais, não com mock. Este é o
-  commit em que um mock provaria a coisa errada.
+**Aceite** — a concorrência é provada com duas transações reais. É o commit em
+que um mock provaria a coisa errada.
 
-**Janelas cobertas** — dois crons disparando ao mesmo tempo; consumidor lento
-segurando lease enquanto outro tenta pegar.
+**Janelas** — dois crons simultâneos; consumidor lento segurando lease.
 
 ---
 
-### Commit 3 — `feat(fila)`: conclusão, backoff e carta morta
+### Commit 3 — `feat(fila)`: desfechos, espera e pausa
+
+Cinco saídas distintas, e a distinção é o ponto do commit.
 
 **Arquivos**
-- `src/lib/jobs/complete.ts` — `completeJob`, `failJobRecoverable`,
-  `failJobPermanent`, todos aceitando `Prisma.TransactionClient`.
-- `src/lib/jobs/backoff.ts` — `nextRunAfter(attempt, { baseMs, capMs, random })`
-  com **full jitter**: `random(0, min(cap, base * 2^attempt))`. `random` é
-  injetável para o teste ser determinístico.
-- Reuso de `describeErrorForStorage` da Fase 3 para `lastError`/`lastErrorCode`.
+- `src/lib/jobs/outcomes.ts`, todos aceitando `Prisma.TransactionClient`:
+  - `completeJob` — terminal, libera a `concurrencyKey`;
+  - `deferJob({ reason, nextRunAfter })` — **espera normal**: `pollCount++`,
+    `runAfter` adiado, `attempts` intocado, sem `lastError`; estourar
+    `pollDeadlineAt` leva a `CONCILIACAO`;
+  - `pauseJob({ reasonCode })` — `PAUSADO`, `attempts` intocado, sem backoff de
+    falha, sem carta morta;
+  - `failJobRecoverable` — **única** que incrementa `attempts`; aplica backoff;
+    ao esgotar `maxAttempts` vai a `CARTA_MORTA`;
+  - `failJobPermanent` — `CARTA_MORTA` direto, sem consumir tentativas.
+- `src/lib/jobs/backoff.ts` — full jitter, `random(0, min(15min, 30s · 2^n))`,
+  com `random` injetável.
+- Reuso de `describeErrorForStorage` da Fase 3 para `lastError`.
 
 **Testes**
-- `tests/unit/jobs-backoff.test.ts` — cresce, satura no teto, nunca negativo,
-  distribui (com `random` controlado), e duas tentativas no mesmo instante não
-  produzem o mesmo `runAfter`.
-- `tests/unit/jobs-complete.test.ts` — falha recuperável reagenda e mantém
-  `PENDENTE`; ao esgotar `maxAttempts` vai para `CARTA_MORTA`; falha definitiva
-  vai direto para `CARTA_MORTA` sem consumir tentativas.
-- `tests/unit/jobs-error-redaction.test.ts` — cada formato de segredo da Fase 3
-  lançado por um handler: nada aparece em `lastError`, e o `correlationId`
-  gravado é o mesmo devolvido.
+- `tests/unit/jobs-backoff.test.ts` — cresce, satura em 15 min, nunca negativo,
+  duas tentativas no mesmo instante não coincidem.
+- `tests/unit/jobs-outcomes.test.ts`:
+  - **espera não é falha:** cem `deferJob` seguidos deixam `attempts` em zero e
+    o job longe da carta morta;
+  - `pollDeadlineAt` estourado vai a `CONCILIACAO`, **não** a carta morta;
+  - só `failJobRecoverable` incrementa `attempts`;
+  - `failJobPermanent` não consome tentativa;
+  - terminal libera a `concurrencyKey` — provado por um segundo `enqueueJob` que
+    agora passa.
+- `tests/unit/jobs-error-redaction.test.ts` — cada formato de segredo da Fase 3:
+  nada em `lastError`, `correlationId` gravado igual ao devolvido.
 
-**Aceite**
-- Carta morta é visível e reprocessável (commit 4), nunca apagada.
-- `lastError` passa pela mesma allowlist da Fase 3 — teste que varre por padrão
-  de token.
+**Aceite** — nenhum estado normal caminha para carta morta. É o critério que
+separa este commit do desenho anterior.
 
-**Janelas cobertas** — handler lança segredo; job falha na última tentativa.
+**Janelas** — agente executando por horas; check que demora; provedor lento.
 
 ---
 
-### Commit 4 — `feat(fila)`: reconciliação e reprocessamento
+### Commit 4 — `feat(fila)`: reconciliação de lease e carta morta
 
 **Arquivos**
-- `src/lib/jobs/reconcile.ts` — `reclaimExpiredLeases()` devolve
-  `EM_EXECUCAO` com `leaseExpiresAt` no passado para `PENDENTE`, preservando
-  `attempts`.
+- `src/lib/jobs/reconcile.ts` — `reclaimExpiredLeases()` devolve `EM_EXECUCAO`
+  com lease vencido para `PENDENTE`, **preservando `attempts` e `pollCount`**.
+  Retomar não é falhar.
 - `src/lib/jobs/dead-letter.ts` — `listDeadLetters(actor)`,
-  `reprocessDeadLetter(actor, jobId)` que zera `attempts`, limpa lease e volta a
-  `PENDENTE`, com auditoria na mesma transação.
+  `reprocessDeadLetter(actor, jobId)` zerando `attempts`, limpando lease,
+  voltando a `PENDENTE`, com auditoria na mesma transação.
 - `src/lib/authz/permissions.ts` — `job:read`, `job:run`.
 
 **Testes**
-- `tests/unit/jobs-reconcile-db.test.ts` — lease expirado volta; lease vivo não;
-  `attempts` preservado.
-- `tests/unit/jobs-dead-letter.test.ts` — reprocessar exige `job:run`; auditoria
-  e mudança na mesma transação; falha na auditoria desfaz o reprocessamento.
-- Matriz: `OPERADOR` recebe `job:read`, não `job:run`; `LEITOR` nenhum dos dois.
+- `tests/unit/jobs-reconcile-db.test.ts` — lease vencido volta, lease vivo não,
+  contadores preservados.
+- `tests/unit/jobs-dead-letter.test.ts` — reprocessar exige `job:run`; falha na
+  auditoria desfaz o reprocessamento; reprocessar não fura a `concurrencyKey` se
+  já houver outro job ativo para o projeto.
+- Matriz: `OPERADOR` tem `job:read` e não `job:run`; `LEITOR` nenhum.
 
-**Aceite**
-- Consumidor interrompido não trava trabalho: o próximo ciclo reclama.
-- Reprocessar é ato humano, auditado, com ator.
+**Aceite** — consumidor interrompido não trava trabalho; reprocessar é ato humano
+auditado.
 
-**Janelas cobertas** — consumidor morre com lease na mão; carta morta
-reprocessada duas vezes em paralelo.
-
----
-
-### Commit 5 — `feat(fila)`: consumidor em lote
-
-**Arquivos**
-- `src/lib/jobs/consumer.ts` — `runJobBatch({ owner, budgetMs, limit })`: reclama
-  leases expirados, pega um lote, executa cada handler dentro do orçamento,
-  devolve o que não coube. Registro de handlers por `kind`.
-- `src/app/api/jobs/run/route.ts` — `GET` para o Cron, `POST` para disparo
-  manual; `maxDuration = 300`; `budgetMs = 235_000`.
-- `vercel.json` — entrada `crons` apontando para a rota.
-- `src/lib/jobs/cron-auth.ts` — verifica `Authorization: Bearer $CRON_SECRET`
-  com comparação de tempo constante; disparo manual exige `job:run`.
-
-**Testes**
-- `tests/unit/jobs-consumer.test.ts` — respeita o orçamento e devolve o resto;
-  um handler que lança não derruba o lote; um `kind` sem handler vira carta
-  morta com código próprio.
-- `tests/unit/jobs-run-route.test.ts` — sem `CRON_SECRET` correto, `401`;
-  disparo manual sem `job:run`, `403`; `NOX_INTEGRATIONS=disabled` não impede o
-  consumidor de rodar, mas todo handler que precisaria de provedor recusa.
-
-**Aceite**
-- Nenhum laço permanente. Nenhuma recursão entre funções.
-- O consumidor é seguro para rodar em paralelo consigo mesmo.
-
-**Janelas cobertas** — cron dispara enquanto o anterior ainda roda; lote estoura
-o orçamento no meio.
+**Janelas** — consumidor morre com lease na mão; carta morta reprocessada duas
+vezes em paralelo.
 
 ---
 
-### Commit 6 — `feat(idempotencia)`: chave escopada e retomada
+### Commit 5 — `feat(fila)`: consumidor sob demanda
 
 **Arquivos**
-- `prisma/schema.prisma` + migration — `IdempotencyKey`.
-- `src/lib/jobs/idempotency.ts` — `withIdempotency({ organizationId, scope, key, requestHash, ttlMs }, work)`.
+- `src/lib/jobs/consumer.ts` — `runJobBatch({ owner, budgetMs })`: reclama leases
+  vencidos e então **adquire um job por vez**, executa, e só volta a adquirir se
+  ainda houver orçamento. Nenhum job é adquirido para esperar. Registro de
+  handlers por `kind`; `kind` sem handler vai a carta morta com código próprio.
+- `src/app/api/jobs/run/route.ts` — `GET` para o Cron, `POST` manual;
+  `maxDuration = 300`; `budgetMs = 235_000`.
+- `vercel.json` — entrada `crons`.
+- `src/lib/jobs/cron-auth.ts` — `Authorization: Bearer $CRON_SECRET` com
+  comparação de tempo constante; disparo manual exige `job:run`.
 
 **Testes**
-- `tests/unit/idempotency-db.test.ts` — contra o Postgres local:
-  - duas organizações com a mesma chave não colidem;
-  - segunda chamada com mesmo corpo devolve a resposta gravada, sem reexecutar;
-  - mesma chave com corpo diferente → `409`, sempre;
-  - registro `EM_ANDAMENTO` expirado é assumido pela próxima tentativa em vez de
-    responder `409` para sempre;
-  - registro `EM_ANDAMENTO` **não** expirado responde "em andamento", não
-    duplica trabalho.
-- Teste da resposta gravada pela allowlist: nada além dos campos declarados.
+- `tests/unit/jobs-consumer.test.ts`:
+  - **nenhum job espera à toa:** com orçamento para dois e cinco na fila, apenas
+    dois saem de `PENDENTE`; os outros três permanecem adquiríveis
+    imediatamente, sem lease;
+  - orçamento estourado no meio encerra sem adquirir mais nada;
+  - handler que lança não derruba o lote;
+  - o consumidor é seguro rodando em paralelo consigo mesmo.
+- `tests/unit/jobs-run-route.test.ts` — `CRON_SECRET` errado → `401`; manual sem
+  `job:run` → `403`.
 
-**Aceite**
-- O escopo é `(organizationId, scope, key)`. Um índice sem `organizationId`
-  reprova no teste das duas organizações.
+**Aceite** — nenhum laço permanente, nenhuma recursão entre funções, nenhum lease
+ocioso.
 
-**Janelas cobertas** — processo morre depois de reservar a chave e antes de
-gravar a resposta.
+**Janelas** — cron dispara enquanto o anterior roda; lote estoura o orçamento.
 
 ---
 
-### Commit 7 — `feat(creditos)`: reserva atômica e teto mensal
+### Commit 6 — `feat(fila)`: freio global sem punir job
 
 **Arquivos**
-- `prisma/schema.prisma` + migration — `CreditAccount`, `CreditReservation`,
-  mais `CHECK` de não-negatividade em `balanceCents` e `spentThisMonthCents`
-  (SQL manual, como o `SecretRef` da Fase 3).
-- `src/lib/credits/reserve.ts` — `reserveCredits(tx, { organizationId, operationKey, amountCents, estimatedBy, ttlMs })`.
-  A reserva é **um único `UPDATE` condicional** —
-  `WHERE balanceCents >= $amount AND spentThisMonthCents + $amount <= monthlyCapCents AND blockedAt IS NULL` —
-  que devolve zero linhas quando não cabe, na mesma transação que insere a
-  reserva e a linha do `UsageLedger`.
-- `src/lib/credits/settle.ts` — `consumeReservation`, `releaseReservation`,
-  `expireReservations`.
+- `src/lib/jobs/gate.ts` — antes de executar um handler que depende de provedor,
+  resolve o modo efetivo. `DESLIGADO` — por banco ou por
+  `NOX_INTEGRATIONS=disabled` — resulta em `pauseJob`, com
+  `pausedReason = "INTEGRACAO_DESLIGADA"` e reagendamento fixo curto.
+- Declaração por `kind` de qual provedor ele depende; `credit.reconcile` não
+  depende de nenhum e continua rodando.
 
 **Testes**
+- `tests/unit/jobs-gate.test.ts`:
+  - com `NOX_INTEGRATIONS=disabled`, o job vai a `PAUSADO` com `attempts` **em
+    zero**, sem `lastError`, sem backoff de falha;
+  - mil ciclos com o freio ligado não levam nenhum job à carta morta;
+  - religando, o job volta a `PENDENTE` e executa;
+  - jobs sem dependência de provedor continuam executando com o freio ligado.
+
+**Aceite** — o freio é pausa, não punição. Um mês de manutenção não pode
+transformar a fila inteira em carta morta.
+
+**Janelas** — freio ligado durante um run em andamento; freio ligado e desligado
+entre ciclos.
+
+---
+
+### Commit 7 — `feat(creditos)`: preço local e reserva atômica
+
+**Arquivos**
+- `src/lib/credits/pricing.ts` — **política local pura**: sem rede, sem segredo,
+  sem provedor. `estimateGenerationCost({ organizationId, config })`; sem preço
+  configurado, lança razão fechada `PRECO_NAO_CONFIGURADO`.
+- `prisma/schema.prisma` + migration — `CreditAccount`, `CreditReservation`, com
+  FKs e o `CHECK` de não-negatividade.
+- `src/lib/credits/reserve.ts` — `reserveCredits(tx, …)`. Um `UPDATE`
+  condicional:
+
+  ```sql
+  UPDATE "CreditAccount"
+     SET "reservedCents" = "reservedCents" + $amount
+   WHERE "organizationId" = $org
+     AND "blockedAt" IS NULL
+     AND "balanceCents" - "reservedCents" >= $amount
+     AND "consumedThisMonthCents" + "reservedCents" + $amount <= "monthlyCapCents"
+  ```
+
+  Zero linhas significa que não cabe. A inserção da reserva e a linha do
+  `UsageLedger` vão na mesma transação.
+
+**Testes**
+- `tests/unit/credits-pricing.test.ts` — sem configuração, **recusa antes de
+  qualquer reserva**; a política não importa nada de rede nem de `SecretRef` —
+  teste que varre os imports do módulo.
 - `tests/unit/credits-db.test.ts` — contra o Postgres local:
-  - saldo insuficiente não reserva e não escreve ledger;
-  - teto mensal excedido não reserva;
+  - disponível é `balance − reserved`: com saldo 100 e reservado 80, uma reserva
+    de 30 é recusada;
+  - exposição ao teto é `consumed + reserved`: teto 100, consumido 60,
+    reservado 30, reserva de 20 recusada;
   - conta bloqueada não reserva;
-  - duas reservas concorrentes para a mesma `operationKey` produzem uma só;
-  - N reservas concorrentes com saldo para N−1 deixam exatamente uma de fora;
-  - saldo nunca fica negativo, provado também pelo `CHECK`;
-  - retentativa da mesma operação reencontra a reserva em vez de criar outra;
-  - liberar devolve o saldo; consumir não;
-  - reserva expirada libera o saldo.
+  - N reservas concorrentes com espaço para N−1 deixam exatamente uma de fora;
+  - mesma `operationKey` concorrente produz uma reserva só;
+  - retentativa reencontra a reserva existente;
+  - falha ao gravar o ledger desfaz o movimento do saldo;
+  - o `CHECK` recusa saldo negativo e reserva maior que o saldo.
 
-**Aceite**
-- Saldo, reserva e ledger mudam na mesma transação. Um teste que injeta falha na
-  escrita do ledger prova que o saldo não se move.
-- Nenhuma operação paga sem reserva anterior — garantido no commit 11.
+**Aceite** — sem preço, não há geração. Reserva não desconta saldo; compromete.
 
-**Janelas cobertas** — duas gerações simultâneas com saldo para uma; processo
-morre entre debitar e registrar.
+**Janelas** — duas gerações simultâneas com espaço para uma; morte entre reservar
+e registrar.
 
 ---
 
-### Commit 8 — `feat(creditos)`: conciliação administrativa
+### Commit 8 — `feat(creditos)`: liquidação, limiar renovável e conciliação
 
 **Arquivos**
-- `src/lib/credits/reconcile.ts` — `listPendingReconciliation(actor)`,
-  `reconcileReservation(actor, { reservationId, actualCents, note })`.
-- `src/app/api/organizations/credits/route.ts` — `GET` com `usage:read`;
-  `PATCH` de conciliação com nova permissão `credit:manage`.
-- `src/app/organizacao/creditos/page.tsx` — tela mínima: saldo, teto, reservas
-  pendentes, bloqueio.
-- `src/lib/authz/permissions.ts` — `credit:manage` para OWNER/ADMIN.
+- `src/lib/credits/settle.ts`:
+  - `consumeReservation(tx, { reservationId, actualCents })` —
+    `reserved −= reservado`, `balance −= real`, `consumedThisMonth += real`. Se o
+    real exceder a reserva e o excedente **não** couber em saldo ou teto:
+    **bloqueia a conta** e manda a reserva para `CONCILIACAO`, sem nunca deixar
+    o saldo negativo;
+  - `releaseReservation` — devolve `reserved`, restaurando disponível **e**
+    exposição ao teto; o saldo não se move porque nunca foi debitado.
+- `src/lib/credits/threshold.ts` — handler `credit.reconcile`, que ao vencer o
+  limiar de 2 h **decide**, nunca reembolsa cego:
+  - run ainda ativo → **renova** o limiar;
+  - run comprovadamente nunca iniciado (`startAttemptedAt` nulo) → libera;
+  - estado remoto ambíguo → **bloqueia** e manda para `CONCILIACAO`.
+- `src/lib/credits/reconcile.ts` + `src/app/api/organizations/credits/route.ts` +
+  `src/app/organizacao/creditos/page.tsx` — conciliação administrativa;
+  permissão `credit:manage`.
 
 **Testes**
+- `tests/unit/credits-settle.test.ts`:
+  - custo real menor devolve a diferença à disponibilidade;
+  - custo real maior, com espaço, consome e ajusta;
+  - custo real maior, **sem** espaço, bloqueia a conta, vai a `CONCILIACAO` e o
+    saldo **não** fica negativo;
+  - liberar restaura disponível e exposição ao teto juntos.
+- `tests/unit/credits-threshold.test.ts` — as três decisões do vencimento; um
+  teste afirma que **nenhum caminho libera automaticamente** sem prova de que
+  não houve chamada paga.
 - `tests/unit/credits-reconcile.test.ts` — conciliar exige `credit:manage`;
-  auditoria e ajuste na mesma transação; conciliar com valor maior que o
-  reservado ajusta o saldo e registra a diferença; conciliação pendente além do
-  prazo **bloqueia** nova geração paga.
-- `tests/unit/credits-route.test.ts` — `OPERADOR` lê e não concilia; `LEITOR`
-  não lê.
+  auditoria e ajuste na mesma transação; conta bloqueada recusa nova geração.
+- `tests/unit/credits-cross-org.test.ts` — **negativo:** reserva da organização A
+  não é conciliável por ator da B; reserva não pode apontar para job de outra
+  organização.
 
-**Aceite**
-- `durationMs` do Cursor **não é preço**. A estimativa é conservadora e a
-  conciliação é humana. Um teste afirma que nenhum caminho converte duração em
-  centavos automaticamente.
-- Falha de conciliação bloqueia, nunca publica em silêncio, nunca autoriza saldo
-  negativo.
+**Aceite** — `durationMs` do Cursor não é preço; nenhum caminho converte duração
+em centavos. Vencer o limiar é gatilho de decisão, não desfecho.
+
+**Janelas** — run mais longo que o limiar; provedor ambíguo no vencimento; custo
+real acima do estimado.
 
 ---
 
-### Commit 9 — `feat(codegen)`: porta v2 e implementação falsa
+### Commit 9 — `feat(codegen)`: porta v2, sem custo e com capacidades declaradas
 
 **Arquivos**
-- `src/lib/codegen/provider.ts` — interface v2:
-  `start(request): Promise<AgentRunRef>`, `poll(ref): Promise<AgentRunStatus>`,
-  `cancel(ref): Promise<void>`, `estimateCost(request): Promise<CostEstimate>`.
-  `AgentRunStatus` carrega `state`, `branch`, `pullRequestUrl`, `finishedAt`.
-- `src/lib/codegen/fake/fake-agent.ts` — determinística, em memória, com
-  progressão controlável por teste.
-- `src/lib/codegen/sandbox/` — mappers de payload real, redigidos, mais
-  `fixtures/sandbox/cursor/*.json`.
-- `src/lib/codegen/registry.ts` — por modo, como os provedores da Fase 3;
-  `DESLIGADO` recusa, `LIVE` lança.
+- `src/lib/codegen/provider.ts` — v2: `start`, `poll`, `cancel`. **`estimateCost`
+  não existe na porta** — preço é política local.
+  Acrescenta capacidades declaradas, que decidem se repetir é permitido:
+  ```ts
+  readonly capabilities: {
+    /** Chamar `start` duas vezes com a mesma chave não cria dois runs. */
+    idempotentStart: boolean;
+    /** `findRunByKey` responde o que existe para uma chave nossa. */
+    reconcileByKey: boolean;
+  };
+  ```
+- `src/lib/codegen/fake/fake-agent.ts` — determinística, progressão controlável.
+- `src/lib/codegen/sandbox/` — **replay local de fixtures, sem HTTP**, mais
+  `fixtures/sandbox/cursor/*.json` redigidas.
+- `src/lib/codegen/registry.ts` — por modo; `DESLIGADO` recusa, `LIVE` lança.
 - `tests/contract/agent-contract.ts` — suíte única.
 
 **Testes**
-- `tests/unit/codegen-falso.test.ts` e `tests/unit/codegen-sandbox.test.ts` —
-  a mesma suíte nos dois modos: iniciar devolve ref; poll progride; cancelar é
-  idempotente; poll depois de cancelar não volta a EXECUTANDO; branch e PR só
-  aparecem quando o run conclui.
-- Varredura das fixtures por padrão de segredo, como na Fase 3.
-- `getCodeGenerationProvider("cursor")` continua recusando (Cursor pendente).
+- `tests/unit/codegen-falso.test.ts` e `tests/unit/codegen-sandbox.test.ts` — a
+  mesma suíte nos dois modos: `start` devolve ref; `poll` progride; `cancel` é
+  idempotente; `poll` depois de `cancel` não volta a executando; branch e PR só
+  aparecem ao concluir.
+- **Sandbox não faz HTTP:** com a guarda de rede ativa, a suíte passa; um teste
+  afirma que o módulo não importa cliente HTTP algum.
+- Varredura das fixtures por padrão de segredo.
+- `getCodeGenerationProvider("cursor")` continua recusando.
 
-**Aceite**
-- `promoteToProduction` e afins continuam ausentes. Método que existe é método
-  que alguém chama.
-- A suíte de contrato passa igual em `FALSO` e `SANDBOX`.
+**Aceite** — a porta não tem método de preço. `promoteToProduction` e afins
+continuam ausentes.
 
 ---
 
 ### Commit 10 — `feat(codegen)`: isolamento por repositório
 
 **Arquivos**
-- `src/lib/codegen/isolation.ts` — `buildAgentScope({ repository })` produzindo
+- `src/lib/codegen/isolation.ts` — `buildAgentScope({ repository })` com
   exatamente **um** repositório em `repos`, `workOnCurrentBranch: false`,
-  `autoCreatePR: true`, sem MCP server, sem segredo do NOX OS nem da Vercel,
-  rede em allowlist.
-- Validação na entrada do provider: um request com zero ou dois repositórios é
-  recusado antes de qualquer chamada.
+  `autoCreatePR: true`, sem MCP server, sem segredo do NOX OS nem da Vercel, rede
+  em allowlist. Zero ou dois repositórios é recusado antes de qualquer chamada.
 
-**Testes** (obrigatórios, é o coração do commit)
+**Testes**
 - `tests/unit/codegen-isolation.test.ts`:
-  - **negativo:** um agente montado para o cliente A recebe escopo que não
-    contém o repositório de B; uma tentativa de montar escopo com os dois é
-    recusada;
-  - **negativo:** um `AgentRunRef` do cliente A não pode ser consultado nem
-    cancelado por um ator da organização de B — recusa igual a inexistente;
-  - o escopo nunca carrega `SecretRef` resolvido, só `purpose`;
-  - `autoCreatePR` é verdadeiro e `workOnCurrentBranch` é falso, fixados por
-    teste — mudá-los quebra aqui.
+  - **negativo:** escopo montado para o cliente A não contém o repositório de B;
+    montar com os dois é recusado;
+  - **negativo:** `AgentRunRef` de A não é consultável nem cancelável por ator da
+    organização de B — recusa igual a inexistente;
+  - o escopo carrega `purpose` de `SecretRef`, nunca valor resolvido;
+  - `autoCreatePR` verdadeiro e `workOnCurrentBranch` falso, fixados por teste.
 
-**Aceite**
-- O teste negativo entre organizações é a prova de que o isolamento é do
-  domínio, não do provedor.
+**Aceite** — o teste negativo entre organizações é a prova de que o isolamento é
+do domínio, não do provedor.
 
 ---
 
-### Commit 11 — `feat(geracao)`: handler do job de geração
+### Commit 11 — `feat(geracao)`: iniciar sem repetir efeito remoto
+
+O handler **carrega** a intenção; nunca cria outra.
 
 **Arquivos**
 - `prisma/schema.prisma` + migration aditiva — `GenerationRun.branch`,
-  `GenerationRun.pullRequestUrl`, `GenerationRun.reservationId` (todos nulos).
-- `src/lib/generation/start.ts` — handler de `generation.run`:
-  1. abre contexto (elegibilidade + ordem, reusando a Fase 3);
-  2. exige provisionamento completo — repositório, conteúdo e hospedagem;
-  3. **reserva crédito** (commit 7) na mesma transação que cria o
-     `GenerationRun` em `PENDENTE`;
-  4. só então chama `start` do provedor, com idempotência (commit 6);
-  5. grava `providerRunId` e reagenda um `generation.poll`.
-- `src/lib/generation/poll.ts` — consulta, grava progresso, e ao concluir cria a
-  `SiteRevision` imutável com `commitSha`, `branch` e `pullRequestUrl`.
+  `.pullRequestUrl`, `.startAttemptedAt`, `.reservationId`.
+- `src/lib/generation/start.ts` — handler de `generation.start`:
+  1. carrega o `GenerationRun` pelo `generationRunId` do job; ausente é erro de
+     programação, não caminho normal;
+  2. exige provisionamento completo (ordem da Fase 3);
+  3. **se `startAttemptedAt` já existe e `providerRunId` é nulo:** só repete se
+     `capabilities.idempotentStart`; se `reconcileByKey`, consulta antes de
+     decidir; caso contrário → `CONCILIACAO`, sem chamar nada;
+  4. estima preço local; sem preço, recusa **antes** de reservar;
+  5. reserva crédito e grava `startAttemptedAt` na **mesma transação**;
+  6. chama `start`, grava `providerRunId`, agenda `generation.poll` com
+     `pollDeadlineAt`.
+- `src/lib/generation/poll.ts` — consulta e **registra fato**: progresso, branch,
+  PR, e ao concluir cria a `SiteRevision` imutável com `commitSha`. Nenhuma
+  transição de projeto aqui.
 
 **Testes**
-- `tests/unit/generation-start.test.ts` — sem crédito, nada é chamado no
-  provedor; sem provisionamento completo, recusa antes do provedor; falha ao
-  gravar o `GenerationRun` libera a reserva.
-- `tests/unit/generation-poll.test.ts` — timeout ambíguo **não** repete
-  automaticamente: o job vai para `CONCILIACAO`; run concluído cria exatamente
-  uma `SiteRevision`; repetir o poll não cria uma segunda.
-- `tests/unit/generation-audit-rollback.test.ts` — falha na auditoria desfaz a
-  conclusão local; a repetição reconcilia e cada evento aparece uma vez.
+- `tests/unit/generation-start.test.ts`:
+  - sem preço configurado, nada é reservado e nada é chamado;
+  - sem crédito, `start` nunca é chamado;
+  - falha ao gravar o run libera a reserva;
+  - **janela do lease:** com `startAttemptedAt` gravado e `providerRunId` nulo,
+    provedor sem `idempotentStart` nem `reconcileByKey` → `CONCILIACAO`, e
+    `start` **não** é chamado;
+  - o mesmo cenário com `idempotentStart` → repete;
+  - o mesmo cenário com `reconcileByKey` → consulta e adota o run existente.
+- `tests/unit/generation-poll.test.ts` — executando → `deferJob` sem consumir
+  tentativa; concluído cria exatamente uma `SiteRevision`; repetir não cria
+  outra; `pollDeadlineAt` estourado → `CONCILIACAO`.
 
-**Aceite**
-- **Nenhuma operação paga sem reserva anterior**, provado por teste que injeta
-  falha na reserva e verifica que `start` nunca é chamado.
-- Resultado remoto ambíguo para em conciliação, nunca em retentativa cega.
+**Aceite** — nenhuma operação paga sem reserva anterior, provado por teste que
+falha a reserva e verifica que `start` nunca é chamado. Nenhum efeito remoto
+repetido às cegas.
 
-**Janelas cobertas** — morre entre reservar e chamar; entre chamar e gravar
+**Janelas** — morte entre reservar e chamar; entre chamar e gravar
 `providerRunId`; entre concluir e gravar a revisão.
 
 ---
 
-### Commit 12 — `feat(checks)`: checks do GitHub por polling
+### Commit 12 — `feat(estados)`: transição de sistema e a barreira
+
+Antecipado de propósito: os pollers dos commits 13 e 14 não podem aplicar
+transições que ainda não existem.
 
 **Arquivos**
-- `src/lib/providers/ports.ts` — acrescenta
-  `listChecks({ repo, ref }): Promise<CheckRun[]>` ao `GitRepositoryProvider`.
-- Fake e sandbox implementam; contrato cobre.
-- `src/lib/generation/checks.ts` — handler `checks.poll`: o run só conta como
-  bem-sucedido quando o check `verify` (constante `REQUIRED_CHECK` da Fase 3)
-  concluiu com sucesso no commit da revisão.
+- `src/lib/site-factory/states.ts` — `applySystemTransition(tx, …)`, único
+  caminho para transições com `permission: null`.
+- `src/lib/generation/barrier.ts` — `evaluateGenerationOutcome(facts)`. Só
+  devolve sucesso quando os três fatos apontam para **a mesma `SiteRevision` e o
+  mesmo `commitSha`**: agente concluído, check obrigatório bem-sucedido,
+  deployment de preview `READY`. Qualquer divergência é "ainda não", não sucesso.
 
 **Testes**
-- Contrato nos dois modos: checks pendentes, em execução, sucesso, falha,
-  ausência de check para o ref.
-- `tests/unit/generation-checks.test.ts` — check pendente reagenda com backoff;
-  check falhando leva o projeto a `FALHOU` com razão fechada; check ausente
-  depois do prazo vai para conciliação, não para sucesso.
+- `tests/unit/system-transition.test.ts` — só a orquestração aplica; ator humano
+  continua recusado; mudança e auditoria na mesma transação.
+- `tests/unit/generation-barrier.test.ts`:
+  - os três fatos alinhados → `PREVIA_PRONTA`;
+  - **check de outro commit** → não conclui;
+  - **preview de outra revisão** → não conclui;
+  - dois de três → não conclui;
+  - agente concluído com check falhando → `FALHOU` com razão fechada;
+  - a barreira é pura: não escreve, só decide.
 
-**Aceite**
-- O nome do check vem de `REQUIRED_CHECK`, não de literal duplicado.
+**Aceite** — a barreira é o único lugar que autoriza `GERANDO → PREVIA_PRONTA`.
 
 ---
 
-### Commit 13 — `feat(preview)`: preview da Vercel por polling
+### Commit 13 — `feat(checks)`: checks do GitHub como fato
+
+**Arquivos**
+- `src/lib/providers/ports.ts` — `listChecks({ repo, ref })`; fake e sandbox
+  implementam; contrato cobre.
+- `src/lib/generation/checks.ts` — handler `checks.poll`: **registra o fato** do
+  check `verify` (constante `REQUIRED_CHECK` da Fase 3) para o `commitSha` da
+  revisão e chama a barreira. Pendente → `deferJob`.
+
+**Testes**
+- Contrato nos dois modos: pendente, em execução, sucesso, falha, ausente.
+- `tests/unit/generation-checks.test.ts` — pendente reagenda sem consumir
+  tentativa; falha registra o fato e a barreira decide; ausente além do prazo →
+  `CONCILIACAO`; o nome do check vem de `REQUIRED_CHECK`, não de literal.
+
+---
+
+### Commit 14 — `feat(preview)`: preview da Vercel como fato
 
 **Arquivos**
 - `src/lib/generation/preview.ts` — handler `preview.poll`, reusando
-  `listDeployments` e `chooseDeployment` da Fase 3, agora com o commit da
-  revisão gerada em vez do commit do snapshot.
-- Grava `Deployment` ligado à `SiteRevision`.
+  `listDeployments` e `chooseDeployment` da Fase 3 com o `commitSha` da revisão
+  gerada. Grava `Deployment` ligado à `SiteRevision` e chama a barreira.
 
 **Testes**
-- `tests/unit/generation-preview.test.ts` — preview `READY` conclui; `BUILDING`
-  reagenda; `ERROR` leva a `FALHOU`; nenhum deployment depois do prazo vai para
-  conciliação.
-- Isolamento: o poll de um projeto nunca lê deployment de outro.
+- `tests/unit/generation-preview.test.ts` — `READY` registra o fato;
+  `BUILDING` → `deferJob`; `ERROR` registra e a barreira decide; nenhum
+  deployment além do prazo → `CONCILIACAO`.
+- **Negativo:** o poll de um projeto nunca lê deployment de outro; deployment de
+  outra organização é recusado.
 
-**Aceite**
-- Deployment aponta para `SiteRevision`, mantendo a regra de que toda publicação
-  futura aponta para revisão imutável com commit.
+**Aceite** — `Deployment` aponta para `SiteRevision`, mantendo a regra de que
+publicação futura aponta para revisão imutável com commit.
 
 ---
 
-### Commit 14 — `feat(estados)`: transições de sistema pela orquestração
+### Commit 15 — `feat(ui)`, aceleradores e runbook
 
 **Arquivos**
-- `src/lib/site-factory/states.ts` — `applySystemTransition(tx, { siteProjectId, from, to, reason })`, o único caminho para as transições com `permission: null`.
-- `src/lib/generation/outcome.ts` — sucesso aplica `GERANDO → PREVIA_PRONTA`;
-  falha recuperável mantém `GERANDO` e reagenda; falha definitiva aplica
-  `GERANDO → FALHOU` com `statusMessage` de razão fechada.
-
-**Testes**
-- `tests/unit/system-transition.test.ts` — só a orquestração aplica; um ator
-  humano continua recusado; transição inválida recusa; a mudança de estado e a
-  auditoria caem na mesma transação.
-- `tests/unit/generation-outcome.test.ts` — cada desfecho leva ao estado certo;
-  falha recuperável não queima o projeto.
-
-**Aceite**
-- `transitionSiteProject` continua recusando `permission: null` para pessoas.
-- `GERANDO` ainda está em `STAGES_PENDING_ORCHESTRATOR` — os testes constroem o
-  estado, não transicionam para ele.
-
----
-
-### Commit 15 — `feat(ui)` + aceleradores opcionais
-
-**Arquivos**
-- `src/app/projetos/[id]/geracao/page.tsx` — estado do run, tentativas, último
-  erro redigido, links de branch/PR/preview.
-- `src/app/organizacao/fila/page.tsx` — jobs por estado, cartas mortas,
-  reprocessar (`job:run`).
-- `src/lib/jobs/accelerators.ts` — ponto único onde um webhook ou SSE, quando
-  existir, apenas **antecipa** `runAfter` de um job já enfileirado. Nada
-  depende dele.
+- `src/app/projetos/[id]/geracao/page.tsx` — estado do run, `pollCount` e
+  `attempts` separados na tela, último erro redigido, links de branch/PR/preview.
+- `src/app/organizacao/fila/page.tsx` — jobs por estado, pausados, conciliação,
+  cartas mortas, reprocessar.
+- `src/lib/jobs/accelerators.ts` — ponto único onde webhook ou SSE apenas
+  **antecipam** `runAfter` de um job já enfileirado.
+- `docs/runbook-fila.md`.
 
 **Testes**
 - `tests/unit/accelerators.test.ts` — o acelerador nunca conclui um job, nunca
   cria um, e um sistema sem ele chega ao mesmo estado final, só mais devagar.
 - Permissões nas duas telas.
 
-**Aceite**
-- Desligar o acelerador não muda nenhum resultado, só a latência.
-
 ---
 
-### Commit 16 — `feat(habilitacao)`: abrir `GERANDO` e o Cursor em modo seguro
+### Commit 16 — `feat(habilitacao)`: entrada transacional e as travas
 
-**Este é o último commit, e o único que mexe nas travas.**
+**Último commit, e o único que mexe nas travas.**
 
 **Arquivos**
+- `src/lib/generation/request.ts` — `requestGeneration(actor, siteProjectId)`
+  numa transação só: cria o `GenerationRun` em `PENDENTE`, aplica
+  `BRIEFING_PRONTO → GERANDO`, e enfileira o job com `generationRunId`,
+  `idempotencyKey` e `concurrencyKey`.
+- `src/app/api/projects/[id]/generate/route.ts`.
 - `src/lib/site-factory/states.ts` — remove `GERANDO` de
   `STAGES_PENDING_ORCHESTRATOR`. `PUBLICANDO` **permanece**.
 - `src/lib/integrations/modes.ts` — remove `cursor` de
-  `PROVIDERS_PENDING_PHASE`, mantendo `MODES_AVAILABLE` sem `LIVE`.
-- `src/lib/generation/request.ts` — `requestGeneration(actor, siteProjectId)`:
-  transição para `GERANDO` **e** criação do job na mesma transação (outbox).
-- `src/app/api/projects/[id]/generate/route.ts`.
+  `PROVIDERS_PENDING_PHASE`; `MODES_AVAILABLE` continua sem `LIVE`.
 
 **Testes**
-- `tests/unit/generation-request.test.ts` — a transição e o job caem juntos;
-  falha ao enfileirar desfaz a transição; pedir duas vezes não cria dois jobs
-  (dedupe por `SiteProject`).
-- `tests/unit/generation-e2e-falso.test.ts` — caminho inteiro em `FALSO`:
-  pedir → job → reserva → agente → poll → checks → preview → `PREVIA_PRONTA`,
-  com o consumidor rodando em lotes.
-- Atualizar os testes da Fase 3 que fixam a lista de estados pendentes e a
-  recusa do Cursor — a mudança tem que quebrá-los, de propósito.
+- `tests/unit/generation-request.test.ts` — run, transição e job caem juntos;
+  falha em qualquer um desfaz os três; **dois cliques criam um job só** e um
+  `GenerationRun` só; projeto já em geração é recusado; projeto com geração
+  anterior terminal aceita uma nova.
+- `tests/unit/generation-e2e-falso.test.ts` — caminho inteiro em `FALSO`, com o
+  consumidor rodando em ciclos: pedir → reservar → agente → poll → check →
+  preview → barreira → `PREVIA_PRONTA`, e a reserva conciliada ao fim.
+- O mesmo caminho em `SANDBOX`, com a guarda de rede ativa.
+- Atualizar os testes da Fase 3 que fixam a lista de estados pendentes e a recusa
+  do Cursor — a mudança tem que quebrá-los, de propósito.
 
-**Aceite**
-- `LIVE` continua indisponível para todos os provedores.
-- `PUBLICANDO` continua fechado.
-- O caminho ponta a ponta passa em `FALSO` e em `SANDBOX`.
+**Aceite** — `LIVE` indisponível; `PUBLICANDO` fechado; caminho ponta a ponta
+verde em `FALSO` e em `SANDBOX`.
 
 ---
 
 ## Estratégia de rollback
 
-**Por commit.** Cada um é revertível com `git revert` sem tocar no banco, porque
-as migrations são aditivas e o código novo nunca é o único a saber ler uma
-coluna existente. Reverter o commit 16 fecha `GERANDO` de novo e o Cursor volta a
-ser recusado; jobs já enfileirados param de ser criados e os existentes drenam ou
-viram carta morta.
+**Por commit.** `git revert` sem tocar no banco: migrations são aditivas e código
+antigo nunca depende de coluna nova. Reverter o 16 fecha `GERANDO` e recusa o
+Cursor de novo; jobs existentes drenam.
 
-**Freio global.** `NOX_INTEGRATIONS=disabled` continua acima do banco. Com ele
-ligado, o consumidor roda, mas todo handler que precisaria de provedor recusa —
-os jobs voltam para `PENDENTE` com backoff em vez de falhar. É o botão de parada
-sem deploy.
+**Freio global.** `NOX_INTEGRATIONS=disabled` pausa os jobs dependentes de
+provedor sem consumir tentativa — é botão de parada sem deploy, e depois do
+commit 6 ele é seguro de manter ligado indefinidamente.
 
-**Freio do consumidor.** Remover a entrada `crons` do `vercel.json` para o
-consumidor parar sem alterar código. Jobs ficam parados, não se perdem.
+**Freio do consumidor.** Remover `crons` do `vercel.json`. Jobs param, não se
+perdem.
 
-**Migrations.** Nenhuma remove coluna ou tabela. Um rollback de código com o
-banco à frente continua funcionando: as colunas novas ficam nulas e ninguém as
-lê. Se for preciso desfazer uma migration, é uma migration nova que a compensa —
-nunca edição de migration aplicada.
+**Migrations.** Nenhuma remove coluna ou tabela. Desfazer é migration nova que
+compensa, nunca edição de migration aplicada.
 
-**Créditos.** Reverter código não devolve saldo. Reserva pendente de uma versão
-revertida expira por `expiresAt` e libera o saldo sozinha; o que já foi consumido
-é resolvido pela conciliação administrativa, com ator e registro.
+**Créditos.** Reverter código não devolve saldo. Reserva viva não vira reembolso
+automático: o limiar renovável decide, e o que já foi consumido passa pela
+conciliação administrativa, com ator e registro.
 
 ---
 
-## Runbook operacional (esboço; vira `docs/runbook-fila.md` no commit 15)
+## Runbook operacional (vira `docs/runbook-fila.md` no commit 15)
 
-**Fila parada.** Verificar se o cron está no `vercel.json` e se o
-`CRON_SECRET` bate. Disparar manualmente com `POST /api/jobs/run` (exige
-`job:run`) e ler o retorno: quantos pegou, quantos concluiu, quantos sobraram.
+**Fila parada.** Conferir `crons` no `vercel.json` e o `CRON_SECRET`. Disparar
+`POST /api/jobs/run` e ler o retorno.
 
-**Job travado em `EM_EXECUCAO`.** É lease de um consumidor que morreu. A
-próxima passada reclama sozinha, passado `leaseExpiresAt`. Se não reclamar, o
-lease está sendo estendido por alguém — procurar o `leaseOwner`.
+**Job em `PAUSADO`.** É o freio global ou o provedor desligado. Nada foi punido:
+`attempts` está intocado. Religar e esperar o próximo ciclo.
 
-**Carta morta.** Ver em `/organizacao/fila`. Ler `lastErrorCode` e o
-`correlationId`; o detalhe está no log do servidor, nunca na linha. Corrigir a
-causa e reprocessar — reprocessar zera tentativas e é auditado.
+**Job travado em `EM_EXECUCAO`.** Lease de consumidor morto; a próxima passada
+reclama. Se não reclamar, alguém está estendendo — procurar `leaseOwner`.
 
-**Job em `CONCILIACAO`.** Resultado remoto ambíguo. **Não reprocessar às
-cegas.** Consultar o provedor para descobrir o que existe de fato e decidir. É o
-estado que existe justamente para não repetir uma operação paga por causa de um
-timeout.
+**Job com `pollCount` alto.** Espera normal, não falha. Conferir `pollDeadlineAt`
+antes de intervir.
 
-**Conta bloqueada.** Há reserva não conciliada além do prazo. Conciliar em
-`/organizacao/creditos` (exige `credit:manage`). Enquanto bloqueada, nenhuma
-geração paga começa — por desenho.
+**Job em `CONCILIACAO`.** Resultado ambíguo. **Não reprocessar às cegas.**
+Consultar o provedor para descobrir o que existe e decidir. É o estado que
+existe para não repetir operação paga por timeout.
 
-**Saldo não bate.** Comparar `UsageLedger` com as reservas. O ledger e o saldo
-mudam na mesma transação, então divergência significa escrita fora da aplicação.
+**Carta morta.** Ler `lastErrorCode` e o `correlationId`; o detalhe está no log,
+nunca na linha. Corrigir a causa e reprocessar — zera tentativas, é auditado.
+
+**Conta bloqueada.** Reserva não conciliada ou custo acima do previsto sem
+espaço. Conciliar em `/organizacao/creditos`. Enquanto bloqueada, nenhuma geração
+paga começa.
+
+**Saldo não bate.** Disponível é `balance − reserved`; exposição ao teto é
+`consumed + reserved`. Comparar com o `UsageLedger`. Saldo e ledger mudam na
+mesma transação, então divergência significa escrita fora da aplicação.
 
 ---
 
@@ -691,39 +843,32 @@ mudam na mesma transação, então divergência significa escrita fora da aplica
 
 `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run build`, e
 `npx prisma migrate deploy` + `migrate status` **somente** contra o Postgres
-local, com o host verificado antes. A guarda de rede
-(`tests/setup/no-network.ts`) permanece ativa e auto-verificada. Árvore limpa ao
-fim de cada commit.
+local, com o host verificado antes. A guarda de rede permanece ativa e
+auto-verificada. Árvore limpa ao fim de cada commit.
 
 ---
 
 ## Decisões em aberto
 
-1. **Cursor em `FALSO`/`SANDBOX` ao fim da fase.** O plano assume que o commit
-   16 tira `cursor` de `PROVIDERS_PENDING_PHASE` mantendo `LIVE` fora. Se a
-   intenção for manter o Cursor recusado até a Fase 6 inteira, o commit 16 muda:
-   só `GERANDO` abre, e a orquestração roda apenas com o provedor falso.
-   **Precisa da sua confirmação antes do commit 9.**
+1. **Valor do preço por geração.** A política é local e configurável, e sem
+   configuração a geração é recusada — isso está fechado. Falta o número, e onde
+   ele mora: variável de ambiente por instalação, ou coluna por organização com
+   tela. Precisa antes do commit 7.
 
-2. **Consumidor: Cron da Vercel ou worker dedicado.** O plano escreve para Cron,
-   que é o que a conta já suporta. Um worker fora da Vercel muda o commit 5 —
-   não o resto. Decidir antes do commit 5.
+2. **Prazo de `pollDeadlineAt` por tipo de job.** Proposta: 2 h para o agente,
+   30 min para checks, 30 min para preview. São os números que decidem quando
+   uma espera vira conciliação. Precisa antes do commit 3.
 
-3. **Estimativa de custo por geração.** `estimateCost` precisa de um número. Sem
-   preço verificável por run, a proposta é um valor fixo conservador por
-   organização, configurável, com conciliação humana. Precisa do valor.
+3. **Intervalo do Cron.** Proposta: a cada 5 min. Mais curto reduz latência e
+   aumenta invocações; mais longo faz o oposto. Precisa antes do commit 5.
 
-4. **`maxAttempts` e janela de backoff.** Proposta: 5 tentativas, base 30 s,
-   teto 15 min, full jitter. Números fáceis de mudar, mas convém fixá-los antes
-   do commit 3.
+4. **Reagendamento da pausa.** Proposta: 5 min fixos enquanto o freio estiver
+   ligado. Precisa antes do commit 6.
 
-5. **TTL da reserva de crédito.** Proposta: 2 h, tempo suficiente para um run
-   longo do Cursor mais folga. Se um run puder passar disso, o TTL precisa
-   crescer ou a reserva precisa ser estendida pelo heartbeat.
-
-6. **Retenção de jobs concluídos.** Nada no plano os apaga. Se a tabela crescer
-   demais, entra uma rotina de expurgo — mas isso muda a auditabilidade e
-   merece decisão explícita.
+5. **Capacidades reais do Cursor.** O commit 11 se comporta de três formas
+   diferentes conforme `idempotentStart` e `reconcileByKey`. O padrão seguro é
+   ambos falsos — que leva a `CONCILIACAO`. Confirmar contra a API real muda a
+   experiência, não a corretude.
 
 ---
 
@@ -731,29 +876,27 @@ fim de cada commit.
 
 Herdados da Fase 3, ainda abertos:
 
-- **Validar contra a API real o campo `link` da Vercel e o
-  `template_repository` do GitHub no primeiro repositório descartável.** Toda a
-  lógica de proveniência depende desses dois campos virem preenchidos como os
-  mappers esperam.
-- Organização exclusiva do GitHub, com os dois Apps instalados e escopos
-  conferidos.
-- Convenções de nome de repositório e de projeto Vercel não confirmadas contra
-  a API.
-- `NOX_SITE_TEMPLATE_COMMIT`, `NOX_SITE_KIT_VERSION` e `NOX_SITE_KIT_SHA256`
+- **Validar contra a API real o campo `link` da Vercel e o `template_repository`
+  do GitHub no primeiro repositório descartável.** Toda a lógica de proveniência
+  depende deles.
+- Organização exclusiva do GitHub, com os dois Apps e escopos conferidos.
+- Convenções de nome de repositório e de projeto Vercel não confirmadas.
+- `NOX_SITE_TEMPLATE_COMMIT`, `NOX_SITE_KIT_VERSION`, `NOX_SITE_KIT_SHA256`
   apontando para artefatos reais.
-- O SQL manual do `SecretRef` a reler antes de gerar a próxima migration.
+- O SQL manual do `SecretRef` a reler antes da próxima migration — agora com os
+  índices parciais do `Job` e o `CHECK` do `CreditAccount` na mesma situação.
 
 Novos desta fase:
 
-- **Conta e credencial do Cursor Cloud Agent**, com `SecretRef` próprio, e
-  confirmação de que a API expõe run id, estado, branch e PR — a porta v2 assume
-  os quatro.
-- **Preço por run verificável.** Enquanto não existir, a conciliação é
-  administrativa e a reserva é conservadora; ligar `LIVE` sem isso significa
-  gastar sem teto confiável.
-- **`CRON_SECRET` definido na Vercel**, e confirmação de que o Cron chama a rota
-  com o cabeçalho esperado.
-- **Semântica real de `FOR UPDATE SKIP LOCKED` no Postgres gerenciado de
-  produção.** O plano valida no Postgres local; um provedor com pooler em modo
-  transação pode se comportar diferente, e isso precisa ser confirmado antes do
-  primeiro consumidor em produção.
+- **Conta e credencial do Cursor**, com `SecretRef` próprio, e confirmação de que
+  a API expõe run id, estado, branch e PR.
+- **Capacidades de idempotência do Cursor.** Sem `idempotentStart` nem
+  `reconcileByKey`, toda ambiguidade vira trabalho humano — operável, mas caro em
+  atenção.
+- **Preço por run verificável.** Enquanto não existir, a política local é
+  estimativa e a conciliação é administrativa.
+- **`CRON_SECRET` na Vercel**, e confirmação de que o Cron envia o cabeçalho
+  esperado.
+- **Semântica de `FOR UPDATE SKIP LOCKED` no Postgres gerenciado.** Validado no
+  local; um pooler em modo transação pode se comportar diferente, e isso precisa
+  ser confirmado antes do primeiro consumidor em produção.
