@@ -8,6 +8,7 @@ import { IntegrationDisabledError, ProviderPreflightError } from "@/lib/provider
 import type { GitRepositoryProvider, HostingProvider } from "@/lib/providers/ports";
 import { getGitRepositoryProvider, getHostingProvider } from "@/lib/providers/registry";
 
+import { assertProvisioningEligible, type EligibleBrief } from "./eligibility";
 import { sitesOwnerFallback } from "./naming";
 import { loadProvisionableProject, recordStepFailure, type ProvisioningStep } from "./state";
 
@@ -15,6 +16,8 @@ export type ProvisioningContext = {
   actor: Actor;
   project: Awaited<ReturnType<typeof loadProvisionableProject>>;
   mode: IntegrationMode;
+  /** The parsed, verified v2 brief. Steps never re-read or re-parse it. */
+  eligible: EligibleBrief;
 };
 
 /**
@@ -33,7 +36,11 @@ export async function openProvisioningContext(params: {
   const mode = await getEffectiveMode(params.actor.organizationId, params.provider);
   if (mode === "DESLIGADO") throw new IntegrationDisabledError(params.provider);
 
-  return { actor: params.actor, project, mode };
+  // The last gate before any provider is reachable. Every step opens its
+  // context through here, so eligibility cannot be skipped by adding a step.
+  const eligible = assertProvisioningEligible(project);
+
+  return { actor: params.actor, project, mode, eligible };
 }
 
 export async function gitProviderFor(context: ProvisioningContext): Promise<GitRepositoryProvider> {

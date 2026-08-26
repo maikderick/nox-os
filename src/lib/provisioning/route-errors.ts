@@ -10,6 +10,8 @@ import {
   redactProviderError,
 } from "@/lib/providers/errors";
 
+import { ProvisioningNotEligibleError } from "./eligibility";
+
 /**
  * Turns a provider refusal into the response it describes.
  *
@@ -21,6 +23,11 @@ export function provisioningErrorResponse(error: unknown): NextResponse | null {
   const answer = (status: number, code: string, message: string) =>
     NextResponse.json({ error: redactProviderError(message), code }, { status });
 
+  if (error instanceof ProvisioningNotEligibleError) {
+    // The request is well formed and the caller is allowed; the project simply
+    // is not in a state where provisioning means anything.
+    return answer(409, error.code, error.message);
+  }
   if (error instanceof IntegrationDisabledError) {
     return answer(409, error.code, error.message);
   }

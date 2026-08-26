@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { permissionsForRole } from "../../src/lib/authz/permissions";
 import { sharedFakeWorld } from "../../src/lib/providers/fake/fake-world";
+import { projectRow } from "../helpers/provisioning-fixtures";
 
 const modeBox = vi.hoisted(() => ({ mode: "FALSO" as string }));
 
@@ -47,20 +48,6 @@ function actorWith(role: "ADMIN" | "OPERADOR") {
 
 const admin = actorWith("ADMIN");
 
-function projectRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "project-1",
-    organizationId: "org-1",
-    name: "Site Padaria Aurora",
-    slug: "site-padaria-aurora",
-    client: { id: "client-1", name: "Padaria Aurora", slug: "padaria-aurora" },
-    currentBriefVersion: null,
-    repository: null,
-    hostingProject: null,
-    provisioning: null,
-    ...overrides,
-  };
-}
 
 describe("provisioning step 1 — repository", () => {
   beforeEach(() => {
@@ -102,7 +89,7 @@ describe("provisioning step 1 — repository", () => {
     const result = await provisionRepository({ actor: admin, siteProjectId: "project-1" });
 
     expect(result.alreadyDone).toBe(false);
-    expect(result.repository.name).toBe("site-padaria-aurora");
+    expect(result.repository.name).toBe("site-oficina");
     expect(result.repository.protectedAt).toBeInstanceOf(Date);
 
     const created = [...sharedFakeWorld.repositories.values()][0];

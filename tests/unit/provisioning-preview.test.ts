@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { permissionsForRole } from "../../src/lib/authz/permissions";
 import { sharedFakeWorld } from "../../src/lib/providers/fake/fake-world";
+import { REPO_ROW as REPO, projectRow as baseProjectRow } from "../helpers/provisioning-fixtures";
 
 const modeBox = vi.hoisted(() => ({ mode: "FALSO" as string }));
 
@@ -43,32 +44,19 @@ const admin = {
   permissions: permissionsForRole("ADMIN"),
 };
 
-const REPO = {
-  owner: "nox-sites-falso",
-  name: "site-oficina",
-  externalId: "repo_1",
-  url: "https://github.example/nox-sites-falso/site-oficina",
-  defaultBranch: "main",
-};
 
 function projectRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "project-1",
-    organizationId: "org-1",
-    name: "Site Oficina",
-    slug: "site-oficina",
-    client: { id: "client-1", name: "Oficina", slug: "oficina" },
-    currentBriefVersion: null,
+  return baseProjectRow({
     repository: REPO,
     hostingProject: {
       name: "site-oficina",
       externalId: "prj_1",
       url: "https://site-oficina.vercel.example",
-      linkedAt: new Date(),
+      linkedAt: new Date("2026-08-25T15:20:00.000Z"),
     },
     provisioning: { commitSha: null, contentSha256: null },
     ...overrides,
-  };
+  });
 }
 
 /** Brings the fake world to "repository committed, project created". */

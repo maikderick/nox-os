@@ -3,7 +3,6 @@ import "server-only";
 import { type Actor } from "@/lib/authz/dal";
 import { prisma } from "@/lib/db";
 import { ProviderPreflightError } from "@/lib/providers/errors";
-import { parseSiteBrief } from "@/lib/site-factory/brief-schema";
 import {
   buildSiteContentSnapshot,
   buildSiteManifest,
@@ -73,14 +72,9 @@ export async function provisionContent(params: {
       );
     }
 
-    const briefVersion = context.project.currentBriefVersion;
-    if (!briefVersion) {
-      throw new ProviderPreflightError(
-        "O projeto ainda não tem um briefing. Conclua o briefing antes de gerar o site.",
-      );
-    }
-
-    const brief = parseSiteBrief(briefVersion.contentJson);
+    // Already parsed and verified by the eligibility gate; re-reading the row
+    // here would be a second source of truth for the same bytes.
+    const { brief, version: briefVersion, factsHash } = context.eligible;
     const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
 
     const content = buildSiteContentSnapshot({
@@ -91,7 +85,7 @@ export async function provisionContent(params: {
         contactEmail: settings?.privacyEmail ?? null,
         // The settings row's own timestamp, so the snapshot changes only when
         // the policy actually changed.
-        updatedAt: (settings?.updatedAt ?? briefVersion.createdAt).toISOString(),
+        updatedAt: (settings?.updatedAt ?? context.project.currentBriefVersion!.createdAt).toISOString(),
         sections: [
           {
             heading: "Tratamento de dados",
@@ -118,15 +112,15 @@ export async function provisionContent(params: {
 
     const manifest = buildSiteManifest({
       projectRef: context.project.id,
-      briefVersion: briefVersion.version,
-      factsHash: briefVersion.factsHash,
+      briefVersion: briefVersion,
+      factsHash: factsHash,
       content,
       templateCommit: templateIdentity().commit,
       templateRepository: templateIdentity().repository,
       siteKit: templateIdentity().siteKit,
       // Derived from the brief version, not from now: the same brief must
       // produce the same bytes however many times this runs.
-      generatedAt: briefVersion.createdAt.toISOString(),
+      generatedAt: context.project.currentBriefVersion!.createdAt.toISOString(),
     });
 
     const provisioning = context.project.provisioning;
@@ -148,7 +142,7 @@ export async function provisionContent(params: {
         defaultBranch: repository.defaultBranch,
       },
       branch: repository.defaultBranch,
-      message: `conteúdo: briefing v${briefVersion.version}`,
+      message: `conteúdo: briefing v${briefVersion}`,
       files: [
         { path: CONTENT_PATH, content: canonicalJsonStringify(content) },
         { path: MANIFEST_PATH, content: canonicalJsonStringify(manifest) },
@@ -168,7 +162,7 @@ export async function provisionContent(params: {
       entityId: context.project.id,
       meta: {
         mode: context.mode,
-        briefVersion: briefVersion.version,
+        briefVersion: briefVersion,
         contentSha256,
         commitSha: commit.sha,
       },

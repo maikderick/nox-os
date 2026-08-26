@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { permissionsForRole } from "../../src/lib/authz/permissions";
 import { sharedFakeWorld } from "../../src/lib/providers/fake/fake-world";
+import { REPO_ROW as REPO, projectRow } from "../helpers/provisioning-fixtures";
 
 const modeBox = vi.hoisted(() => ({ mode: "FALSO" as string }));
 
@@ -44,35 +45,14 @@ const admin = {
   permissions: permissionsForRole("ADMIN"),
 };
 
-const REPO = {
-  owner: "nox-sites-falso",
-  name: "site-oficina",
-  externalId: "repo_1",
-  url: "https://github.example/nox-sites-falso/site-oficina",
-  defaultBranch: "main",
-};
 
-function projectRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "project-1",
-    organizationId: "org-1",
-    name: "Site Oficina",
-    slug: "site-oficina",
-    client: { id: "client-1", name: "Oficina", slug: "oficina" },
-    currentBriefVersion: null,
-    repository: REPO,
-    hostingProject: null,
-    provisioning: null,
-    ...overrides,
-  };
-}
 
 describe("provisioning step 3 — hosting", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     sharedFakeWorld.reset();
     modeBox.mode = "FALSO";
-    mocks.projectFindFirst.mockResolvedValue(projectRow());
+    mocks.projectFindFirst.mockResolvedValue(projectRow({ repository: REPO }));
     mocks.provUpsert.mockResolvedValue({});
     mocks.provUpdate.mockResolvedValue({});
     mocks.userFindUnique.mockResolvedValue({ id: "user-1" });
