@@ -5,6 +5,7 @@ const roleBox = vi.hoisted(() => ({
 }));
 
 const mocks = vi.hoisted(() => ({
+  transaction: vi.fn(),
   settingFindMany: vi.fn(),
   settingFindUnique: vi.fn(),
   settingUpsert: vi.fn(),
@@ -19,6 +20,10 @@ vi.mock("@/lib/authz/dal", async () => {
 });
 vi.mock("@/lib/db", () => ({
   prisma: {
+    // The real client hands the callback a transaction-bound client; the same
+    // stubs stand in for it, so a test can assert both writes happened inside
+    // one call.
+    $transaction: mocks.transaction,
     integrationSetting: {
       findMany: mocks.settingFindMany,
       findUnique: mocks.settingFindUnique,
@@ -44,6 +49,17 @@ describe("integrations route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     roleBox.role = "ADMIN";
+    mocks.transaction.mockImplementation(
+      async (run: (tx: unknown) => Promise<unknown>) =>
+        run({
+          integrationSetting: {
+            findUnique: mocks.settingFindUnique,
+            upsert: mocks.settingUpsert,
+          },
+          auditLog: { create: mocks.auditCreate },
+          user: { findUnique: mocks.userFindUnique },
+        }),
+    );
     mocks.settingFindMany.mockResolvedValue([]);
     mocks.settingFindUnique.mockResolvedValue(null);
     mocks.settingUpsert.mockResolvedValue({});
@@ -77,6 +93,8 @@ describe("integrations route", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.settingUpsert).toHaveBeenCalledOnce();
+    // One transaction, holding both writes.
+    expect(mocks.transaction).toHaveBeenCalledOnce();
     const audited = mocks.auditCreate.mock.calls[0][0].data as Record<string, unknown>;
     expect(audited.action).toBe("integration.mode.update");
     expect(String(audited.metaJson)).toContain('"from":"DESLIGADO"');
@@ -104,6 +122,18 @@ describe("integrations route", () => {
     const write = await PATCH(patchRequest({ provider: "github", mode: "FALSO" }));
     expect(write.status).toBe(403);
     expect(mocks.settingUpsert).not.toHaveBeenCalled();
+  });
+
+  it("rolls the mode change back when its audit entry fails", async () => {
+    // The audit write throws inside the transaction, so nothing commits. A mode
+    // change with no trace is exactly what the transaction exists to prevent.
+    mocks.auditCreate.mockRejectedValueOnce(new Error("falha proposital na auditoria"));
+
+    await expect(
+      PATCH(patchRequest({ provider: "github", mode: "FALSO" })),
+    ).rejects.toThrow(/auditoria/);
+
+    expect(mocks.transaction).toHaveBeenCalledOnce();
   });
 
   it("rejects an unknown provider before touching the database", async () => {

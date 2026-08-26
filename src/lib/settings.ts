@@ -1,4 +1,12 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "./db";
+
+/**
+ * Either the pooled client or one bound to an open transaction, so a caller can
+ * make an audit entry part of the same unit of work as the change it describes.
+ */
+type AuditDb = Prisma.TransactionClient;
 
 export async function ensureDefaultSettings() {
   return prisma.appSettings.upsert({
@@ -19,22 +27,32 @@ export async function ensureDefaultSettings() {
   });
 }
 
+/**
+ * Records what happened.
+ *
+ * `db` takes a transaction client so an entry and the change it describes commit
+ * or roll back together. Without it, a change could land with no trace, or a
+ * trace could survive a change that was rolled back — and an incident review
+ * cannot tell which of the two it is looking at.
+ */
 export async function writeAudit(params: {
   userId?: string | null;
   action: string;
   entity?: string;
   entityId?: string;
   meta?: unknown;
+  db?: AuditDb;
 }) {
+  const db = params.db ?? prisma;
   const userId = params.userId
     ? (
-        await prisma.user.findUnique({
+        await db.user.findUnique({
           where: { id: params.userId },
           select: { id: true },
         })
       )?.id ?? null
     : null;
-  await prisma.auditLog.create({
+  await db.auditLog.create({
     data: {
       userId,
       action: params.action,

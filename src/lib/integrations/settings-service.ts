@@ -113,50 +113,53 @@ export async function setIntegrationMode(params: {
   assertPermission(params.actor, "integration:manage");
   if (!isModeAvailable(params.mode)) throw new IntegrationModeNotAvailableError(params.mode);
 
-  const previous = await prisma.integrationSetting.findUnique({
-    where: {
-      organizationId_provider: {
-        organizationId: params.actor.organizationId,
-        provider: params.provider,
-      },
-    },
-    select: { mode: true },
-  });
-
-  const enabling = params.mode !== "DESLIGADO";
-  await prisma.integrationSetting.upsert({
-    where: {
-      organizationId_provider: {
-        organizationId: params.actor.organizationId,
-        provider: params.provider,
-      },
-    },
-    create: {
+  const key = {
+    organizationId_provider: {
       organizationId: params.actor.organizationId,
       provider: params.provider,
-      mode: params.mode,
-      enabledById: enabling ? params.actor.userId : null,
-      enabledAt: enabling ? new Date() : null,
     },
-    update: {
-      mode: params.mode,
-      enabledById: enabling ? params.actor.userId : null,
-      enabledAt: enabling ? new Date() : null,
-    },
-  });
+  };
+  const enabling = params.mode !== "DESLIGADO";
 
-  // Before and after, with the actor: turning an integration on is the kind of
-  // change an incident review has to be able to reconstruct.
-  await writeAudit({
-    userId: params.actor.userId,
-    action: "integration.mode.update",
-    entity: "IntegrationSetting",
-    entityId: `${params.actor.organizationId}:${params.provider}`,
-    meta: {
-      provider: params.provider,
-      from: previous?.mode ?? "DESLIGADO",
-      to: params.mode,
-    },
+  // The change and its record commit together. A mode change that landed with no
+  // audit entry, or an entry for a change that rolled back, are both worse than
+  // either operation failing: an incident review could not tell them apart.
+  await prisma.$transaction(async (tx) => {
+    const previous = await tx.integrationSetting.findUnique({
+      where: key,
+      select: { mode: true },
+    });
+
+    await tx.integrationSetting.upsert({
+      where: key,
+      create: {
+        organizationId: params.actor.organizationId,
+        provider: params.provider,
+        mode: params.mode,
+        enabledById: enabling ? params.actor.userId : null,
+        enabledAt: enabling ? new Date() : null,
+      },
+      update: {
+        mode: params.mode,
+        enabledById: enabling ? params.actor.userId : null,
+        enabledAt: enabling ? new Date() : null,
+      },
+    });
+
+    // Before and after, with the actor: turning an integration on is exactly the
+    // kind of change a review has to be able to reconstruct.
+    await writeAudit({
+      db: tx,
+      userId: params.actor.userId,
+      action: "integration.mode.update",
+      entity: "IntegrationSetting",
+      entityId: `${params.actor.organizationId}:${params.provider}`,
+      meta: {
+        provider: params.provider,
+        from: previous?.mode ?? "DESLIGADO",
+        to: params.mode,
+      },
+    });
   });
 
   const statuses = await listIntegrations(params.actor);
