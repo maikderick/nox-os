@@ -51,6 +51,9 @@ export const PERMISSIONS = [
   // Provisionamento
   "provisioning:read",
   "provisioning:run",
+  // Fila durável
+  "job:read",
+  "job:run",
   // Plataforma
   "settings:write",
   "usage:read",
@@ -77,6 +80,7 @@ const LEITOR: Permission[] = [
 const OPERADOR: Permission[] = [
   ...LEITOR,
   "provisioning:read",
+  "job:read",
   "client:write",
   "project:write",
   "brief:write",
@@ -92,6 +96,7 @@ const ADMIN: Permission[] = [
   "org:manage_members",
   "integration:manage",
   "provisioning:run",
+  "job:run",
   "client:delete",
   "project:delete",
   "brief:approve",
