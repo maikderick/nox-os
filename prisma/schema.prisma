@@ -44,16 +44,17 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships  OrganizationMembership[]
-  integrations IntegrationSetting[]
-  secretRefs   SecretRef[]
-  clients        Client[]
-  siteProjects   SiteProject[]
-  repositories   Repository[]
+  memberships     OrganizationMembership[]
+  integrations    IntegrationSetting[]
+  secretRefs      SecretRef[]
+  clients         Client[]
+  siteProjects    SiteProject[]
+  repositories    Repository[]
   hostingProjects HostingProject[]
-  domains      Domain[]
-  assets       Asset[]
-  usageEntries UsageLedger[]
+  domains         Domain[]
+  assets          Asset[]
+  usageEntries    UsageLedger[]
+  jobs            Job[]
 }
 
 model OrganizationMembership {
@@ -139,6 +140,7 @@ model SiteProject {
   repository     Repository?
   hostingProject HostingProject?
   provisioning   SiteProvisioning?
+  jobs           Job[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])
@@ -187,6 +189,7 @@ model GenerationRun {
   updatedAt      DateTime         @updatedAt
 
   revisions SiteRevision[] @relation("SiteRevisionRun")
+  jobs      Job[]
 
   @@index([siteProjectId, status])
   @@index([provider, providerRunId])
@@ -601,27 +604,27 @@ model SecretRef {
 
 /// O repositório privado de um site. Um por SiteProject.
 model Repository {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  siteProjectId  String       @unique
-  siteProject    SiteProject  @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
-  provider       String       @default("github")
-  owner          String
-  name           String
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId     String       @unique
+  siteProject       SiteProject  @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  provider          String       @default("github")
+  owner             String
+  name              String
   /// Nulo até a criação remota acontecer; sintético no modo FALSO.
-  externalId     String?
-  url            String?
-  defaultBranch  String       @default("main")
-  installationId String?
+  externalId        String?
+  url               String?
+  defaultBranch     String       @default("main")
+  installationId    String?
   /// Marcado imediatamente antes de chamar a criação remota. Distingue "nunca
   /// tentei" de "tentei e não sei se completou" — sem isso, uma repetição
   /// adotaria um repositório homônimo que nunca foi nosso.
   creationStartedAt DateTime?
   /// Só está concluído com externalId e protectedAt preenchidos.
-  protectedAt    DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  protectedAt       DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   @@unique([provider, owner, name])
   @@index([organizationId])
@@ -629,21 +632,21 @@ model Repository {
 
 /// O projeto de hospedagem de um site. Um por SiteProject.
 model HostingProject {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  siteProjectId  String       @unique
-  siteProject    SiteProject  @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
-  provider       String       @default("vercel")
-  externalId     String?
-  name           String
-  url            String?
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId     String       @unique
+  siteProject       SiteProject  @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  provider          String       @default("vercel")
+  externalId        String?
+  name              String
+  url               String?
   /// Mesma ideia do Repository: marca a tentativa antes da chamada remota.
   creationStartedAt DateTime?
   /// Só está concluído com linkedAt preenchido.
-  linkedAt       DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  linkedAt          DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   @@index([organizationId])
 }
@@ -669,4 +672,73 @@ model SiteProvisioning {
   updatedAt         DateTime    @updatedAt
 
   @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Fila durável — uma etapa por job, e nada roda fora dela
+// ---------------------------------------------------------------------------
+
+/// Uma etapa de trabalho durável.
+///
+/// Serverless não sustenta laço vivo, então não existe worker em processo: o
+/// consumidor é uma rota com orçamento que adquire um job por vez, sob demanda.
+/// O que torna isso seguro é a chave por etapa — cada etapa de um trabalho
+/// lógico tem a sua, e por isso a cadeia inteira cabe na mesma fila sem que uma
+/// etapa impeça a seguinte de ser enfileirada.
+model Job {
+  id String @id @default(cuid())
+
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId   String?
+  siteProject     SiteProject?   @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  /// O job aponta para a intenção que já existe. O handler nunca cria outra.
+  generationRunId String?
+  generationRun   GenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: Cascade)
+
+  // generation.start | generation.poll | checks.poll | preview.poll | credit.threshold
+  kind   String
+  // PENDENTE | EM_EXECUCAO | PAUSADO | CONCILIACAO | CONCLUIDO | FALHOU | CARTA_MORTA
+  status String @default("PENDENTE")
+
+  /// Identifica **uma etapa** de um trabalho lógico, nunca o trabalho inteiro.
+  idempotencyKey String
+  /// Só para trabalho que muta. Nulo para observadores, que não se excluem.
+  concurrencyKey String?
+
+  /// Só identificadores que esta aplicação produziu — ver `payload.ts`.
+  payloadJson String
+
+  /// Tentativas de falha real. Espera não conta aqui.
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(5)
+  /// Voltas de espera. Não consomem tentativa nem aplicam backoff de falha.
+  pollCount      Int       @default(0)
+  pollDeadlineAt DateTime?
+
+  runAfter       DateTime  @default(now())
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  pausedReason   String?
+
+  /// Redigido por allowlist antes de gravar, como em `SiteProvisioning`.
+  lastError     String?
+  lastErrorCode String?
+  correlationId String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  finishedAt DateTime?
+
+  /// A unicidade real vive em dois índices escritos à mão — ver
+  /// 20260826_fila_durable. O Prisma 5 não expressa índice parcial, e um índice
+  /// total sobre `concurrencyKey` impediria o segundo trabalho do mesmo projeto
+  /// para sempre, não só enquanto o primeiro estivesse vivo.
+  /// Uma etapa, um job, para sempre. O nome é fixado com `map` porque a
+  /// migration cria o índice à mão, ao lado do parcial que o Prisma não
+  /// expressa: os dois precisam sair do mesmo arquivo para serem lidos juntos.
+  @@unique([organizationId, idempotencyKey], map: "Job_idempotency_uniq")
+  @@index([status, runAfter])
+  @@index([organizationId, kind, status])
+  @@index([leaseExpiresAt])
 }
