@@ -68,6 +68,23 @@ RASCUNHO -> BRIEFING_PRONTO -> GERANDO -> PREVIA_PRONTA -> EM_REVISAO
 transições não aparecem como ações humanas. Uma pessoa pode pedir geração ou publicação,
 mas somente o orquestrador confirma a conclusão.
 
+### Etapas ainda fechadas
+
+Enquanto o orquestrador não existe, a única saída de `GERANDO` e `PUBLICANDO` seria uma
+transição de sistema que ninguém emite — entrar nesses estados prenderia o projeto para
+sempre. Por isso o domínio recusa a entrada:
+
+- `STAGES_PENDING_ORCHESTRATOR` em `src/lib/site-factory/states.ts` lista os dois estados.
+- `transitionSiteProject` recusa depois de verificar a autorização e antes de qualquer
+  escrita, então a recusa não altera o projeto.
+- `allowedTransitionsFor` não oferece a ação, então a interface não propõe o que o domínio
+  vai negar.
+- A resposta é `409` com `code: "ETAPA_INDISPONIVEL"`.
+
+Retirar um estado dessa lista é o último passo de ligar o orquestrador correspondente — um
+serviço que cria o `GenerationRun`, chama o provedor, registra o resultado e aplica a
+transição de sistema —, nunca uma alteração isolada.
+
 ## Provedores de geração
 
 `CodeGenerationProvider` recebe projeto, versão do briefing e conteúdo validado. O
@@ -83,12 +100,56 @@ implementação server-side e grava no banco apenas identificadores e resultados
 - Alterar conteúdo aprovado devolve a demonstração para `DRAFT`.
 - Aprovar exige `publish:approve`.
 
+## Limite atual: uma organização operacional
+
+A fábrica é multi-organização: `Client`, `SiteProject`, `SiteBriefVersion`,
+`GenerationRun`, `SiteRevision`, `Deployment`, `Domain`, `Asset` e `UsageLedger` têm
+`organizationId`, e todo acesso passa pelo `Actor` resolvido pelo DAL. Os testes de
+integração provam que uma organização não lê, não lista, não transiciona, não versiona
+briefing e não converte o lead da outra.
+
+Cinco modelos herdados continuam **globais**, sem `organizationId`:
+
+| Modelo | Consequência hoje |
+| --- | --- |
+| `Business` | Qualquer organização enxerga e converte qualquer lead. |
+| `DemoLanding` | Demonstrações não pertencem a nenhuma organização. |
+| `ImportJob` | A fila de importação é uma só para toda a instalação. |
+| `AppSettings` | Marca, consultor, meta, raios e retenção são únicos e compartilhados. |
+| `AuditLog` | A trilha mistura ações de todas as organizações. |
+
+Com uma única organização operacional isso não tem efeito observável. Com duas, cada linha
+dessa tabela vira vazamento entre clientes.
+
+### Gate
+
+**Uma segunda organização não pode ser habilitada** antes de uma destas condições:
+
+1. os cinco modelos acima receberem `organizationId`, com backfill e escopo em todas as
+   consultas; **ou**
+2. existir uma política formal de pool global com atribuição explícita — quem é dono de um
+   lead, quem pode convertê-lo, o que acontece com a fila de importação compartilhada, e
+   quais configurações são globais e quais passam a ser por organização.
+
+Até lá o beta suporta **somente uma organização operacional**, e o convite de membros para
+uma segunda organização deve permanecer fechado.
+
 ## Banco e migração
 
 As migrations são aditivas. A organização `nox-os` é criada sem alterar leads, e cada
 usuário existente recebe uma associação: o administrador mais antigo vira `OWNER`, demais
 administradores viram `ADMIN`, operadores viram `OPERADOR` e papéis desconhecidos viram
 `LEITOR`. Contas inativas recebem associações inativas.
+
+Numa instalação nova as migrations rodam antes do seed, então o backfill não encontra
+usuário nenhum. O seed chama `ensureDefaultOrganizationOn`, que cria a organização padrão e
+torna o administrador semeado o `OWNER`. A função nunca escreve sobre uma associação
+existente: reativar um acesso que um administrador desligou é exatamente o que um
+bootstrap não pode fazer.
+
+A submissão do assistente é uma única `prisma.$transaction`: cliente, projeto e primeira
+versão do briefing entram juntos ou não entram. O Zod roda antes de abrir a transação, e
+uma falha em qualquer passo não deixa cliente nem projeto órfãos.
 
 ## Arquitetura-alvo e contrato do site
 

@@ -144,14 +144,27 @@ lead, negócio, abordagem e briefing. O servidor então:
 3. grava a primeira `SiteBriefVersion` imutável, com fonte e data de confirmação em cada fato;
 4. move o projeto para `BRIEFING_PRONTO`.
 
+Os quatro passos acontecem em uma única transação: ou entram juntos, ou nada é gravado.
+
 Estados disponíveis: `RASCUNHO`, `BRIEFING_PRONTO`, `GERANDO`, `PREVIA_PRONTA`,
 `EM_REVISAO`, `APROVADO`, `PUBLICANDO`, `PUBLICADO` e `FALHOU`. A máquina de estados
 recusa saltos e separa transições humanas de retornos do orquestrador. Somente
 `PUBLICADO` é público; a passagem para `PUBLICANDO` exige `publish:approve`.
 
+`GERANDO` e `PUBLICANDO` ainda estão **fechados**: a saída deles é uma transição de
+sistema, e o orquestrador que a emite chega nas fases seguintes. Pedir a entrada responde
+`409` com `code: "ETAPA_INDISPONIVEL"` e não altera o projeto.
+
 Papéis da organização: `OWNER`, `ADMIN`, `OPERADOR` e `LEITOR`. Operadores executam o
 fluxo diário, mas não excluem registros, alteram configurações, gerenciam membros nem
-aprovam a própria publicação. Consulte [a arquitetura da fábrica](docs/arquitetura-fabrica-de-sites.md).
+aprovam a própria publicação. Toda rota de API resolve o autor pelo DAL e pede uma
+permissão nomeada — inclusive as rotas de prospecção, importação e demonstração.
+
+> **O beta suporta uma única organização operacional.** `Business`, `DemoLanding`,
+> `ImportJob`, `AppSettings` e `AuditLog` ainda são globais, sem `organizationId`. Habilitar
+> uma segunda organização exige antes escopá-los ou definir uma política formal de pool
+> global com atribuição. Veja o gate em
+> [a arquitetura da fábrica](docs/arquitetura-fabrica-de-sites.md).
 
 ### Criar no Lovable
 

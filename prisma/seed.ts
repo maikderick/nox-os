@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { normalizeName } from "../src/lib/dedupe";
 import { scoreOpportunity } from "../src/lib/score";
 import { normalizePhoneE164 } from "../src/lib/phone";
+import { ensureDefaultOrganizationOn } from "../src/lib/organizations/bootstrap-core";
 
 const prisma = new PrismaClient();
 
@@ -18,7 +19,7 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(adminPassword, 12);
 
-  await prisma.user.upsert({
+  const admin = await prisma.user.upsert({
     where: { email: adminEmail },
     create: {
       email: adminEmail,
@@ -28,6 +29,11 @@ async function main() {
     },
     update: { passwordHash },
   });
+
+  // Migrations run before the seed on a fresh install, so the backfill found no
+  // users. Without this the seeded administrator would own no membership and be
+  // refused by every guarded route.
+  await ensureDefaultOrganizationOn(prisma, admin);
 
   await prisma.appSettings.upsert({
     where: { id: "default" },
