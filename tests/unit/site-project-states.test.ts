@@ -4,6 +4,7 @@ import { permissionsForRole } from "../../src/lib/authz/permissions";
 import {
   allowedTransitionsFor,
   canTransition,
+  findTransition,
   hasInternalPreview,
   isPublicState,
   SITE_PROJECT_STATES,
@@ -36,17 +37,20 @@ describe("site project state machine", () => {
   });
 
   it("requires approval permission to publish", () => {
-    const operatorTargets = allowedTransitionsFor(
-      "APROVADO",
-      permissionsForRole("OPERADOR"),
-    ).map((transition) => transition.to);
-    const adminTargets = allowedTransitionsFor(
-      "APROVADO",
-      permissionsForRole("ADMIN"),
-    ).map((transition) => transition.to);
+    // The rule lives in the transition table, so it keeps holding while the
+    // stage itself is withheld for want of a deployment flow.
+    expect(findTransition("APROVADO", "PUBLICANDO")?.permission).toBe("publish:approve");
+    expect(permissionsForRole("OPERADOR")).not.toContain("publish:approve");
+    expect(permissionsForRole("ADMIN")).toContain("publish:approve");
+  });
 
-    expect(operatorTargets).not.toContain("PUBLICANDO");
-    expect(adminTargets).toContain("PUBLICANDO");
+  it("withholds publishing from everyone until the deployment flow exists", () => {
+    for (const role of ["OPERADOR", "ADMIN", "OWNER"] as const) {
+      const targets = allowedTransitionsFor("APROVADO", permissionsForRole(role)).map(
+        (transition) => transition.to,
+      );
+      expect(targets).not.toContain("PUBLICANDO");
+    }
   });
 
   it("keeps every draft and preview private", () => {

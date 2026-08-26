@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requirePermission } from "@/lib/authz/dal";
-import { withAuthorization } from "@/lib/authz/route";
+import { withSiteFactoryErrors } from "@/lib/site-factory/route-errors";
 import {
   getSiteProject,
   transitionSiteProject,
@@ -14,7 +14,7 @@ type Context = { params: Promise<{ id: string }> };
 const updateProjectSchema = z.object({ status: z.enum(SITE_PROJECT_STATES) }).strict();
 
 export async function GET(_request: Request, context: Context) {
-  return withAuthorization(async () => {
+  return withSiteFactoryErrors(async () => {
     const actor = await requirePermission("project:read");
     const { id } = await context.params;
     return NextResponse.json({ project: await getSiteProject(actor, id) });
@@ -22,7 +22,7 @@ export async function GET(_request: Request, context: Context) {
 }
 
 export async function PATCH(request: Request, context: Context) {
-  return withAuthorization(async () => {
+  return withSiteFactoryErrors(async () => {
     const actor = await requirePermission("project:write");
     const body = updateProjectSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) {

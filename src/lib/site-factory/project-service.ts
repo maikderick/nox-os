@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db";
 import {
   findTransition,
   isSiteProjectState,
+  isStagePendingOrchestrator,
+  SiteProjectStageUnavailableError,
   SiteProjectTransitionError,
   type SiteProjectState,
 } from "./states";
@@ -109,6 +111,12 @@ export async function transitionSiteProject(params: {
     throw new SiteProjectTransitionError(project.status, params.to);
   }
   assertPermission(params.actor, transition.permission);
+
+  // Checked after authorization so an unauthorized caller still gets 403, and
+  // before any write so a refused stage leaves the project exactly as it was.
+  if (isStagePendingOrchestrator(params.to)) {
+    throw new SiteProjectStageUnavailableError(params.to);
+  }
 
   return prisma.siteProject.update({
     where: { id: project.id },

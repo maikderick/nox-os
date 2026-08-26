@@ -98,8 +98,11 @@ export function canTransition(from: SiteProjectState, to: SiteProjectState): boo
 }
 
 /**
- * Transitions a person may ask for, given what they can do. System transitions
- * are excluded on purpose: they are reported, never requested.
+ * Transitions a person may ask for, given what they can do.
+ *
+ * System transitions are excluded on purpose: they are reported, never
+ * requested. Stages whose orchestrator does not exist yet are excluded too, so
+ * the UI never offers an action the domain is about to refuse.
  */
 export function allowedTransitionsFor(
   state: SiteProjectState,
@@ -107,7 +110,10 @@ export function allowedTransitionsFor(
 ): SiteProjectTransition[] {
   const granted = new Set(permissions);
   return transitionsFrom(state).filter(
-    (transition) => transition.permission !== null && granted.has(transition.permission),
+    (transition) =>
+      transition.permission !== null &&
+      granted.has(transition.permission) &&
+      !isStagePendingOrchestrator(transition.to),
   );
 }
 
@@ -138,5 +144,59 @@ export class SiteProjectTransitionError extends Error {
     this.name = "SiteProjectTransitionError";
     this.from = from;
     this.to = to;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Etapas ainda sem orquestrador
+// ---------------------------------------------------------------------------
+
+/**
+ * States a person cannot move a project into yet.
+ *
+ * `GERANDO` only makes sense once a service creates the `GenerationRun`, calls
+ * the provider, records the result and applies the matching system transition.
+ * `PUBLICANDO` waits on the deployment flow. Until each half exists, letting
+ * someone in would strand the project: the way out of both is a system
+ * transition, and no orchestrator exists to report one.
+ *
+ * Removing a state from this list is the last step of wiring its orchestrator,
+ * never a standalone change.
+ */
+export const STAGES_PENDING_ORCHESTRATOR = ["GERANDO", "PUBLICANDO"] as const;
+
+export type StagePendingOrchestrator = (typeof STAGES_PENDING_ORCHESTRATOR)[number];
+
+export function isStagePendingOrchestrator(
+  state: SiteProjectState,
+): state is StagePendingOrchestrator {
+  return (STAGES_PENDING_ORCHESTRATOR as readonly string[]).includes(state);
+}
+
+/** Stable codes, so a client can branch on the reason without parsing prose. */
+export const SITE_PROJECT_ERROR_CODES = {
+  stageUnavailable: "ETAPA_INDISPONIVEL",
+  invalidTransition: "TRANSICAO_INVALIDA",
+} as const;
+
+const STAGE_UNAVAILABLE_REASON: Record<StagePendingOrchestrator, string> = {
+  GERANDO:
+    "A geração de código ainda não está disponível: nenhum provedor executa a geração nem registra o resultado nesta fase.",
+  PUBLICANDO:
+    "A publicação ainda não está disponível: o fluxo de deployment não existe nesta fase.",
+};
+
+/**
+ * Raised instead of moving the project, so the refusal never leaves a row in a
+ * state nothing can leave.
+ */
+export class SiteProjectStageUnavailableError extends Error {
+  readonly code = SITE_PROJECT_ERROR_CODES.stageUnavailable;
+  readonly state: StagePendingOrchestrator;
+
+  constructor(state: StagePendingOrchestrator) {
+    super(STAGE_UNAVAILABLE_REASON[state]);
+    this.name = "SiteProjectStageUnavailableError";
+    this.state = state;
   }
 }

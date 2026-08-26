@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requirePermission } from "@/lib/authz/dal";
-import { withAuthorization } from "@/lib/authz/route";
+import { withSiteFactoryErrors } from "@/lib/site-factory/route-errors";
 import { briefCapabilities, siteBriefSchema } from "@/lib/site-factory/brief-schema";
 import { createSiteBriefVersion } from "@/lib/site-factory/brief-service";
 import { convertBusinessToClient } from "@/lib/site-factory/client-service";
@@ -19,14 +19,14 @@ const createProjectSchema = z
   .strict();
 
 export async function GET() {
-  return withAuthorization(async () => {
+  return withSiteFactoryErrors(async () => {
     const actor = await requirePermission("project:read");
     return NextResponse.json({ projects: await listSiteProjects(actor) });
   });
 }
 
 export async function POST(request: Request) {
-  return withAuthorization(async () => {
+  return withSiteFactoryErrors(async () => {
     const actor = await requirePermission("project:write");
     const body = createProjectSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) {
