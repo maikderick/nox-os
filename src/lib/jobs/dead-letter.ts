@@ -20,6 +20,38 @@ import { JobRefusal } from "./reasons";
  * `job:read`, and why the reset and its audit entry commit together.
  */
 
+/** `unique_violation`, the SQLSTATE PostgreSQL raises for a duplicate key. */
+const UNIQUE_VIOLATION = "23505";
+
+/**
+ * Whether a failed write was a unique index refusing it.
+ *
+ * The same collision reaches us under two different codes, and which one
+ * depends on how the statement was issued rather than on what happened:
+ *
+ *   * a **typed** write (`tx.job.update`) is reported as `P2002`, with the
+ *     offending fields in `meta.target`;
+ *   * a **raw** write (`$queryRaw`) is reported as `P2010` — "raw query failed"
+ *     — with the driver's own error underneath, and the SQLSTATE in `meta.code`.
+ *
+ * The reprocess update is raw, because only raw SQL can make the decision and
+ * the write the same statement. So it only ever produces `P2010`, and a handler
+ * that knew about `P2002` alone would let a genuine "another generation is
+ * already live for this project" escape as an unrecognised failure — a 500 with
+ * a correlation id, where the operator deserved a sentence explaining that the
+ * project is busy.
+ *
+ * The SQLSTATE is what is inspected, never the message: `meta.message` carries
+ * the constraint name and the colliding value, and it is neither stable nor
+ * ours to read.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code === "P2002") return true;
+  if (error.code !== "P2010") return false;
+  return (error.meta as { code?: unknown } | undefined)?.code === UNIQUE_VIOLATION;
+}
+
 export async function listDeadLetters(actor: Actor, limit = 50): Promise<Job[]> {
   assertPermission(actor, "job:read");
 
@@ -120,10 +152,14 @@ export async function reprocessDeadLetter(actor: Actor, jobId: string): Promise<
       `;
       revived = rows[0];
     } catch (error) {
-      // The partial index is behind the check above, for the race it cannot see.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      // The partial index is behind the check above, for the race it cannot
+      // see: the sibling that wins is uncommitted while this one reads, so the
+      // read finds nothing and the index is what refuses.
+      if (isUniqueViolation(error)) {
         throw new JobRefusal("TRABALHO_EM_ANDAMENTO");
       }
+      // Any other raw failure keeps going up, and is sanitized like anything
+      // else — a `P2010` with a different SQLSTATE is not a busy project.
       throw error;
     }
 
