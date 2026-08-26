@@ -55,6 +55,7 @@ model Organization {
   assets          Asset[]
   usageEntries    UsageLedger[]
   jobs            Job[]
+  IdempotencyKey  IdempotencyKey[]
 }
 
 model OrganizationMembership {
@@ -672,6 +673,52 @@ model SiteProvisioning {
   updatedAt         DateTime    @updatedAt
 
   @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Idempotência de requisição — a chave que impede o segundo trabalho
+// ---------------------------------------------------------------------------
+
+/// Uma intenção declarada pelo cliente, e o que respondemos a ela.
+///
+/// Existe para responder "isto já foi pedido?" **antes** de qualquer trabalho
+/// começar. Uma chave derivada de algo que a própria transação cria chegaria
+/// tarde: duas transações concorrentes derivariam chaves diferentes e as duas
+/// criariam trabalho. Por isso a chave vem de fora, e a linha é reservada
+/// primeiro.
+model IdempotencyKey {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// generation.request | ...
+  scope       String
+  /// Fornecida pelo cliente. Única dentro do escopo, dentro da organização.
+  key         String
+  /// Impressão do corpo. Mesma chave com corpo diferente é bug de quem chamou.
+  requestHash String
+
+  // EM_ANDAMENTO | CONCLUIDA
+  status String @default("EM_ANDAMENTO")
+
+  /// LOCAL — trabalho puro; vencer autoriza assumir.
+  /// EXTERNO_RECONCILIAVEL — o provedor responde o que existe para a chave.
+  /// EXTERNO_AMBIGUO — vencer **não** autoriza repetir; vai a conciliação.
+  ///
+  /// O padrão é o mais restritivo de propósito: quem não declarou o efeito
+  /// externo do que está fazendo não deve ter o benefício da dúvida.
+  sideEffect String @default("EXTERNO_AMBIGUO")
+
+  /// A resposta gravada, já passada pela allowlist. Nunca o objeto cru.
+  responseJson String?
+
+  /// Até quando a reserva desta chave vale. Ver `idempotency.ts`.
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, scope, key])
+  @@index([status, expiresAt])
 }
 
 // ---------------------------------------------------------------------------

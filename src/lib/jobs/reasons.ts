@@ -27,6 +27,9 @@ export const JOB_REASONS = [
   "MOTIVO_DE_PAUSA_DESCONHECIDO",
   "RESGATES_SUCESSIVOS",
   "SEM_HANDLER",
+  "CHAVE_EM_ANDAMENTO",
+  "CORPO_DIVERGENTE",
+  "EFEITO_EXTERNO_AMBIGUO",
 ] as const;
 
 export type JobReason = (typeof JOB_REASONS)[number];
@@ -102,6 +105,15 @@ const BUILDERS: Record<JobReason, (details: JobDetails) => string> = {
 
   RESGATES_SUCESSIVOS: () =>
     "Consumidores morreram seguidas vezes executando este job, e ele foi para conciliação em vez de ser resgatado de novo. Um trabalho que derruba quem o executa não se resolve tentando mais uma vez.",
+
+  CHAVE_EM_ANDAMENTO: () =>
+    "Este mesmo pedido já está sendo processado. Aguarde a resposta em vez de repetir: repetir agora criaria um segundo trabalho para a mesma intenção.",
+
+  CORPO_DIVERGENTE: () =>
+    "Esta chave de idempotência já foi usada com um conteúdo diferente. A mesma chave não pode significar dois pedidos — gere uma chave nova para uma intenção nova.",
+
+  EFEITO_EXTERNO_AMBIGUO: () =>
+    "Um pedido anterior com esta chave venceu sem registrar resposta, e não é possível descartar que ele tenha produzido efeito externo. Ele foi para conciliação; repetir às cegas poderia duplicar esse efeito.",
 
   SEM_HANDLER: (d) =>
     `Não há nesta versão do NOX OS quem execute ${d.kind ?? "esta etapa"}. O job foi para conciliação em vez de ser repetido: repetir não faz aparecer código que não existe.`,
