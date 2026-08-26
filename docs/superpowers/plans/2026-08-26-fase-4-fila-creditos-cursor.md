@@ -999,10 +999,38 @@ outra organização é recusado.
 
 **Arquivos** — `src/app/projetos/[id]/geracao/page.tsx` (com `pollCount` e
 `attempts` **separados** na tela), `src/app/organizacao/fila/page.tsx`,
-`src/lib/jobs/accelerators.ts`, `docs/runbook-fila.md`.
+`src/lib/jobs/accelerators.ts`, `src/lib/jobs/conciliation.ts`,
+`docs/runbook-fila.md`.
+
+#### A saída de `CONCILIACAO`
+
+Um job em conciliação **não** é reprocessável, e isso é desenho, não pendência.
+`reprocessDeadLetter` exige `CARTA_MORTA` e vai continuar exigindo: carta morta
+significa "falhou, tentamos tudo, a causa é conhecida"; conciliação significa
+"não sabemos o que aconteceu do outro lado". Repetir a segunda é exatamente a
+repetição às cegas que a fase inteira existe para evitar — e um botão genérico
+de "tentar de novo" na tela da fila é como ela apareceria.
+
+A saída é uma ação **própria**, que esta fase deixa registrada e o commit 15
+implementa:
+
+| Exigência | Por quê |
+| --- | --- |
+| Decisão **fechada**, uma por caminho: `EFEITO_CONFIRMADO`, `SEM_EFEITO_CONFIRMADO`, `DESCARTAR` | Quem resolve declara **o fato que apurou**, não "tente de novo". Cada decisão leva o job a um estado diferente, e nenhuma delas é "volte para a fila e veremos". |
+| Exige `job:run`, e a decisão vai à auditoria **na mesma transação** | Um job saindo de conciliação sem o nome de quem decidiu, ou um nome gravado para uma saída que rolou atrás, são indistinguíveis numa revisão. |
+| A reserva de crédito é liquidada **junto**, na mesma decisão | Conciliação de job e conciliação de crédito são o mesmo fato visto de dois lados. Resolver um e esquecer o outro deixa dinheiro comprometido sem dono. |
+| Nunca uma repetição genérica | Se a apuração concluir que nada aconteceu do outro lado, o caminho é enfileirar a etapa **de novo, explicitamente**, com a disposição do run coerente com o que foi apurado — não ressuscitar o job antigo com os contadores zerados. |
+
+Chega ali por três caminhos, e a tela precisa distinguir os três: prazo de
+espera estourado, efeito remoto ambíguo (`EM_TENTATIVA` ou `AMBIGUO`), e
+`leaseRecoveryCount` esgotado — este último é o único em que nada externo
+aconteceu, e ainda assim não se resolve repetindo.
 
 **Testes** — o acelerador nunca conclui nem cria job, e um sistema sem ele chega
-ao mesmo estado final, só mais devagar; permissões nas duas telas.
+ao mesmo estado final, só mais devagar; permissões nas duas telas; a tela da
+fila **não** oferece reprocessar para job em `CONCILIACAO`; cada decisão fechada
+leva ao seu estado e à sua linha de auditoria, e uma decisão sem `job:run` não
+escreve nada.
 
 ---
 
@@ -1155,20 +1183,42 @@ depois de qualquer reversão.
 ## Runbook (vira `docs/runbook-fila.md` no commit 15)
 
 **Fila parada.** Conferir `crons` e `CRON_SECRET`. Disparar `POST /api/jobs/run`
-e ler o retorno.
+autenticado e ler o retorno — `POST` move **somente a fila da sua organização**;
+a global é do agendador, por `GET` com a credencial do Cron. O retorno traz
+`reclaimed` e `claimed`: resgate acontece dentro da própria execução, então uma
+fila que parecia parada por lease de consumidor morto anda no primeiro disparo.
+
+**`lease_perdido` no retorno.** O handler decidiu, mas o job já não era dele
+quando foi liquidar — resgatado no meio. Não é falha e não conta tentativa; o
+job voltou para a fila. Repetido muitas vezes, procurar consumidores lentos ou
+lease curto demais.
 
 **Job em `PAUSADO`.** Freio global ou provedor desligado. Nada foi punido:
 `attempts` intocado. Religar; o job volta sozinho no ciclo seguinte ao
 vencimento dos 5 min.
 
 **Job travado em `EM_EXECUCAO`.** Lease de consumidor morto; a próxima passada
-reclama. Se não reclamar, alguém está estendendo — procurar `leaseOwner`.
+do consumidor reclama, antes de adquirir qualquer coisa. Se não reclamar, o
+lease está vivo — alguém está estendendo, procurar `leaseOwner`.
+
+**Job voltando sempre.** Conferir `leaseRecoveryCount`. Três resgates e ele para
+de circular: não é a plataforma caindo, é o job derrubando quem o executa.
 
 **`pollCount` alto.** Espera normal. Conferir `pollDeadlineAt` antes de intervir.
 
-**Job em `CONCILIACAO`.** Ambíguo. **Não reprocessar às cegas.** Consultar o
-provedor — se houver `providerIdempotencyKey` e `reconcileByKey`, `findRunByKey`
-responde o que existe. Decidir a partir do fato.
+**Job em `CONCILIACAO`.** Ambíguo. **Não reprocessar às cegas** — e não há como:
+`reprocessDeadLetter` só aceita `CARTA_MORTA`, de propósito. Consultar o
+provedor primeiro; havendo `providerIdempotencyKey` e `reconcileByKey`,
+`findRunByKey` responde o que existe. Decidir a partir do fato, pela ação
+dedicada de resolução (commit 15), que exige uma decisão fechada, audita na
+mesma transação e liquida a reserva junto. Até ela existir, a saída é manual e
+deliberada, e isso é preferível a um botão de repetir.
+
+Três caminhos chegam aqui, e eles não se resolvem igual: prazo de espera
+estourado, efeito remoto ambíguo, e resgates de lease esgotados
+(`lastErrorCode = RESGATES_SUCESSIVOS`). Só o terceiro garante que nada
+aconteceu do outro lado — e mesmo ele não se resolve repetindo, porque o que
+esgotou os resgates foi o job derrubar consumidores.
 
 **Carta morta.** Ler `lastErrorCode` e o `correlationId`; o detalhe está no log,
 nunca na linha. Corrigir a causa e reprocessar.
