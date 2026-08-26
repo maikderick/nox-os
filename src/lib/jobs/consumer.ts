@@ -42,6 +42,15 @@ const MIN_SLICE_MS = 2_000;
 export type RunJobBatchParams = {
   /** Identifies this consumer for the lease. Defaults to a fresh id. */
   owner?: string;
+  /**
+   * Whose queue to work.
+   *
+   * Absent is the scheduler: one global consumer serving every tenant. Present
+   * is a person asking for their own organization's queue to move, and it
+   * narrows both the acquisition and the reclaim — a request from A must not
+   * run B's job, nor resurrect B's stuck one.
+   */
+  organizationId?: string;
   /** How long this invocation may keep working. */
   budgetMs?: number;
   /** Injectable so commits 9 to 14 can register theirs, and tests theirs. */
@@ -60,6 +69,8 @@ export type RunJobBatchParams = {
 
 export type JobBatchReport = {
   owner: string;
+  /** Present only for a tenant-scoped run. */
+  organizationId?: string;
   claimed: number;
   outcomes: Record<string, number>;
   stoppedBecause: "sem_trabalho" | "orcamento";
@@ -110,6 +121,7 @@ export async function runJobBatch(params: RunJobBatchParams = {}): Promise<JobBa
 
   const report: JobBatchReport = {
     owner,
+    ...(params.organizationId ? { organizationId: params.organizationId } : {}),
     claimed: 0,
     outcomes: {},
     stoppedBecause: "sem_trabalho",
@@ -128,7 +140,7 @@ export async function runJobBatch(params: RunJobBatchParams = {}): Promise<JobBa
       break;
     }
 
-    const job = await claimJob({ owner, leaseSeconds });
+    const job = await claimJob({ owner, leaseSeconds, organizationId: params.organizationId });
     if (!job) {
       report.stoppedBecause = "sem_trabalho";
       break;

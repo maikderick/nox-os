@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { assertCronRequest, hasCronCredential } from "@/lib/jobs/cron-auth";
+import { assertCronRequest } from "@/lib/jobs/cron-auth";
 
 const SECRET = "segredo-do-agendador-de-teste";
 
@@ -88,11 +88,4 @@ describe("the cron credential", () => {
     }
   });
 
-  it("notices whether a credential was offered at all", () => {
-    // This is what routes the request to the cron check instead of the session
-    // one; it says nothing about whether the credential is any good.
-    expect(hasCronCredential(request("qualquer coisa"))).toBe(true);
-    expect(hasCronCredential(request(""))).toBe(true);
-    expect(hasCronCredential(request())).toBe(false);
-  });
 });

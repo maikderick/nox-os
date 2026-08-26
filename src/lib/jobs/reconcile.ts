@@ -39,9 +39,22 @@ import { buildJobReasonMessage } from "./reasons";
  */
 export const MAX_LEASE_RECOVERIES = 3;
 
-export async function reclaimExpiredLeases(): Promise<Job[]> {
+export type ReclaimParams = {
+  /**
+   * Narrows the reclaim to one organization, exactly as `claimJob` does.
+   *
+   * A tenant asking for their own queue to move must not resurrect another
+   * tenant's stuck job — the reclaim would count a recovery against a job the
+   * caller has no business touching, and three such requests would send it to
+   * conciliation.
+   */
+  organizationId?: string;
+};
+
+export async function reclaimExpiredLeases(params: ReclaimParams = {}): Promise<Job[]> {
   // Built here, from the closed reason, exactly like every other stored text.
   const exhausted = buildJobReasonMessage("RESGATES_SUCESSIVOS");
+  const organizationId = params.organizationId ?? null;
 
   return prisma.$queryRaw<Job[]>`
     UPDATE "Job"
@@ -64,6 +77,7 @@ export async function reclaimExpiredLeases(): Promise<Job[]> {
      WHERE "status" = 'EM_EXECUCAO'
        AND "leaseExpiresAt" IS NOT NULL
        AND "leaseExpiresAt" <= NOW()
+       AND (${organizationId}::text IS NULL OR "organizationId" = ${organizationId}::text)
     RETURNING *
   `;
 }

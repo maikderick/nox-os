@@ -5,7 +5,7 @@ import { permissionsForRole, type OrganizationRole } from "@/lib/authz/permissio
 const boxes = vi.hoisted(() => ({
   role: { value: "ADMIN" as OrganizationRole },
   signedIn: { value: true },
-  batch: { calls: 0 },
+  batch: { calls: [] as Array<{ organizationId?: string }> },
 }));
 
 vi.mock("@/lib/authz/dal", async () => {
@@ -22,7 +22,7 @@ vi.mock("@/lib/authz/dal", async () => {
         userId: "user-1",
         email: "a@b.test",
         name: "Pessoa",
-        organizationId: "org-1",
+        organizationId: "org-do-ator",
         organizationSlug: "nox-os",
         organizationName: "NOX OS",
         membershipId: "m-1",
@@ -34,10 +34,12 @@ vi.mock("@/lib/authz/dal", async () => {
 });
 
 vi.mock("@/lib/jobs/consumer", () => ({
-  runJobBatch: async () => {
-    boxes.batch.calls += 1;
+  runJobBatch: async (params: { organizationId?: string }) => {
+    boxes.batch.calls.push({ organizationId: params.organizationId });
     return {
       owner: "consumidor-teste",
+      organizationId: params.organizationId,
+      reclaimed: 0,
       claimed: 0,
       outcomes: {},
       stoppedBecause: "sem_trabalho",
@@ -46,22 +48,22 @@ vi.mock("@/lib/jobs/consumer", () => ({
   },
 }));
 
-const { POST, maxDuration } = await import("../../src/app/api/jobs/run/route");
+const { GET, POST, maxDuration } = await import("../../src/app/api/jobs/run/route");
 
 const SECRET = "segredo-do-agendador-de-teste";
 
-function request(headers: Record<string, string> = {}) {
-  return new Request("http://localhost/api/jobs/run", { method: "POST", headers });
+function request(method: "GET" | "POST", headers: Record<string, string> = {}) {
+  return new Request("http://localhost/api/jobs/run", { method, headers });
 }
 
-describe("who may wake the consumer", () => {
+describe("two doors, and neither opens the other", () => {
   const original = process.env.CRON_SECRET;
 
   beforeEach(() => {
     process.env.CRON_SECRET = SECRET;
     boxes.role.value = "ADMIN";
     boxes.signedIn.value = true;
-    boxes.batch.calls = 0;
+    boxes.batch.calls = [];
   });
 
   afterEach(() => {
@@ -85,33 +87,51 @@ describe("who may wake the consumer", () => {
     expect(config.crons).toEqual([{ path: "/api/jobs/run", schedule: "* * * * *" }]);
   });
 
-  describe("the scheduler", () => {
-    it("runs a batch with the right credential", async () => {
-      const response = await POST(request({ authorization: `Bearer ${SECRET}` }));
+  describe("GET — the scheduler, and only the scheduler", () => {
+    it("works the global queue with the right credential", async () => {
+      const response = await GET(request("GET", { authorization: `Bearer ${SECRET}` }));
 
       expect(response.status).toBe(200);
-      expect(boxes.batch.calls).toBe(1);
+      // No organization: the scheduler serves every tenant, so there is nobody
+      // for it to be scoped to.
+      expect(boxes.batch.calls).toEqual([{ organizationId: undefined }]);
+    });
+
+    it("never lets an answer be cached", async () => {
+      const response = await GET(request("GET", { authorization: `Bearer ${SECRET}` }));
+
+      expect(response.headers.get("cache-control")).toBe("no-store");
     });
 
     it.each([
-      ["wrong secret", "Bearer segredo-errado"],
-      ["right secret, no scheme", SECRET.slice(0, -1)],
-      ["empty", "Bearer "],
+      ["a wrong secret", "Bearer segredo-errado"],
+      ["the bare secret with no scheme", SECRET],
       ["a prefix of the real one", `Bearer ${SECRET.slice(0, 10)}`],
-      ["the real one plus more", `Bearer ${SECRET}x`],
+      ["empty", "Bearer "],
     ])("answers 401 to %s, and runs nothing", async (_label, authorization) => {
-      const response = await POST(request({ authorization }));
+      const response = await GET(request("GET", { authorization }));
 
       expect(response.status).toBe(401);
-      expect(boxes.batch.calls).toBe(0);
+      expect(boxes.batch.calls).toEqual([]);
     });
 
-    it("does not fall back to the session check when the credential is wrong", async () => {
-      // Falling back would answer 403 about permissions, which tells whoever is
-      // probing that the secret was the wrong part.
+    it("refuses a signed-in admin with no credential", async () => {
+      // A session is not a cron credential. `GET` has no session path at all,
+      // so the most privileged person in the organization gets 401 here.
+      boxes.role.value = "OWNER";
+
+      const response = await GET(request("GET"));
+
+      expect(response.status).toBe(401);
+      expect(boxes.batch.calls).toEqual([]);
+    });
+
+    it("never answers 403, whatever the session says", async () => {
+      // Falling back to a permission check would tell whoever is probing that
+      // the secret was the wrong part of the request.
       boxes.role.value = "LEITOR";
 
-      const response = await POST(request({ authorization: "Bearer errado" }));
+      const response = await GET(request("GET", { authorization: "Bearer errado" }));
 
       expect(response.status).toBe(401);
     });
@@ -121,38 +141,49 @@ describe("who may wake the consumer", () => {
       // there is, and it must not turn this into an open endpoint.
       delete process.env.CRON_SECRET;
 
-      const response = await POST(request({ authorization: `Bearer ${SECRET}` }));
+      const response = await GET(request("GET", { authorization: `Bearer ${SECRET}` }));
 
       expect(response.status).toBe(401);
-      expect(boxes.batch.calls).toBe(0);
+      expect(boxes.batch.calls).toEqual([]);
     });
   });
 
-  describe("a person", () => {
-    it("runs a batch when they hold `job:run`", async () => {
-      const response = await POST(request());
+  describe("POST — a person, and only their own queue", () => {
+    it("works the actor's organization, never the global queue", async () => {
+      const response = await POST();
 
       expect(response.status).toBe(200);
-      expect(boxes.batch.calls).toBe(1);
+      expect(boxes.batch.calls).toEqual([{ organizationId: "org-do-ator" }]);
     });
 
-    it("is refused with 403 without it, even holding `job:read`", async () => {
+    it("is refused with 403 without `job:run`, even holding `job:read`", async () => {
       boxes.role.value = "OPERADOR";
       expect(permissionsForRole("OPERADOR")).toContain("job:read");
 
-      const response = await POST(request());
+      const response = await POST();
 
       expect(response.status).toBe(403);
-      expect(boxes.batch.calls).toBe(0);
+      expect(boxes.batch.calls).toEqual([]);
     });
 
     it("is refused with 401 when not signed in", async () => {
       boxes.signedIn.value = false;
 
-      const response = await POST(request());
+      const response = await POST();
 
       expect(response.status).toBe(401);
-      expect(boxes.batch.calls).toBe(0);
+      expect(boxes.batch.calls).toEqual([]);
+    });
+
+    it("ignores the cron credential entirely", async () => {
+      // Not a second way in. `POST` never reads the header, so the secret
+      // cannot be used to escape the organization scope.
+      boxes.signedIn.value = false;
+
+      const response = await POST();
+
+      expect(response.status).toBe(401);
+      expect(boxes.batch.calls).toEqual([]);
     });
   });
 });

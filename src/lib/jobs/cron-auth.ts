@@ -37,10 +37,6 @@ function digest(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
 }
 
-export function hasCronCredential(request: Request): boolean {
-  return request.headers.get("authorization") !== null;
-}
-
 /**
  * Refuses unless the request carries exactly the configured cron header.
  *

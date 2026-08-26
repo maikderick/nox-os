@@ -46,6 +46,16 @@ export type ClaimJobParams = {
   /** Identifies the consumer holding the lease. Never a secret. */
   owner: string;
   leaseSeconds?: number;
+  /**
+   * Narrows acquisition to one organization.
+   *
+   * Absent means the global consumer — the scheduler, which serves every
+   * tenant and has no one to be scoped to. Present means someone signed in
+   * asked for their own queue to move, and a request from organization A must
+   * not pick up B's work: it would run under A's request, be recorded against
+   * A's operator, and consume A's function budget on someone else's site.
+   */
+  organizationId?: string;
 };
 
 /**
@@ -61,6 +71,7 @@ export type ClaimJobParams = {
  */
 export async function claimJob(params: ClaimJobParams): Promise<Job | null> {
   const leaseSeconds = params.leaseSeconds ?? DEFAULT_LEASE_SECONDS;
+  const organizationId = params.organizationId ?? null;
 
   const rows = await prisma.$queryRaw<Job[]>`
     WITH proximo AS (
@@ -69,6 +80,7 @@ export async function claimJob(params: ClaimJobParams): Promise<Job | null> {
        WHERE "status" IN ('PENDENTE', 'PAUSADO')
          AND "runAfter" <= NOW()
          AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt" <= NOW())
+         AND (${organizationId}::text IS NULL OR "organizationId" = ${organizationId}::text)
        ORDER BY "runAfter" ASC, "createdAt" ASC
        LIMIT 1
        FOR UPDATE SKIP LOCKED
