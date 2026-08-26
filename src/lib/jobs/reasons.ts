@@ -14,6 +14,10 @@ export const JOB_REASONS = [
   "PAYLOAD_INVALIDO",
   "PROJETO_DE_OUTRA_ORGANIZACAO",
   "RUN_DE_OUTRA_ORGANIZACAO",
+  "RUN_DE_OUTRO_PROJETO",
+  "IDENTIDADE_DIVERGENTE",
+  "CHAVE_REUSADA_COM_OUTRO_CONTEUDO",
+  "ETAPA_ENFILEIRADA_CONCORRENTEMENTE",
   "TRABALHO_EM_ANDAMENTO",
   "PRAZO_DE_ESPERA_ESTOURADO",
   "TENTATIVAS_ESGOTADAS",
@@ -55,6 +59,18 @@ const BUILDERS: Record<JobReason, (details: JobDetails) => string> = {
 
   RUN_DE_OUTRA_ORGANIZACAO: () =>
     "A geração informada pertence a outra organização. O job não foi criado.",
+
+  RUN_DE_OUTRO_PROJETO: () =>
+    "A geração informada pertence a outro projeto desta organização. O job não foi criado.",
+
+  IDENTIDADE_DIVERGENTE: (d) =>
+    `Os identificadores informados não conferem com a etapa ${d.kind ?? "solicitada"}. O job não foi criado.`,
+
+  CHAVE_REUSADA_COM_OUTRO_CONTEUDO: (d) =>
+    `Já existe um job para esta etapa de ${d.kind ?? "trabalho"} com conteúdo diferente do informado. A mesma etapa não pode significar duas coisas.`,
+
+  ETAPA_ENFILEIRADA_CONCORRENTEMENTE: () =>
+    "Outra transação enfileirou esta mesma etapa neste instante. Refaça a operação: a etapa existe, e a repetição vai encontrá-la.",
 
   TRABALHO_EM_ANDAMENTO: () =>
     "Já existe um trabalho em andamento para este projeto. Aguarde ele terminar ou resolva a conciliação pendente.",

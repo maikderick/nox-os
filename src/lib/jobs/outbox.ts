@@ -2,7 +2,14 @@ import "server-only";
 
 import { Prisma } from "@prisma/client";
 
-import { isJobKind, isMutatingKind, ACTIVE_JOB_STATUSES } from "./kinds";
+import {
+  agreeOn,
+  contentMatches,
+  identityFromStep,
+  mergePayload,
+  type ImmutableContent,
+} from "./identity";
+import { ACTIVE_JOB_STATUSES, isJobKind } from "./kinds";
 import { jobKeysFor, keysAgreeWithKind, type JobKeyInput } from "./keys";
 import { encodeJobPayload, type JobPayload } from "./payload";
 import { JobRefusal } from "./reasons";
@@ -22,11 +29,17 @@ export type JobTransaction = Prisma.TransactionClient;
 
 export type EnqueueJobParams = {
   organizationId: string;
-  /** Kind plus the identifiers its keys are built from. */
+  /** What the job is. Keys, foreign keys and payload all come from here. */
   step: JobKeyInput;
-  payload: JobPayload;
+  /**
+   * Fields the step does not determine. Overlapping ones must match exactly —
+   * this is not a place to override the step, only to add to it.
+   */
+  payload?: JobPayload;
+  /** Optional, and checked rather than trusted. See `identity.ts`. */
   siteProjectId?: string | null;
   generationRunId?: string | null;
+  /** Omitted means "now", decided by PostgreSQL rather than by this process. */
   runAfter?: Date;
   maxAttempts?: number;
   /** Deadline for waiting, not for failing. Null means the step never waits. */
@@ -45,13 +58,25 @@ function assertInsideTransaction(tx: JobTransaction): void {
   }
 }
 
-async function assertOwnership(
+/**
+ * Resolves the project from the run, and refuses every way the two can disagree.
+ *
+ * The foreign keys say the rows exist. They say nothing about whose they are,
+ * nor about whether they belong together — and a `generation.start` whose key
+ * names project A while its run belongs to project B would lock A while
+ * generating B, which is worse than either mistake alone.
+ */
+async function resolveOwnership(
   tx: JobTransaction,
-  params: Pick<EnqueueJobParams, "organizationId" | "siteProjectId" | "generationRunId">,
-): Promise<void> {
-  // The foreign keys say the project exists. They say nothing about whose it
-  // is, and a job that names another organization's project would hand that
-  // organization's work to this one's consumer.
+  params: {
+    organizationId: string;
+    kind: string;
+    generationRunId: string | null;
+    siteProjectId: string | null;
+  },
+): Promise<{ generationRunId: string | null; siteProjectId: string | null }> {
+  // Checked first so an explicit project of another organization is named as
+  // that, rather than as a disagreement with its run.
   if (params.siteProjectId) {
     const project = await tx.siteProject.findUnique({
       where: { id: params.siteProjectId },
@@ -62,15 +87,34 @@ async function assertOwnership(
     }
   }
 
-  if (params.generationRunId) {
-    const run = await tx.generationRun.findUnique({
-      where: { id: params.generationRunId },
-      select: { siteProject: { select: { organizationId: true } } },
-    });
-    if (!run || run.siteProject.organizationId !== params.organizationId) {
-      throw new JobRefusal("RUN_DE_OUTRA_ORGANIZACAO");
-    }
+  if (!params.generationRunId) {
+    return { generationRunId: null, siteProjectId: params.siteProjectId };
   }
+
+  const run = await tx.generationRun.findUnique({
+    where: { id: params.generationRunId },
+    select: { siteProjectId: true, siteProject: { select: { organizationId: true } } },
+  });
+  if (!run || run.siteProject.organizationId !== params.organizationId) {
+    throw new JobRefusal("RUN_DE_OUTRA_ORGANIZACAO");
+  }
+
+  // Same tenant, wrong project. Nothing above catches this: both rows are ours,
+  // both pass every constraint, and only their relationship is wrong.
+  if (params.siteProjectId && params.siteProjectId !== run.siteProjectId) {
+    throw new JobRefusal("RUN_DE_OUTRO_PROJETO");
+  }
+
+  // Derived, not asked for: an observer that named no project still gets one,
+  // so the queue screen can show it under the project it belongs to.
+  return { generationRunId: params.generationRunId, siteProjectId: run.siteProjectId };
+}
+
+function targetOf(error: Prisma.PrismaClientKnownRequestError): string[] {
+  const target = (error.meta as { target?: unknown } | undefined)?.target;
+  if (Array.isArray(target)) return target.map(String);
+  if (typeof target === "string") return [target];
+  return [];
 }
 
 /**
@@ -80,24 +124,45 @@ async function assertOwnership(
  * doing its work and committing runs again, and the second run has to reach the
  * same queue state as the first — otherwise every retry would fan out a new
  * copy of the rest of the chain.
+ *
+ * Re-enqueueing it as something *else* is an error, and a bad one: the key
+ * would then name two different jobs depending on who asked first.
  */
 export async function enqueueJob(tx: JobTransaction, params: EnqueueJobParams) {
   assertInsideTransaction(tx);
 
   const kind = params.step.kind;
-  if (!isJobKind(kind)) throw new JobRefusal("TIPO_DESCONHECIDO", { kind });
+  if (!isJobKind(kind)) throw new JobRefusal("TIPO_DESCONHECIDO");
 
   const keys = jobKeysFor(params.step);
   if (!keysAgreeWithKind(kind, keys)) throw new JobRefusal("CHAVES_INCOERENTES", { kind });
 
-  const payloadJson = encodeJobPayload(params.payload);
+  const derived = identityFromStep(params.step);
+  const asked = {
+    generationRunId: agreeOn(derived.generationRunId, params.generationRunId, kind),
+    siteProjectId: agreeOn(derived.siteProjectId, params.siteProjectId, kind),
+  };
 
-  await assertOwnership(tx, params);
+  const owned = await resolveOwnership(tx, { organizationId: params.organizationId, kind, ...asked });
+
+  const payload = mergePayload(derived.payload, params.payload, kind);
+  const wanted: ImmutableContent = {
+    kind,
+    concurrencyKey: keys.concurrencyKey,
+    siteProjectId: owned.siteProjectId,
+    generationRunId: owned.generationRunId,
+    payloadJson: encodeJobPayload(payload),
+  };
 
   const existing = await tx.job.findFirst({
     where: { organizationId: params.organizationId, idempotencyKey: keys.idempotencyKey },
   });
-  if (existing) return existing;
+  if (existing) {
+    if (!contentMatches(existing, wanted)) {
+      throw new JobRefusal("CHAVE_REUSADA_COM_OUTRO_CONTEUDO", { kind });
+    }
+    return existing;
+  }
 
   if (keys.concurrencyKey) {
     const active = await tx.job.findFirst({
@@ -108,7 +173,7 @@ export async function enqueueJob(tx: JobTransaction, params: EnqueueJobParams) {
       select: { id: true },
     });
     if (active) {
-      throw new JobRefusal("TRABALHO_EM_ANDAMENTO", { concurrencyKey: keys.concurrencyKey });
+      throw new JobRefusal("TRABALHO_EM_ANDAMENTO", { kind });
     }
   }
 
@@ -116,33 +181,37 @@ export async function enqueueJob(tx: JobTransaction, params: EnqueueJobParams) {
     return await tx.job.create({
       data: {
         organizationId: params.organizationId,
-        siteProjectId: params.siteProjectId ?? null,
-        generationRunId: params.generationRunId ?? null,
-        kind,
         idempotencyKey: keys.idempotencyKey,
-        concurrencyKey: keys.concurrencyKey,
-        payloadJson,
-        runAfter: params.runAfter ?? new Date(),
+        ...wanted,
+        // Omitted on purpose when the caller said nothing: the column defaults
+        // to `CURRENT_TIMESTAMP`, so "now" is the database's now.
+        ...(params.runAfter ? { runAfter: params.runAfter } : {}),
         maxAttempts: params.maxAttempts ?? 5,
         pollDeadlineAt: params.pollDeadlineAt ?? null,
       },
     });
   } catch (error) {
-    // The read above is advisory; the index is what decides. Two transactions
-    // can both find nothing and both try to write.
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002" &&
-      isMutatingKind(kind)
-    ) {
-      throw new JobRefusal("TRABALHO_EM_ANDAMENTO", {
-        concurrencyKey: keys.concurrencyKey ?? undefined,
-      });
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
     }
-    // A collision on the idempotency index means a concurrent transaction
-    // enqueued the same step. It cannot be answered here — the transaction is
-    // already aborted, so the existing row is unreadable. Letting it propagate
-    // rolls back the fact together with the job, and the retry finds both.
+
+    // The reads above are advisory; the indexes decide. Which index fired
+    // changes what actually happened, so they are not the same answer:
+    const target = targetOf(error);
+
+    if (target.includes("concurrencyKey")) {
+      // Another mutating job for this project won the race.
+      throw new JobRefusal("TRABALHO_EM_ANDAMENTO", { kind });
+    }
+
+    if (target.includes("idempotencyKey")) {
+      // Another transaction enqueued this very step. Not "work in progress" —
+      // it cannot be answered with the existing row either, because this
+      // transaction is already aborted and cannot read it. Rolling back takes
+      // the fact with it, and the retry finds both.
+      throw new JobRefusal("ETAPA_ENFILEIRADA_CONCORRENTEMENTE", { kind });
+    }
+
     throw error;
   }
 }

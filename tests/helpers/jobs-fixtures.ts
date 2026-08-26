@@ -32,7 +32,38 @@ export type QueueFixture = {
   otherSiteProjectId: string;
   generationRunId: string;
   otherGenerationRunId: string;
+  /** A second project of the SAME organization. Same tenant, wrong project. */
+  siblingSiteProjectId: string;
 };
+
+async function createProject(
+  organizationId: string,
+  clientId: string,
+  token: string,
+  suffix: string,
+) {
+  const project = await prisma.siteProject.create({
+    data: {
+      organizationId,
+      clientId,
+      name: `Site ${suffix}`,
+      slug: `site-${suffix}-${token}`,
+      status: "BRIEFING_PRONTO",
+    },
+  });
+  // Every project gets a brief version, because `GenerationRun.briefVersionId`
+  // is a required restrict-on-delete relation and a suite that wants a second
+  // run should not have to know that.
+  await prisma.siteBriefVersion.create({
+    data: {
+      siteProjectId: project.id,
+      version: 1,
+      contentJson: JSON.stringify({ versao: 2 }),
+      factsHash: "nao-usado-por-este-teste",
+    },
+  });
+  return project;
+}
 
 async function createOrganizationWithProject(token: string, suffix: string) {
   const organization = await prisma.organization.create({
@@ -45,22 +76,12 @@ async function createOrganizationWithProject(token: string, suffix: string) {
       slug: `cliente-${suffix}-${token}`,
     },
   });
-  const siteProject = await prisma.siteProject.create({
-    data: {
-      organizationId: organization.id,
-      clientId: client.id,
-      name: `Site ${suffix}`,
-      slug: `site-${suffix}-${token}`,
-      status: "BRIEFING_PRONTO",
-    },
-  });
-  const briefVersion = await prisma.siteBriefVersion.create({
-    data: {
-      siteProjectId: siteProject.id,
-      version: 1,
-      contentJson: JSON.stringify({ versao: 2 }),
-      factsHash: "nao-usado-por-este-teste",
-    },
+  const siteProject = await createProject(organization.id, client.id, token, suffix);
+  // Same organization, different project. Nothing but a relationship check
+  // separates a job that names this one from a job that names the other.
+  const sibling = await createProject(organization.id, client.id, token, `${suffix}-irmao`);
+  const briefVersion = await prisma.siteBriefVersion.findFirstOrThrow({
+    where: { siteProjectId: siteProject.id },
   });
   const generationRun = await prisma.generationRun.create({
     data: {
@@ -74,6 +95,7 @@ async function createOrganizationWithProject(token: string, suffix: string) {
   return {
     organizationId: organization.id,
     siteProjectId: siteProject.id,
+    siblingSiteProjectId: sibling.id,
     generationRunId: generationRun.id,
   };
 }
@@ -97,6 +119,7 @@ export async function createQueueFixture(): Promise<QueueFixture> {
     siteProjectId: a.siteProjectId,
     generationRunId: a.generationRunId,
     otherOrganizationId: b.organizationId,
+    siblingSiteProjectId: a.siblingSiteProjectId,
     otherSiteProjectId: b.siteProjectId,
     otherGenerationRunId: b.generationRunId,
   };
