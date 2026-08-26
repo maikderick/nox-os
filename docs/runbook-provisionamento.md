@@ -92,10 +92,14 @@ tela consiga dizer "isto mudou".
 
 ## Quando uma etapa falha
 
-A última falha aparece na tela do projeto, já redigida, com a etapa em que
-aconteceu. Mensagens de provedor passam por uma allowlist antes de ir para o
-banco, porque erro de provedor frequentemente ecoa a requisição — e a requisição
-levava um cabeçalho de autorização.
+A última falha aparece na tela do projeto, com a etapa em que aconteceu.
+
+O que fica gravado passa por uma **allowlist**: só a mensagem que o próprio NOX
+OS construiu. Um erro que ele não reconhece não deixa nada do texto original —
+grava mensagem genérica e um **código de correlação**, e o detalhe vai para o log
+do servidor ao lado desse código. Erro de provedor frequentemente ecoa a
+requisição, e a requisição levava um cabeçalho de autorização; com denylist,
+bastaria um formato de token novo para vazar.
 
 | Sintoma | Causa provável | O que fazer |
 | --- | --- | --- |
@@ -104,9 +108,22 @@ levava um cabeçalho de autorização.
 | `PREFLIGHT_FALHOU` citando "Autorize o repositório" | a instalação da Vercel não enxerga o repositório novo | Autorize o repositório na instalação do GitHub da Vercel e execute a etapa 3 de novo |
 | `PREFLIGHT_FALHOU` citando o contrato | o snapshot viola um invariante | Corrija o briefing; o site nunca é gerado com snapshot inválido |
 | Etapa 4 volta "ainda não terminou de construir" | a plataforma ainda está construindo | Reconcilie de novo em instantes; não é falha |
+| `PROJETO_NAO_ELEGIVEL` | o projeto não está em Briefing pronto | Conclua o briefing antes de provisionar |
+| `BRIEFING_VERSAO_ANTIGA` | o briefing é v1 | Crie uma versão v2 confirmando serviços e contato |
+| `BRIEFING_ADULTERADO` | o conteúdo gravado não bate com a impressão digital | Confirme o briefing de novo; algo o alterou fora do NOX OS |
+| `ERRO_INESPERADO` com código de correlação | erro que o NOX OS não reconhece | Procure o código no log do servidor; o detalhe não é gravado no banco |
 
-Nenhuma falha exige desfazer nada à mão: as etapas conferem o que já existe
-antes de agir, então repetir é sempre seguro.
+Nenhuma falha exige desfazer nada à mão. Cada etapa grava a intenção antes da
+chamada remota, então uma interrupção entre as duas deixa rastro suficiente para
+terminar o trabalho no próximo clique: a etapa pergunta ao provedor o que existe,
+adota o que já foi criado e completa o que falta. Um repositório só conta como
+concluído com `externalId` e `protectedAt`; uma hospedagem, com `externalId` e
+`linkedAt`.
+
+A única recusa que exige ação humana é o nome já pertencer a alguém: se o
+recurso existe e não há registro de que o NOX OS tenha tentado criá-lo, ele não é
+adotado — commitar o site de um cliente no repositório de outra pessoa seria pior
+que falhar.
 
 ## O que ainda não existe
 
