@@ -747,6 +747,10 @@ model Job {
   /// `map` fixa o nome que a migration usa, para que os dois sejam o mesmo
   /// objeto. Sem esta linha, o próximo `migrate diff` escreveria um
   /// `DROP INDEX` dela.
+  ///
+  /// O cabeçalho daquela migration diz que os dois são escritos à mão. Está
+  /// errado, e continua lá: arquivo aplicado não se edita, nem no comentário —
+  /// o checksum é do arquivo inteiro. A correção vive em `docs/errata-migrations.md`.
   @@unique([organizationId, idempotencyKey], map: "Job_idempotency_uniq")
   @@index([status, runAfter])
   @@index([organizationId, kind, status])
