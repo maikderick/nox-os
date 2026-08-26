@@ -52,10 +52,6 @@ describe("provider registry", () => {
     expect(() => getHostingProvider("LIVE")).toThrow(/LIVE/);
   });
 
-  it("does not hand out a SANDBOX provider before its fixtures exist", () => {
-    expect(() => getGitRepositoryProvider("SANDBOX")).toThrow(/SANDBOX/);
-  });
-
   it("serves the fake for FALSO", () => {
     expect(getGitRepositoryProvider("FALSO").mode).toBe("FALSO");
     expect(getHostingProvider("FALSO").mode).toBe("FALSO");

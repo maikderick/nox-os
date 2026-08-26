@@ -3,6 +3,10 @@ import type { IntegrationMode } from "@/lib/integrations/modes";
 import { IntegrationDisabledError, IntegrationModeUnsupportedError } from "./errors";
 import { createFakeGitRepositoryProvider } from "./fake/fake-git";
 import { createFakeHostingProvider } from "./fake/fake-hosting";
+import {
+  createSandboxGitRepositoryProvider,
+  createSandboxHostingProvider,
+} from "./sandbox/sandbox-providers";
 import type { GitRepositoryProvider, HostingProvider } from "./ports";
 
 /**
@@ -48,9 +52,10 @@ export function getGitRepositoryProvider(mode: IntegrationMode): GitRepositoryPr
       return disabledGitProvider();
     case "FALSO":
       return createFakeGitRepositoryProvider();
+    case "SANDBOX":
+      return createSandboxGitRepositoryProvider();
     default:
-      // SANDBOX arrives with recorded fixtures; LIVE is a separate, approved
-      // decision. Neither is reachable by accident.
+      // LIVE is a separate, approved decision, one provider at a time.
       throw new IntegrationModeUnsupportedError("github", mode);
   }
 }
@@ -61,6 +66,8 @@ export function getHostingProvider(mode: IntegrationMode): HostingProvider {
       return disabledHostingProvider();
     case "FALSO":
       return createFakeHostingProvider();
+    case "SANDBOX":
+      return createSandboxHostingProvider();
     default:
       throw new IntegrationModeUnsupportedError("vercel", mode);
   }

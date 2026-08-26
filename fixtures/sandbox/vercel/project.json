@@ -1,0 +1,18 @@
+{
+  "id": "prj_A1b2C3d4E5f6G7h8I9j0K1l2",
+  "name": "site-exemplo",
+  "accountId": "team_exemplo0000000000000",
+  "framework": "nextjs",
+  "nodeVersion": "22.x",
+  "link": {
+    "type": "github",
+    "repo": "site-exemplo",
+    "org": "nox-sites-exemplo",
+    "productionBranch": "main"
+  },
+  "targets": {
+    "production": {
+      "alias": ["site-exemplo.vercel.app"]
+    }
+  }
+}

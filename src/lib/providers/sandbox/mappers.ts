@@ -1,0 +1,75 @@
+import type { CommitRef, DeploymentInfo, ProjectRef, RepoRef } from "../types";
+
+/**
+ * Reads the shapes the providers actually return.
+ *
+ * This is the half a fake cannot prove. The fake decides both the question and
+ * the answer, so it can never catch a field that is nested one level deeper than
+ * assumed, or a state that arrives as `readyState` instead of `state`. These
+ * mappers run against recorded payloads today and are the same code a live
+ * client will use.
+ */
+
+export type GitHubRepositoryPayload = {
+  id: number;
+  name: string;
+  owner: { login: string };
+  html_url: string;
+  default_branch: string;
+};
+
+export function mapGitHubRepository(payload: GitHubRepositoryPayload): RepoRef {
+  return {
+    owner: payload.owner.login,
+    name: payload.name,
+    // GitHub reports the id as a number; everything downstream stores text.
+    externalId: String(payload.id),
+    url: payload.html_url,
+    defaultBranch: payload.default_branch,
+  };
+}
+
+export type GitHubCommitPayload = {
+  sha: string;
+  html_url: string;
+};
+
+export function mapGitHubCommit(payload: GitHubCommitPayload): CommitRef {
+  return { sha: payload.sha, url: payload.html_url };
+}
+
+export type VercelProjectPayload = {
+  id: string;
+  name: string;
+  targets?: { production?: { alias?: string[] } };
+};
+
+export function mapVercelProject(payload: VercelProjectPayload): ProjectRef {
+  const alias = payload.targets?.production?.alias?.[0];
+  return {
+    externalId: payload.id,
+    name: payload.name,
+    // Vercel returns bare hostnames, without a scheme.
+    url: alias ? `https://${alias}` : null,
+  };
+}
+
+export type VercelDeploymentPayload = {
+  uid: string;
+  url: string;
+  readyState: string;
+  createdAt: number;
+  meta?: { githubCommitSha?: string };
+};
+
+export function mapVercelDeployment(payload: VercelDeploymentPayload): DeploymentInfo {
+  return {
+    externalId: payload.uid,
+    // `readyState`, not `state`: the field a fake would never have taught us.
+    state: payload.readyState,
+    url: `https://${payload.url}`,
+    commitSha: payload.meta?.githubCommitSha ?? null,
+    // Milliseconds since the epoch, not an ISO string.
+    createdAt: new Date(payload.createdAt).toISOString(),
+  };
+}
