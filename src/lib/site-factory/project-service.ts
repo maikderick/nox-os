@@ -4,6 +4,8 @@ import { assertPermission, type Actor } from "@/lib/authz/dal";
 import { AuthorizationError } from "@/lib/authz/errors";
 import { prisma } from "@/lib/db";
 
+import type { SiteFactoryDb } from "./db-client";
+
 import {
   findTransition,
   isSiteProjectState,
@@ -30,9 +32,11 @@ export async function createSiteProject(params: {
   clientId: string;
   name: string;
   sector?: string | null;
+  db?: SiteFactoryDb;
 }) {
   assertPermission(params.actor, "project:write");
-  const client = await prisma.client.findFirst({
+  const db = params.db ?? prisma;
+  const client = await db.client.findFirst({
     where: { id: params.clientId, organizationId: params.actor.organizationId },
     select: { id: true },
   });
@@ -42,7 +46,7 @@ export async function createSiteProject(params: {
   let slug = baseSlug;
   let suffix = 2;
   while (
-    await prisma.siteProject.findUnique({
+    await db.siteProject.findUnique({
       where: { organizationId_slug: { organizationId: params.actor.organizationId, slug } },
       select: { id: true },
     })
@@ -51,7 +55,7 @@ export async function createSiteProject(params: {
     suffix += 1;
   }
 
-  return prisma.siteProject.create({
+  return db.siteProject.create({
     data: {
       organizationId: params.actor.organizationId,
       clientId: client.id,

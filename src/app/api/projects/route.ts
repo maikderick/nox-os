@@ -4,9 +4,8 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/authz/dal";
 import { withSiteFactoryErrors } from "@/lib/site-factory/route-errors";
 import { briefCapabilities, siteBriefSchema } from "@/lib/site-factory/brief-schema";
-import { createSiteBriefVersion } from "@/lib/site-factory/brief-service";
-import { convertBusinessToClient } from "@/lib/site-factory/client-service";
-import { createSiteProject, listSiteProjects } from "@/lib/site-factory/project-service";
+import { createProjectWithBrief } from "@/lib/site-factory/project-intake";
+import { listSiteProjects } from "@/lib/site-factory/project-service";
 import { plainText } from "@/lib/zod-text";
 
 const createProjectSchema = z
@@ -33,16 +32,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: body.error.flatten() }, { status: 400 });
     }
 
-    const client = await convertBusinessToClient({ actor, businessId: body.data.businessId });
-    const project = await createSiteProject({
+    const { client, project, briefVersion } = await createProjectWithBrief({
       actor,
-      clientId: client.id,
+      businessId: body.data.businessId,
       name: body.data.name,
       sector: body.data.sector,
-    });
-    const briefVersion = await createSiteBriefVersion({
-      actor,
-      siteProjectId: project.id,
       brief: body.data.brief,
     });
 
@@ -51,7 +45,7 @@ export async function POST(request: Request) {
     // while the project is on screen, not when the site comes out incomplete.
     return NextResponse.json(
       {
-        project: { ...project, status: "BRIEFING_PRONTO" },
+        project,
         client,
         briefVersion,
         capabilities: briefCapabilities(body.data.brief),

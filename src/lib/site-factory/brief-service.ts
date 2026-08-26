@@ -7,6 +7,7 @@ import { AuthorizationError } from "@/lib/authz/errors";
 import { prisma } from "@/lib/db";
 
 import { siteBriefSchema, type SiteBrief } from "./brief-schema";
+import type { SiteFactoryDb } from "./db-client";
 import {
   canTransition,
   isSiteProjectState,
@@ -29,15 +30,23 @@ export function briefFactsHash(brief: SiteBrief): string {
   return createHash("sha256").update(JSON.stringify(stableValue(brief))).digest("hex");
 }
 
+/**
+ * Appends an immutable brief version and points the project at it.
+ *
+ * Runs on `db` when the caller already owns a transaction, so the wizard can
+ * make client, project and brief succeed or fail together; otherwise it opens
+ * one of its own, because the insert and the pointer update must not diverge.
+ */
 export async function createSiteBriefVersion(params: {
   actor: Actor;
   siteProjectId: string;
   brief: unknown;
+  db?: SiteFactoryDb;
 }) {
   assertPermission(params.actor, "brief:write");
   const brief = siteBriefSchema.parse(params.brief);
 
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx: SiteFactoryDb) => {
     const project = await tx.siteProject.findFirst({
       where: { id: params.siteProjectId, organizationId: params.actor.organizationId },
       select: { id: true, status: true },
@@ -75,5 +84,7 @@ export async function createSiteBriefVersion(params: {
     });
 
     return version;
-  });
+  };
+
+  return params.db ? run(params.db) : prisma.$transaction(run);
 }

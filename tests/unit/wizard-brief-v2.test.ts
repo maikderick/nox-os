@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   convert: vi.fn(),
   createProject: vi.fn(),
   createBrief: vi.fn(),
+  createProjectWithBrief: vi.fn(),
 }));
 
 vi.mock("@/lib/authz/dal", () => ({ requirePermission: mocks.requirePermission }));
@@ -15,6 +16,11 @@ vi.mock("@/lib/site-factory/project-service", () => ({
 }));
 vi.mock("@/lib/site-factory/client-service", () => ({ convertBusinessToClient: mocks.convert }));
 vi.mock("@/lib/site-factory/brief-service", () => ({ createSiteBriefVersion: mocks.createBrief }));
+// The route delegates the whole submission to one unit of work; the transaction
+// itself is covered against a real database in site-factory-db.test.ts.
+vi.mock("@/lib/site-factory/project-intake", () => ({
+  createProjectWithBrief: mocks.createProjectWithBrief,
+}));
 
 import { POST } from "../../src/app/api/projects/route";
 import {
@@ -287,6 +293,11 @@ describe("POST /api/projects", () => {
     mocks.convert.mockResolvedValue({ id: "client-1" });
     mocks.createProject.mockResolvedValue({ id: "project-1", status: "RASCUNHO" });
     mocks.createBrief.mockResolvedValue({ id: "brief-1", version: 1 });
+    mocks.createProjectWithBrief.mockResolvedValue({
+      client: { id: "client-1" },
+      project: { id: "project-1", status: "BRIEFING_PRONTO", currentBriefVersionId: "brief-1" },
+      briefVersion: { id: "brief-1", version: 1 },
+    });
   });
 
   async function post(brief: unknown) {
@@ -314,7 +325,7 @@ describe("POST /api/projects", () => {
       hasConfirmedPublicContact: true,
       gaps: [],
     });
-    expect(mocks.createBrief).toHaveBeenCalledOnce();
+    expect(mocks.createProjectWithBrief).toHaveBeenCalledOnce();
   });
 
   it("relata as lacunas quando o briefing não tem serviços nem contato", async () => {
