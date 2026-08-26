@@ -1,3 +1,5 @@
+import { isJobKind, isJobStatus, type JobKind, type JobStatus } from "./kinds";
+
 /**
  * Every refusal the queue can express, and the only text it may store.
  *
@@ -22,6 +24,7 @@ export const JOB_REASONS = [
   "PRAZO_DE_ESPERA_ESTOURADO",
   "TENTATIVAS_ESGOTADAS",
   "JOB_NAO_REPROCESSAVEL",
+  "MOTIVO_DE_PAUSA_DESCONHECIDO",
 ] as const;
 
 export type JobReason = (typeof JOB_REASONS)[number];
@@ -29,15 +32,20 @@ export type JobReason = (typeof JOB_REASONS)[number];
 /**
  * Fields that may appear in a stored message.
  *
- * All of them are values this application produced: a kind from its own enum, a
- * status from its own enum, a key it built itself. Nothing is ever copied from
- * a provider response.
+ * Every one of them is drawn from a **closed set** this application defines —
+ * a kind from its own enum, a status from its own enum, a count it incremented
+ * itself. Nothing here is free text, and that is deliberate: the earlier
+ * version accepted `string`, which meant "any value that reached a call site
+ * can reach a column", and the call site is exactly where an unrecognised
+ * provider value tends to be sitting.
+ *
+ * The keys the queue builds — `idempotencyKey`, `concurrencyKey` — are gone.
+ * They are ours, but they are still free-form strings assembled from ids, and
+ * no message needed them.
  */
 export type JobDetails = {
-  kind?: string;
-  status?: string;
-  concurrencyKey?: string;
-  idempotencyKey?: string;
+  kind?: JobKind;
+  status?: JobStatus;
   attempts?: number;
   maxAttempts?: number;
 };
@@ -46,7 +54,10 @@ const BUILDERS: Record<JobReason, (details: JobDetails) => string> = {
   FORA_DE_TRANSACAO: () =>
     "Um job só pode ser enfileirado dentro da transação que grava o fato que o justifica. Enfileirar fora dela cria trabalho para algo que pode não ter acontecido.",
 
-  TIPO_DESCONHECIDO: (d) => `O tipo de job ${d.kind ?? "informado"} não existe nesta fase.`,
+  // Deliberately says nothing about what arrived. The value that reached
+  // here failed to be one of ours, which is the one circumstance in which
+  // echoing it back would be echoing something unvetted.
+  TIPO_DESCONHECIDO: () => "O tipo de job informado não existe nesta fase.",
 
   CHAVES_INCOERENTES: (d) =>
     `As chaves não combinam com o tipo ${d.kind ?? "informado"}: trabalho que muta precisa de chave de concorrência, e observador não pode ter uma.`,
@@ -83,6 +94,9 @@ const BUILDERS: Record<JobReason, (details: JobDetails) => string> = {
 
   JOB_NAO_REPROCESSAVEL: (d) =>
     `Só um job em carta morta pode ser reprocessado.${d.status ? ` Estado atual: ${d.status}.` : ""}`,
+
+  MOTIVO_DE_PAUSA_DESCONHECIDO: () =>
+    "O motivo de pausa informado não é um dos motivos previstos. Um job só é pausado por decisão do freio.",
 };
 
 export function buildJobReasonMessage(reason: JobReason, details: JobDetails = {}): string {
@@ -112,4 +126,41 @@ export class JobRefusal extends Error {
 
 export function isJobRefusal(error: unknown): error is JobRefusal {
   return error instanceof JobRefusal;
+}
+
+export function isJobReason(value: unknown): value is JobReason {
+  return typeof value === "string" && (JOB_REASONS as readonly string[]).includes(value);
+}
+
+/**
+ * Rebuilds `details` from scratch, keeping only values that are still one of
+ * ours.
+ *
+ * `instanceof` is not a guarantee about content. `JobRefusal` is exported and
+ * extensible, its fields are plain properties, and a subclass — or any code
+ * holding an instance — can put whatever it likes in `details` before the
+ * object reaches a column. TypeScript checks the call site; it does not check
+ * the object that arrives at the sink.
+ *
+ * So nothing that arrives is kept. Each field is re-derived by asking the
+ * closed set whether it recognises the value, and anything it does not
+ * recognise simply disappears — leaving a message that reads slightly more
+ * generically, which is the correct trade.
+ */
+export function sanitizeJobDetails(raw: unknown): JobDetails {
+  if (raw === null || typeof raw !== "object") return {};
+  const candidate = raw as Record<string, unknown>;
+  const details: JobDetails = {};
+
+  if (isJobKind(candidate.kind)) details.kind = candidate.kind;
+  if (isJobStatus(candidate.status)) details.status = candidate.status;
+  // A count, not a quantity someone sent us: bounded, integral, non-negative.
+  for (const field of ["attempts", "maxAttempts"] as const) {
+    const value = candidate[field];
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value < 10_000) {
+      details[field] = value;
+    }
+  }
+
+  return details;
 }

@@ -208,7 +208,7 @@ describeLocalDatabase("the five outcomes", () => {
       ],
       [
         "pauseJob",
-        (id: string) => pauseJob({ jobId: id, owner: "intruso", reason: "X", retryAfterSeconds: 10 }),
+        (id: string) => pauseJob({ jobId: id, owner: "intruso", reason: "FREIO_GLOBAL", retryAfterSeconds: 10 }),
       ],
       [
         "failJobRecoverable",

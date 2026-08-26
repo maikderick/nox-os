@@ -4,7 +4,7 @@ import {
   type StoredError,
 } from "@/lib/provisioning/error-record";
 
-import { buildJobReasonMessage, isJobRefusal } from "./reasons";
+import { buildJobReasonMessage, isJobReason, isJobRefusal, sanitizeJobDetails } from "./reasons";
 
 /**
  * What may be written into `Job.lastError`.
@@ -24,10 +24,15 @@ export function describeJobError(
   error: unknown,
   options: { step?: string; log?: (line: string) => void } = {},
 ): StoredError {
-  if (isJobRefusal(error)) {
+  // Two questions, not one. `instanceof` says where the object came from; it
+  // says nothing about what is inside it, and `JobRefusal` is exported,
+  // extensible and made of plain properties. A subclass can carry any `reason`
+  // and any `details` it likes, so both are re-checked against the closed sets
+  // before either reaches a message.
+  if (isJobRefusal(error) && isJobReason(error.reason)) {
     return {
       code: error.reason,
-      message: buildJobReasonMessage(error.reason, error.details),
+      message: buildJobReasonMessage(error.reason, sanitizeJobDetails(error.details)),
     };
   }
 

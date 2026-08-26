@@ -6,7 +6,8 @@ import { prisma } from "@/lib/db";
 
 import { backoffSeconds } from "./backoff";
 import { describeJobError, formatStoredError } from "./error-record";
-import { buildJobReasonMessage } from "./reasons";
+import { isJobKind, isPauseReason, type PauseReason } from "./kinds";
+import { buildJobReasonMessage, JobRefusal } from "./reasons";
 
 /**
  * The five ways a job stops running, and what each one counts.
@@ -109,7 +110,12 @@ export async function deferJob(params: DeferJobParams): Promise<Job | null> {
           status: "CONCILIACAO",
           pollCount: { increment: 1 },
           lastErrorCode: reason,
-          lastError: buildJobReasonMessage(reason, { kind: job.kind }),
+          // `job.kind` is a `string` on the way out of the database, and a
+          // column is not a closed set. It gets the same check as anything else
+          // before it reaches a message.
+          lastError: buildJobReasonMessage(reason, {
+            kind: isJobKind(job.kind) ? job.kind : undefined,
+          }),
           ...RELEASED_LEASE,
         },
       });
@@ -129,7 +135,7 @@ export async function deferJob(params: DeferJobParams): Promise<Job | null> {
 
 export type PauseJobParams = OutcomeParams & {
   /** A closed code — the brake's reason, never a provider's words. */
-  reason: string;
+  reason: PauseReason;
   /** When to look again. The brake gets to decide again, not to be remembered. */
   retryAfterSeconds: number;
 };
@@ -143,6 +149,11 @@ export type PauseJobParams = OutcomeParams & {
  * whoever set the brake gets asked again.
  */
 export async function pauseJob(params: PauseJobParams): Promise<Job | null> {
+  // Checked at runtime as well as in the type. `pausedReason` is a column, and
+  // the one caller that will ever get this wrong is the one holding a string a
+  // provider handed it.
+  if (!isPauseReason(params.reason)) throw new JobRefusal("MOTIVO_DE_PAUSA_DESCONHECIDO");
+
   return prisma.$transaction(async (tx) => {
     const job = await lockOwnedJob(tx, params);
     if (!job) return null;

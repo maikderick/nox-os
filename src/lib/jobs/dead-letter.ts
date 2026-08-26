@@ -7,7 +7,7 @@ import { type Actor, assertPermission } from "@/lib/authz/dal";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/settings";
 
-import { ACTIVE_JOB_STATUSES } from "./kinds";
+import { ACTIVE_JOB_STATUSES, isJobStatus } from "./kinds";
 import { JobRefusal } from "./reasons";
 
 /**
@@ -54,7 +54,9 @@ export async function reprocessDeadLetter(actor: Actor, jobId: string): Promise<
     // Same answer for "not yours" and "not there": a reprocess route must not
     // become a way to discover which job ids exist in another organization.
     if (!job || job.status !== "CARTA_MORTA") {
-      throw new JobRefusal("JOB_NAO_REPROCESSAVEL", { status: job?.status });
+      throw new JobRefusal("JOB_NAO_REPROCESSAVEL", {
+        status: isJobStatus(job?.status) ? job.status : undefined,
+      });
     }
 
     if (job.concurrencyKey) {
@@ -67,7 +69,7 @@ export async function reprocessDeadLetter(actor: Actor, jobId: string): Promise<
         select: { id: true },
       });
       if (live) {
-        throw new JobRefusal("TRABALHO_EM_ANDAMENTO", { concurrencyKey: job.concurrencyKey });
+        throw new JobRefusal("TRABALHO_EM_ANDAMENTO");
       }
     }
 
@@ -93,9 +95,7 @@ export async function reprocessDeadLetter(actor: Actor, jobId: string): Promise<
       // The read above is advisory; the partial index decides. Two operators
       // clicking at once is exactly the case it covers.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new JobRefusal("TRABALHO_EM_ANDAMENTO", {
-          concurrencyKey: job.concurrencyKey ?? undefined,
-        });
+        throw new JobRefusal("TRABALHO_EM_ANDAMENTO");
       }
       throw error;
     }

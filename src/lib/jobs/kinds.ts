@@ -78,3 +78,25 @@ export function isTerminalStatus(status: string): boolean {
 export function isMutatingKind(kind: JobKind): boolean {
   return (MUTATING_JOB_KINDS as readonly string[]).includes(kind);
 }
+
+/**
+ * Why a job is paused.
+ *
+ * Closed, and validated at runtime, because it lands in a column. The reason
+ * always comes from the brake — a decision this application made about itself —
+ * never from a provider explaining why it said no.
+ */
+export const PAUSE_REASONS = [
+  /** `NOX_INTEGRATIONS=disabled`: the whole installation is braked. */
+  "FREIO_GLOBAL",
+  /** The provider is `DESLIGADO` for this organization. */
+  "INTEGRACAO_DESLIGADA",
+  /** The configured mode is not available in this phase. */
+  "MODO_INDISPONIVEL",
+] as const;
+
+export type PauseReason = (typeof PAUSE_REASONS)[number];
+
+export function isPauseReason(value: unknown): value is PauseReason {
+  return typeof value === "string" && (PAUSE_REASONS as readonly string[]).includes(value);
+}
