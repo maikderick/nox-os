@@ -2,6 +2,7 @@ import "server-only";
 
 import { Prisma } from "@prisma/client";
 
+import { pollDeadlineSecondsFor } from "./deadlines";
 import {
   agreeOn,
   contentMatches,
@@ -9,7 +10,7 @@ import {
   mergePayload,
   type ImmutableContent,
 } from "./identity";
-import { ACTIVE_JOB_STATUSES, isJobKind } from "./kinds";
+import { ACTIVE_JOB_STATUSES, isJobKind, type JobKind } from "./kinds";
 import { jobKeysFor, keysAgreeWithKind, type JobKeyInput } from "./keys";
 import { encodeJobPayload, type JobPayload } from "./payload";
 import { JobRefusal } from "./reasons";
@@ -42,7 +43,13 @@ export type EnqueueJobParams = {
   /** Omitted means "now", decided by PostgreSQL rather than by this process. */
   runAfter?: Date;
   maxAttempts?: number;
-  /** Deadline for waiting, not for failing. Null means the step never waits. */
+  /**
+   * Deadline for waiting, not for failing.
+   *
+   * Omitted means the closed policy for this kind. An explicit `null` means
+   * this particular job never runs out of patience — say so on purpose, do not
+   * arrive at it by forgetting the field.
+   */
   pollDeadlineAt?: Date | null;
 };
 
@@ -108,6 +115,27 @@ async function resolveOwnership(
   // Derived, not asked for: an observer that named no project still gets one,
   // so the queue screen can show it under the project it belongs to.
   return { generationRunId: params.generationRunId, siteProjectId: run.siteProjectId };
+}
+
+/**
+ * The deadline, measured from the database's clock rather than this process's.
+ *
+ * One extra `SELECT NOW()`, and only for a polling kind whose caller said
+ * nothing. Computing it from `Date.now()` here would put a patience budget on
+ * one clock and the check that reads it on another.
+ */
+async function resolveDeadline(
+  tx: JobTransaction,
+  kind: JobKind,
+  supplied: Date | null | undefined,
+): Promise<Date | null> {
+  if (supplied !== undefined) return supplied;
+
+  const seconds = pollDeadlineSecondsFor(kind);
+  if (seconds === null) return null;
+
+  const [{ agora }] = await tx.$queryRaw<Array<{ agora: Date }>>`SELECT NOW() AS "agora"`;
+  return new Date(agora.getTime() + seconds * 1000);
 }
 
 function targetOf(error: Prisma.PrismaClientKnownRequestError): string[] {
@@ -177,6 +205,8 @@ export async function enqueueJob(tx: JobTransaction, params: EnqueueJobParams) {
     }
   }
 
+  const pollDeadlineAt = await resolveDeadline(tx, kind, params.pollDeadlineAt);
+
   try {
     return await tx.job.create({
       data: {
@@ -187,7 +217,7 @@ export async function enqueueJob(tx: JobTransaction, params: EnqueueJobParams) {
         // to `CURRENT_TIMESTAMP`, so "now" is the database's now.
         ...(params.runAfter ? { runAfter: params.runAfter } : {}),
         maxAttempts: params.maxAttempts ?? 5,
-        pollDeadlineAt: params.pollDeadlineAt ?? null,
+        pollDeadlineAt,
       },
     });
   } catch (error) {

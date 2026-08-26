@@ -7,7 +7,8 @@ import { type Actor, assertPermission } from "@/lib/authz/dal";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/settings";
 
-import { ACTIVE_JOB_STATUSES, isJobStatus } from "./kinds";
+import { pollDeadlineSecondsFor } from "./deadlines";
+import { ACTIVE_JOB_STATUSES, isJobKind, isJobStatus } from "./kinds";
 import { JobRefusal } from "./reasons";
 
 /**
@@ -32,9 +33,20 @@ export async function listDeadLetters(actor: Actor, limit = 50): Promise<Job[]> 
 /**
  * Puts a dead letter back in the queue.
  *
- * The attempt counter is reset, because the operator is saying "the reason it
- * failed is gone" — a reprocess that kept the old count would get one try and
- * die again. `pollCount` is reset for the same reason.
+ * Precisely what it does, because "clean slate" is not true and would be a bad
+ * thing to believe:
+ *
+ *   * `attempts` and `pollCount` go to zero. The operator is saying the reason
+ *     it failed is gone; a reprocess that kept the old count would get one try
+ *     and die again.
+ *   * `pollDeadlineAt` is **renewed** from the closed policy for this kind, not
+ *     preserved and not cleared. Preserving it would restart a poll whose
+ *     patience already ran out months ago, and it would give up on the first
+ *     look; clearing it would hand it unlimited patience. Both are worse than
+ *     giving it the same budget a fresh job of that kind gets.
+ *   * `runAfter` becomes `NOW()` — the database's, like everything else in the
+ *     queue.
+ *   * the lease, the pause reason and the recorded failure are cleared.
  *
  * What it does **not** do is bypass the exclusion. Reprocessing a
  * `generation.start` while another one is live for the same project would start
@@ -73,31 +85,49 @@ export async function reprocessDeadLetter(actor: Actor, jobId: string): Promise<
       }
     }
 
-    let revived: Job;
+    const patience = isJobKind(job.kind) ? pollDeadlineSecondsFor(job.kind) : null;
+
+    let revived: Job | undefined;
     try {
-      revived = await tx.job.update({
-        where: { id: job.id },
-        data: {
-          status: "PENDENTE",
-          attempts: 0,
-          pollCount: 0,
-          runAfter: new Date(),
-          finishedAt: null,
-          leaseOwner: null,
-          leaseExpiresAt: null,
-          pausedReason: null,
-          lastError: null,
-          lastErrorCode: null,
-          correlationId: null,
-        },
-      });
+      // The read above is advisory. This `WHERE` is what decides: two operators
+      // clicking at once both see `CARTA_MORTA`, both reach here, and the
+      // second one re-evaluates the predicate after the first commits — finding
+      // a row that is no longer dead, and matching nothing. One revival, one
+      // audit entry, and the loser is told plainly.
+      const rows = await tx.$queryRaw<Job[]>`
+        UPDATE "Job"
+           SET "status" = 'PENDENTE',
+               "attempts" = 0,
+               "pollCount" = 0,
+               "runAfter" = NOW(),
+               "pollDeadlineAt" = CASE
+                 WHEN ${patience}::double precision IS NULL THEN NULL
+                 ELSE NOW() + make_interval(secs => ${patience}::double precision)
+               END,
+               "finishedAt" = NULL,
+               "leaseOwner" = NULL,
+               "leaseExpiresAt" = NULL,
+               "pausedReason" = NULL,
+               "lastError" = NULL,
+               "lastErrorCode" = NULL,
+               "correlationId" = NULL,
+               "updatedAt" = NOW()
+         WHERE "id" = ${job.id}
+           AND "organizationId" = ${actor.organizationId}
+           AND "status" = 'CARTA_MORTA'
+        RETURNING *
+      `;
+      revived = rows[0];
     } catch (error) {
-      // The read above is advisory; the partial index decides. Two operators
-      // clicking at once is exactly the case it covers.
+      // The partial index is behind the check above, for the race it cannot see.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         throw new JobRefusal("TRABALHO_EM_ANDAMENTO");
       }
       throw error;
+    }
+
+    if (!revived) {
+      throw new JobRefusal("JOB_NAO_REPROCESSAVEL", { status: "CARTA_MORTA" });
     }
 
     // The revival and its record commit together. A job back in the queue with
