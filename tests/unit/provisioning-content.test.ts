@@ -174,6 +174,29 @@ describe("provisioning step 2 — content", () => {
     expect([...sharedFakeWorld.repositories.values()][0].commits).toHaveLength(2);
   });
 
+  it("does not commit twice when the provider committed and the local write failed", async () => {
+    // The remote/local window for step 2: the commit landed on the host and
+    // this side never recorded it.
+    mocks.provUpdate.mockRejectedValueOnce(new Error("falha proposital ao gravar o resultado"));
+
+    await expect(
+      provisionContent({ actor: admin, siteProjectId: "project-1" }),
+    ).rejects.toThrow(/resultado/);
+
+    const repo = [...sharedFakeWorld.repositories.values()][0];
+    expect(repo.commits).toHaveLength(1);
+    const strandedSha = repo.commits[0].sha;
+
+    // Press again with the provisioning row still empty, as it would be.
+    const resumed = await provisionContent({ actor: admin, siteProjectId: "project-1" });
+
+    // Identical content, so the provider reports the same commit and creates no
+    // second one. Idempotence lives in the content, not in our bookkeeping.
+    expect(resumed.commitSha).toBe(strandedSha);
+    expect(repo.commits).toHaveLength(1);
+    expect(resumed.alreadyDone).toBe(false);
+  });
+
   it("audits the commit without carrying content", async () => {
     await provisionContent({ actor: admin, siteProjectId: "project-1" });
 

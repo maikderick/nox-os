@@ -84,7 +84,17 @@ export const REPO_ROW = {
   externalId: "repo_1",
   url: "https://github.example/nox-sites-falso/site-oficina",
   defaultBranch: "main",
+  creationStartedAt: new Date("2026-08-25T15:05:00.000Z"),
   protectedAt: new Date("2026-08-25T15:10:00.000Z"),
+};
+
+/** A hosting project that finished: linked, with an id. */
+export const HOSTING_ROW = {
+  name: "site-oficina",
+  externalId: "prj_1",
+  url: "https://site-oficina.vercel.example",
+  creationStartedAt: new Date("2026-08-25T15:18:00.000Z"),
+  linkedAt: new Date("2026-08-25T15:20:00.000Z"),
 };
 
 export function projectRow(overrides: Record<string, unknown> = {}) {

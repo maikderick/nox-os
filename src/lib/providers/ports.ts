@@ -57,6 +57,15 @@ export interface HostingProvider {
   /** Preflight: does the platform's installation actually see this repository? */
   canAccessRepository(input: { repo: RepoRef }): Promise<boolean>;
 
+  /**
+   * Finds a project by name.
+   *
+   * Needed to finish a run that was interrupted between creating the project
+   * remotely and recording it here: without it, the only way out would be to
+   * delete the project by hand.
+   */
+  getProject(input: { name: string }): Promise<ProjectRef | null>;
+
   createProject(input: { name: string; repo: RepoRef }): Promise<ProjectRef>;
 
   setEnvironmentVariables(input: { project: ProjectRef; vars: EnvVarInput[] }): Promise<void>;

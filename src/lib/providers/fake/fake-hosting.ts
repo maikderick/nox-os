@@ -26,6 +26,13 @@ export function createFakeHostingProvider(
       return world.hostingCanSee(input.repo.owner, input.repo.name);
     },
 
+    async getProject(input): Promise<ProjectRef | null> {
+      const project = world.projects.get(input.name);
+      return project
+        ? { externalId: project.externalId, name: project.name, url: project.url }
+        : null;
+    },
+
     async createProject(input): Promise<ProjectRef> {
       if (world.projects.has(input.name)) {
         throw new ProviderResourceConflictError(`O projeto ${input.name}`);

@@ -167,6 +167,18 @@ export function runProviderContract(harness: ProviderHarness): void {
         expect(await harness.hosting().canAccessRepository({ repo })).toBe(false);
       });
 
+      it("não encontra projeto que não existe", async () => {
+        expect(await harness.hosting().getProject({ name: "nunca-criado" })).toBeNull();
+      });
+
+      it("encontra um projeto já criado, para poder reconciliar", async () => {
+        const repo = await createRepo();
+        const created = await harness.hosting().createProject({ name: NAME, repo });
+
+        const found = await harness.hosting().getProject({ name: NAME });
+        expect(found).toMatchObject({ name: NAME, externalId: created.externalId });
+      });
+
       it("cria o projeto ligado ao repositório", async () => {
         const repo = await createRepo();
         const project = await harness.hosting().createProject({ name: NAME, repo });

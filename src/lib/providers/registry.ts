@@ -40,6 +40,7 @@ function disabledHostingProvider(): HostingProvider {
     mode: "DESLIGADO",
     isConfigured: async () => false,
     canAccessRepository: async () => refuse(),
+    getProject: async () => refuse(),
     createProject: async () => refuse(),
     setEnvironmentVariables: async () => refuse(),
     listDeployments: async () => refuse(),

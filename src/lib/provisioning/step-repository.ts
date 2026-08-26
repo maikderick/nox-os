@@ -1,8 +1,12 @@
 import "server-only";
 
+import { Prisma } from "@prisma/client";
+
 import { type Actor } from "@/lib/authz/dal";
 import { prisma } from "@/lib/db";
 import { ProviderResourceConflictError } from "@/lib/providers/errors";
+import type { GitRepositoryProvider } from "@/lib/providers/ports";
+import type { RepoRef } from "@/lib/providers/types";
 import { writeAudit } from "@/lib/settings";
 
 import {
@@ -10,6 +14,7 @@ import {
   openProvisioningContext,
   resolveSitesOwner,
   runStep,
+  type ProvisioningContext,
 } from "./context";
 import { REQUIRED_CHECK, SITE_TEMPLATE, repositoryNameFor } from "./naming";
 import { ensureProvisioning, recordStepSuccess } from "./state";
@@ -23,16 +28,123 @@ export type RepositoryStepResult = {
     defaultBranch: string;
     protectedAt: Date | null;
   };
-  /** True when this call found the work already done. */
+  /** True when this call found the work already finished. */
   alreadyDone: boolean;
+  /** True when this call finished work a previous, interrupted run had started. */
+  reconciled: boolean;
 };
+
+type RepositoryRow = {
+  owner: string;
+  name: string;
+  url: string | null;
+  externalId: string | null;
+  defaultBranch: string;
+  creationStartedAt: Date | null;
+  protectedAt: Date | null;
+};
+
+/**
+ * A repository is finished only when both halves landed: it exists remotely
+ * (`externalId`) and its default branch is protected (`protectedAt`). A row with
+ * either missing is a run that was interrupted, not a result.
+ */
+export function isRepositoryComplete(row: RepositoryRow | null): boolean {
+  return Boolean(row?.externalId && row.protectedAt);
+}
+
+function toResult(row: RepositoryRow, flags: { alreadyDone: boolean; reconciled: boolean }) {
+  return {
+    repository: {
+      owner: row.owner,
+      name: row.name,
+      url: row.url,
+      externalId: row.externalId,
+      defaultBranch: row.defaultBranch,
+      protectedAt: row.protectedAt,
+    },
+    ...flags,
+  };
+}
+
+/**
+ * Writes down what is about to be attempted, before attempting it.
+ *
+ * The unique index on (provider, owner, name) is what makes this safe: if the
+ * name belongs to another project, this fails here — locally, cheaply, before
+ * anything remote happens.
+ */
+async function recordIntent(
+  context: ProvisioningContext,
+  input: { owner: string; name: string },
+) {
+  try {
+    return await prisma.repository.create({
+      data: {
+        organizationId: context.actor.organizationId,
+        siteProjectId: context.project.id,
+        provider: "github",
+        owner: input.owner,
+        name: input.name,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new ProviderResourceConflictError(
+        `O nome ${input.owner}/${input.name} já pertence a outro projeto. Renomeie o cliente`,
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Brings a started-but-unfinished repository to completion.
+ *
+ * Whether the previous run died before or after the remote call, the answer is
+ * the same: ask the host what is there, adopt it if it exists, create it if it
+ * does not, then protect. Nothing has to be renamed or deleted by hand.
+ */
+async function reconcileOrCreate(
+  provider: GitRepositoryProvider,
+  row: RepositoryRow,
+  siteProjectId: string,
+): Promise<{ ref: RepoRef; created: boolean }> {
+  const remote = await provider.getRepository({ owner: row.owner, name: row.name });
+
+  if (remote) {
+    if (!row.creationStartedAt) {
+      // The name was taken before we ever tried. Adopting it would mean
+      // committing a client's site into somebody else's repository.
+      throw new ProviderResourceConflictError(
+        `O repositório ${row.owner}/${row.name} já existe e não foi criado pelo NOX OS. Escolha outro nome para o cliente ou mova o repositório existente`,
+      );
+    }
+    return { ref: remote, created: false };
+  }
+
+  // Marked before the remote call, so a crash in the window between them is
+  // distinguishable from never having tried.
+  await prisma.repository.update({
+    where: { siteProjectId },
+    data: { creationStartedAt: new Date() },
+  });
+
+  const ref = await provider.createFromTemplate({
+    owner: row.owner,
+    name: row.name,
+    templateOwner: SITE_TEMPLATE.owner,
+    templateRepo: SITE_TEMPLATE.repo,
+  });
+  return { ref, created: true };
+}
 
 /**
  * Step 1 — create the client's repository from the template and protect it.
  *
- * Idempotent by checking what exists first: a repository row for the project is
- * the record that the step succeeded, so pressing the button again reports the
- * same result instead of trying to create a second repository.
+ * Safe to repeat at any point: the local row records the intention before the
+ * remote call, so a crash in the window between them leaves enough behind to
+ * finish the job on the next press.
  */
 export async function provisionRepository(params: {
   actor: Actor;
@@ -47,85 +159,79 @@ export async function provisionRepository(params: {
   await ensureProvisioning(params.siteProjectId);
 
   return runStep({ siteProjectId: params.siteProjectId, step: "repository" }, async () => {
-    const existing = context.project.repository;
-    if (existing) {
-      return {
-        repository: {
-          owner: existing.owner,
-          name: existing.name,
-          url: existing.url,
-          externalId: existing.externalId,
-          defaultBranch: existing.defaultBranch,
-          protectedAt: existing.protectedAt,
-        },
-        alreadyDone: true,
-      };
+    const existing = context.project.repository as RepositoryRow | null;
+    if (isRepositoryComplete(existing)) {
+      return toResult(existing!, { alreadyDone: true, reconciled: false });
     }
 
     const provider = await gitProviderFor(context);
-    const owner = await resolveSitesOwner(context);
-    const name = repositoryNameFor(context.project.client.slug);
+    const owner = existing?.owner ?? (await resolveSitesOwner(context));
+    const name = existing?.name ?? repositoryNameFor(context.project.client.slug);
 
-    // The client slug is unique per organization, not across the whole host, so
-    // availability is checked rather than assumed.
-    const taken = await provider.getRepository({ owner, name });
-    if (taken) {
-      throw new ProviderResourceConflictError(
-        `O repositório ${owner}/${name}. Escolha outro nome para o cliente ou mova o repositório existente`,
-      );
-    }
+    // Intent first. Everything after this point can be repeated.
+    const row = existing ?? (await recordIntent(context, { owner, name }));
+    const startedBefore = Boolean(row.creationStartedAt);
 
-    const repo = await provider.createFromTemplate({
-      owner,
-      name,
-      templateOwner: SITE_TEMPLATE.owner,
-      templateRepo: SITE_TEMPLATE.repo,
-    });
+    const { ref, created } = await reconcileOrCreate(
+      provider,
+      row as RepositoryRow,
+      context.project.id,
+    );
 
-    // Protection asks for `verify` and nothing else: the other names are steps
-    // inside that job and never appear as checks.
-    await provider.protectDefaultBranch({ repo, requiredChecks: [REQUIRED_CHECK] });
-    const protectedAt = new Date();
+    // Protection is idempotent on the provider side, so it is applied on every
+    // pass — including one that only adopted an already-created repository.
+    await provider.protectDefaultBranch({ repo: ref, requiredChecks: [REQUIRED_CHECK] });
 
-    const stored = await prisma.repository.create({
+    const stored = await prisma.repository.update({
+      where: { siteProjectId: context.project.id },
       data: {
-        organizationId: context.actor.organizationId,
-        siteProjectId: context.project.id,
-        provider: "github",
-        owner: repo.owner,
-        name: repo.name,
-        externalId: repo.externalId,
-        url: repo.url,
-        defaultBranch: repo.defaultBranch,
-        protectedAt,
+        externalId: ref.externalId,
+        url: ref.url,
+        defaultBranch: ref.defaultBranch,
+        protectedAt: new Date(),
       },
     });
 
     await recordStepSuccess({ siteProjectId: context.project.id, step: "repository" });
 
+    // Two events, not one: creating a repository and applying a ruleset are
+    // different acts with different consequences, and a review of an incident
+    // has to be able to see that the second one happened even when the first
+    // was a no-op.
+    if (created) {
+      await writeAudit({
+        userId: context.actor.userId,
+        action: "provisioning.repository.create",
+        entity: "Repository",
+        entityId: stored.id,
+        meta: { mode: context.mode, owner: ref.owner, name: ref.name },
+      });
+    } else if (startedBefore) {
+      await writeAudit({
+        userId: context.actor.userId,
+        action: "provisioning.repository.reconcile",
+        entity: "Repository",
+        entityId: stored.id,
+        meta: { mode: context.mode, owner: ref.owner, name: ref.name },
+      });
+    }
+
     await writeAudit({
       userId: context.actor.userId,
-      action: "provisioning.repository.create",
+      action: "provisioning.repository.protect",
       entity: "Repository",
       entityId: stored.id,
       meta: {
         mode: context.mode,
-        owner: repo.owner,
-        name: repo.name,
+        owner: ref.owner,
+        name: ref.name,
         requiredChecks: [REQUIRED_CHECK],
       },
     });
 
-    return {
-      repository: {
-        owner: stored.owner,
-        name: stored.name,
-        url: stored.url,
-        externalId: stored.externalId,
-        defaultBranch: stored.defaultBranch,
-        protectedAt: stored.protectedAt,
-      },
+    return toResult(stored as RepositoryRow, {
       alreadyDone: false,
-    };
+      reconciled: !created && startedBefore,
+    });
   });
 }

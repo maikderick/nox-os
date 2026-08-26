@@ -104,6 +104,18 @@ export function createSandboxHostingProvider(
       return fake.canAccessRepository(input);
     },
 
+    async getProject(input) {
+      const existing = await fake.getProject(input);
+      if (!existing) return null;
+
+      const payload = readFixture<VercelProjectPayload>("vercel", "project.json");
+      return mapVercelProject({
+        ...payload,
+        name: input.name,
+        targets: { production: { alias: [`${input.name}.vercel.app`] } },
+      });
+    },
+
     async createProject(input) {
       await fake.createProject(input);
 

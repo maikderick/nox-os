@@ -610,6 +610,11 @@ model Repository {
   url            String?
   defaultBranch  String       @default("main")
   installationId String?
+  /// Marcado imediatamente antes de chamar a criação remota. Distingue "nunca
+  /// tentei" de "tentei e não sei se completou" — sem isso, uma repetição
+  /// adotaria um repositório homônimo que nunca foi nosso.
+  creationStartedAt DateTime?
+  /// Só está concluído com externalId e protectedAt preenchidos.
   protectedAt    DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -629,6 +634,9 @@ model HostingProject {
   externalId     String?
   name           String
   url            String?
+  /// Mesma ideia do Repository: marca a tentativa antes da chamada remota.
+  creationStartedAt DateTime?
+  /// Só está concluído com linkedAt preenchido.
   linkedAt       DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
