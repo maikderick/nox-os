@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import type { Actor } from "@/lib/authz/dal";
 import { permissionsForRole } from "@/lib/authz/permissions";
