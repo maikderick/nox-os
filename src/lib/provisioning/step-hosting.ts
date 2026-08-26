@@ -180,25 +180,28 @@ export async function provisionHosting(params: {
       ],
     });
 
-    const stored = await prisma.hostingProject.update({
-      where: { siteProjectId: context.project.id },
-      data: { externalId: ref.externalId, url: ref.url, linkedAt: new Date() },
-    });
+    const stored = await prisma.$transaction(async (tx) => {
+      const linked = await tx.hostingProject.update({
+        where: { siteProjectId: context.project.id },
+        data: { externalId: ref.externalId, url: ref.url, linkedAt: new Date() },
+      });
 
-    await recordStepSuccess({ siteProjectId: context.project.id, step: "hosting" });
+      await recordStepSuccess({ siteProjectId: context.project.id, step: "hosting", db: tx });
 
-    await writeAudit({
-      userId: context.actor.userId,
-      action: created
-        ? "provisioning.hosting.create"
-        : "provisioning.hosting.reconcile",
-      entity: "HostingProject",
-      entityId: stored.id,
-      meta: {
-        mode: context.mode,
-        name: ref.name,
-        repository: `${repo.owner}/${repo.name}`,
-      },
+      await writeAudit({
+        db: tx,
+        userId: context.actor.userId,
+        action: created ? "provisioning.hosting.create" : "provisioning.hosting.reconcile",
+        entity: "HostingProject",
+        entityId: linked.id,
+        meta: {
+          mode: context.mode,
+          name: ref.name,
+          repository: `${repo.owner}/${repo.name}`,
+        },
+      });
+
+      return linked;
     });
 
     return toResult(stored as HostingRow, {

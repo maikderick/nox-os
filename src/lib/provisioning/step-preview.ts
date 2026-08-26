@@ -1,6 +1,7 @@
 import "server-only";
 
 import { type Actor } from "@/lib/authz/dal";
+import { prisma } from "@/lib/db";
 
 import type { DeploymentInfo } from "@/lib/providers/types";
 import { writeAudit } from "@/lib/settings";
@@ -81,28 +82,33 @@ export async function reconcilePreview(params: {
       const checkedAt = new Date();
 
       // A commit with no build yet is a normal answer, not a failure: the
-      // platform may still be working. The step records that it asked.
-      await recordStepSuccess({
-        siteProjectId: context.project.id,
-        step: "reconcile-preview",
-        data: {
-          previewUrl: chosen?.url ?? null,
-          previewExternalId: chosen?.externalId ?? null,
-          previewCheckedAt: checkedAt,
-        },
-      });
+      // platform may still be working. The step records that it asked — and the
+      // record and its audit entry commit together.
+      await prisma.$transaction(async (tx) => {
+        await recordStepSuccess({
+          siteProjectId: context.project.id,
+          step: "reconcile-preview",
+          data: {
+            previewUrl: chosen?.url ?? null,
+            previewExternalId: chosen?.externalId ?? null,
+            previewCheckedAt: checkedAt,
+          },
+          db: tx,
+        });
 
-      await writeAudit({
-        userId: context.actor.userId,
-        action: "provisioning.preview.reconcile",
-        entity: "SiteProject",
-        entityId: context.project.id,
-        meta: {
-          mode: context.mode,
-          commitSha,
-          found: deployments.length,
-          state: chosen?.state ?? null,
-        },
+        await writeAudit({
+          db: tx,
+          userId: context.actor.userId,
+          action: "provisioning.preview.reconcile",
+          entity: "SiteProject",
+          entityId: context.project.id,
+          meta: {
+            mode: context.mode,
+            commitSha,
+            found: deployments.length,
+            state: chosen?.state ?? null,
+          },
+        });
       });
 
       return {

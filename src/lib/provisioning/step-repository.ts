@@ -215,51 +215,67 @@ export async function provisionRepository(params: {
     // pass — including one that only adopted an already-created repository.
     await provider.protectDefaultBranch({ repo: ref, requiredChecks: [REQUIRED_CHECK] });
 
-    const stored = await prisma.repository.update({
-      where: { siteProjectId: context.project.id },
-      data: {
-        externalId: ref.externalId,
-        url: ref.url,
-        defaultBranch: ref.defaultBranch,
-        protectedAt: new Date(),
-      },
-    });
-
-    await recordStepSuccess({ siteProjectId: context.project.id, step: "repository" });
-
-    // Two events, not one: creating a repository and applying a ruleset are
-    // different acts with different consequences, and a review of an incident
-    // has to be able to see that the second one happened even when the first
-    // was a no-op.
-    if (created) {
-      await writeAudit({
-        userId: context.actor.userId,
-        action: "provisioning.repository.create",
-        entity: "Repository",
-        entityId: stored.id,
-        meta: { mode: context.mode, owner: ref.owner, name: ref.name },
+    // The local completion and its audit entries land together or not at all.
+    // A row marked finished with no trace, or a trace for a completion that
+    // rolled back, are both worse than the step failing: the remote effect
+    // survives either way, and the next press reconciles it — but only if this
+    // side has not lied about being done.
+    const stored = await prisma.$transaction(async (tx) => {
+      const row = await tx.repository.update({
+        where: { siteProjectId: context.project.id },
+        data: {
+          externalId: ref.externalId,
+          url: ref.url,
+          defaultBranch: ref.defaultBranch,
+          protectedAt: new Date(),
+        },
       });
-    } else if (startedBefore) {
-      await writeAudit({
-        userId: context.actor.userId,
-        action: "provisioning.repository.reconcile",
-        entity: "Repository",
-        entityId: stored.id,
-        meta: { mode: context.mode, owner: ref.owner, name: ref.name },
-      });
-    }
 
-    await writeAudit({
-      userId: context.actor.userId,
-      action: "provisioning.repository.protect",
-      entity: "Repository",
-      entityId: stored.id,
-      meta: {
-        mode: context.mode,
-        owner: ref.owner,
-        name: ref.name,
-        requiredChecks: [REQUIRED_CHECK],
-      },
+      await recordStepSuccess({
+        siteProjectId: context.project.id,
+        step: "repository",
+        db: tx,
+      });
+
+      // Two events, not one: creating a repository and applying a ruleset are
+      // different acts with different consequences, and a review of an incident
+      // has to be able to see that the second one happened even when the first
+      // was a no-op.
+      if (created) {
+        await writeAudit({
+          db: tx,
+          userId: context.actor.userId,
+          action: "provisioning.repository.create",
+          entity: "Repository",
+          entityId: row.id,
+          meta: { mode: context.mode, owner: ref.owner, name: ref.name },
+        });
+      } else if (startedBefore) {
+        await writeAudit({
+          db: tx,
+          userId: context.actor.userId,
+          action: "provisioning.repository.reconcile",
+          entity: "Repository",
+          entityId: row.id,
+          meta: { mode: context.mode, owner: ref.owner, name: ref.name },
+        });
+      }
+
+      await writeAudit({
+        db: tx,
+        userId: context.actor.userId,
+        action: "provisioning.repository.protect",
+        entity: "Repository",
+        entityId: row.id,
+        meta: {
+          mode: context.mode,
+          owner: ref.owner,
+          name: ref.name,
+          requiredChecks: [REQUIRED_CHECK],
+        },
+      });
+
+      return row;
     });
 
     return toResult(stored as RepositoryRow, {

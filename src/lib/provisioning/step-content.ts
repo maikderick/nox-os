@@ -149,23 +149,27 @@ export async function provisionContent(params: {
       ],
     });
 
-    await recordStepSuccess({
-      siteProjectId: context.project.id,
-      step: "content",
-      data: { contentSha256, commitSha: commit.sha },
-    });
+    await prisma.$transaction(async (tx) => {
+      await recordStepSuccess({
+        siteProjectId: context.project.id,
+        step: "content",
+        data: { contentSha256, commitSha: commit.sha },
+        db: tx,
+      });
 
-    await writeAudit({
-      userId: context.actor.userId,
-      action: "provisioning.content.commit",
-      entity: "SiteProject",
-      entityId: context.project.id,
-      meta: {
-        mode: context.mode,
-        briefVersion: briefVersion,
-        contentSha256,
-        commitSha: commit.sha,
-      },
+      await writeAudit({
+        db: tx,
+        userId: context.actor.userId,
+        action: "provisioning.content.commit",
+        entity: "SiteProject",
+        entityId: context.project.id,
+        meta: {
+          mode: context.mode,
+          briefVersion: briefVersion,
+          contentSha256,
+          commitSha: commit.sha,
+        },
+      });
     });
 
     return { contentSha256, commitSha: commit.sha, alreadyDone: false };

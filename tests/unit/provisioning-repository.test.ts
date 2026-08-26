@@ -79,6 +79,15 @@ vi.mock("@/lib/integrations/settings-service", () => ({
 }));
 vi.mock("@/lib/db", () => ({
   prisma: {
+    // The real client hands the callback a transaction-bound client; the same
+    // stubs stand in for it.
+    $transaction: async (run: (client: unknown) => Promise<unknown>) =>
+      run({
+        repository: { update: store.update },
+        siteProvisioning: { upsert: mocks.provUpsert, update: mocks.provUpdate },
+        auditLog: { create: mocks.auditCreate },
+        user: { findUnique: mocks.userFindUnique },
+      }),
     siteProject: { findFirst: mocks.projectFindFirst },
     repository: { create: store.create, update: store.update },
     secretRef: { findFirst: mocks.secretFindFirst },

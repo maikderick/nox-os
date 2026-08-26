@@ -3,6 +3,8 @@ import "server-only";
 import { assertPermission, type Actor } from "@/lib/authz/dal";
 import { AuthorizationError } from "@/lib/authz/errors";
 import { prisma } from "@/lib/db";
+import type { SiteFactoryDb } from "@/lib/site-factory/db-client";
+
 import { describeErrorForStorage, formatStoredError } from "./error-record";
 
 /**
@@ -88,9 +90,14 @@ export async function getProvisioning(actor: Actor, siteProjectId: string) {
   };
 }
 
-/** Creates the row on first use; every step needs somewhere to record itself. */
-export async function ensureProvisioning(siteProjectId: string) {
-  return prisma.siteProvisioning.upsert({
+/**
+ * Creates the row on first use; every step needs somewhere to record itself.
+ *
+ * Takes a transaction client so a step can make its completion, its status and
+ * its audit entries one unit of work.
+ */
+export async function ensureProvisioning(siteProjectId: string, db: SiteFactoryDb = prisma) {
+  return db.siteProvisioning.upsert({
     where: { siteProjectId },
     update: {},
     create: { siteProjectId },
@@ -107,9 +114,11 @@ export async function recordStepSuccess(params: {
     previewExternalId?: string | null;
     previewCheckedAt?: Date | null;
   };
+  db?: SiteFactoryDb;
 }) {
-  await ensureProvisioning(params.siteProjectId);
-  return prisma.siteProvisioning.update({
+  const db = params.db ?? prisma;
+  await ensureProvisioning(params.siteProjectId, db);
+  return db.siteProvisioning.update({
     where: { siteProjectId: params.siteProjectId },
     data: {
       status: STATUS_AFTER_STEP[params.step],
