@@ -13,7 +13,10 @@ const blocked = (target: string): never => {
   );
 };
 
-globalThis.fetch = ((input: unknown) => {
+// Async on purpose: the real `fetch` returns a promise that rejects, and code
+// under test catches it that way. Throwing synchronously would fail through a
+// different path than the one production takes.
+globalThis.fetch = (async (input: unknown) => {
   const target =
     typeof input === "string"
       ? input
