@@ -21,6 +21,10 @@ preciso desfazer nada.
 | 3 | Criar hospedagem | `POST /api/projects/[id]/provision/hosting` | repositório existe; **a instalação enxerga o repositório**; não existe `HostingProject` |
 | 4 | Reconciliar prévia | `POST /api/projects/[id]/provision/reconcile-preview` | hospedagem existe; há `commitSha` gravado |
 
+O check exigido é `verify`, e o `nox-site-template` tem um teste próprio que falha
+se aquele repositório renomear ou dividir o job — o acordo é verificado dos dois
+lados, no CI de cada um.
+
 A ordem é **GitHub antes de Vercel**, e não por gosto: o projeto de hospedagem
 nasce ligado a um repositório que precisa existir e ser visível antes.
 
