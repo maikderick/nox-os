@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import { claimJob, DEFAULT_LEASE_SECONDS } from "./claim";
+import { checkJobGate, PAUSE_RETRY_SECONDS } from "./gate";
 import { extendLease, holdsLease } from "./heartbeat";
 import { JOB_HANDLERS, type JobHandlers, type JobOutcome } from "./handlers";
 import { isJobKind, type JobKind } from "./kinds";
@@ -145,7 +146,8 @@ export async function runJobBatch(params: RunJobBatchParams = {}): Promise<JobBa
     report.outcomes[type] = (report.outcomes[type] ?? 0) + 1;
   };
 
-  // Before anything else, and every cycle — not on a separate schedule.
+  // Once, at the start of the invocation — not on a separate schedule, and not
+  // per job either.
   //
   // A job whose consumer was killed sits `EM_EXECUCAO` with a lapsed lease and
   // is invisible to `claimJob`. If reclaiming were a separate cron, or a button
@@ -153,6 +155,12 @@ export async function runJobBatch(params: RunJobBatchParams = {}): Promise<JobBa
   // look stuck and the reason would be a second moving part. Doing it here
   // means the same invocation that finds nothing to do is the one that
   // discovers why.
+  //
+  // Once is enough because the cron runs every minute: a lease that lapses
+  // mid-batch is picked up by the next invocation, at most sixty seconds later.
+  // Sweeping the whole table before every acquisition would turn a one-job
+  // batch into as many full scans as it processes jobs, to buy back that
+  // minute.
   const reclaimed = await reclaimExpiredLeases({ organizationId: params.organizationId });
   report.reclaimed = reclaimed.length;
 
@@ -174,8 +182,24 @@ export async function runJobBatch(params: RunJobBatchParams = {}): Promise<JobBa
     const kind = job.kind;
     const handler = isJobKind(kind) ? handlers[kind as JobKind] : undefined;
 
+    // The brake, asked before the handler is entered rather than inside it. A
+    // handler that decides for itself is a handler that can forget to, and the
+    // consequence of forgetting is an outbound call from an installation whose
+    // operator believes they switched everything off.
+    const gate = isJobKind(kind)
+      ? await checkJobGate({ kind, organizationId: job.organizationId })
+      : { allowed: true as const };
+
     let outcome: JobOutcome;
-    if (!handler) {
+    if (!gate.allowed) {
+      // Not a failure. Nobody refused this job — it was never offered to
+      // anyone. It waits, and asks again.
+      outcome = {
+        type: "pausar",
+        reason: gate.reason,
+        retryAfterSeconds: PAUSE_RETRY_SECONDS,
+      };
+    } else if (!handler) {
       // Not a retry: repeating does not make code appear that does not exist.
       outcome = {
         type: "falha_permanente",

@@ -83,6 +83,20 @@ async function createOrganizationWithProject(token: string, suffix: string) {
   const briefVersion = await prisma.siteBriefVersion.findFirstOrThrow({
     where: { siteProjectId: siteProject.id },
   });
+  // The providers every job kind depends on, switched to `FALSO`.
+  //
+  // Without this the brake would pause everything, which is correct behaviour
+  // and the wrong subject: a suite about acquisition or about outcomes should
+  // not be silently exercising the gate. The suite that *is* about the brake
+  // clears these and sets its own.
+  await prisma.integrationSetting.createMany({
+    data: ["github", "vercel", "cursor"].map((provider) => ({
+      organizationId: organization.id,
+      provider,
+      mode: "FALSO",
+    })),
+  });
+
   const generationRun = await prisma.generationRun.create({
     data: {
       siteProjectId: siteProject.id,

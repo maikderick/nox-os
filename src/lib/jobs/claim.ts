@@ -87,6 +87,11 @@ export async function claimJob(params: ClaimJobParams): Promise<Job | null> {
     )
     UPDATE "Job" AS j
        SET "status" = 'EM_EXECUCAO',
+           -- Cleared on the way in, not on the way out. A job that is running
+           -- is not paused, and leaving the old reason behind would attach
+           -- "the integration was off" to whatever happens next — including a
+           -- failure that had nothing to do with the brake.
+           "pausedReason" = NULL,
            "leaseOwner" = ${params.owner},
            "leaseExpiresAt" = NOW() + make_interval(secs => ${leaseSeconds}::double precision),
            "updatedAt" = NOW()
