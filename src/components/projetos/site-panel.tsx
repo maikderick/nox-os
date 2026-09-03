@@ -148,7 +148,7 @@ export function SitePanel({ projectId, initialSite, canWrite, leadId, aiConfigur
   return (
     <section className="nox-card overflow-hidden" aria-label="Site do cliente">
       {generating ? (
-        <div className="p-6 sm:p-8">
+        <div className="p-6 sm:p-8" aria-busy="true" aria-live="polite">
           <div className="flex items-start gap-4">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-nox-cyan/10 text-nox-cyan">
               <Loader2 size={20} className="animate-spin" aria-hidden="true" />
@@ -161,7 +161,14 @@ export function SitePanel({ projectId, initialSite, canWrite, leadId, aiConfigur
                 </span>
               </div>
               <p className="mt-1 text-sm text-nox-muted">Estruturando a página a partir do briefing confirmado.</p>
-              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-nox-panel">
+              <div
+                className="mt-4 h-1.5 overflow-hidden rounded-full bg-nox-panel"
+                role="progressbar"
+                aria-label="Progresso da geração"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round((Math.min(stage, STAGES.length) / STAGES.length) * 100)}
+              >
                 <div
                   className="h-full rounded-full bg-linear-to-r from-nox-purple to-nox-cyan transition-all duration-700"
                   style={{ width: `${Math.max(8, (Math.min(stage, STAGES.length) / STAGES.length) * 100)}%` }}
@@ -273,7 +280,7 @@ export function SitePanel({ projectId, initialSite, canWrite, leadId, aiConfigur
               </p>
               {canWrite ? (
                 <button type="button" onClick={() => void generate()} className="nox-btn-primary mt-5 px-6">
-                  <Sparkles size={16} aria-hidden="true" /> {site ? "Gerar de novo" : "Gerar site com IA"}
+                  <Sparkles size={16} aria-hidden="true" /> {site ? "Gerar de novo" : aiConfigured ? "Gerar site com IA" : "Gerar site"}
                 </button>
               ) : null}
             </div>

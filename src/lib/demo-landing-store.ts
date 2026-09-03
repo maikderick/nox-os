@@ -101,10 +101,12 @@ export async function saveGeneratedDemoLanding(params: {
   content: DemoLandingContent;
   createdById?: string | null;
   expiresInDays: number;
+  /** An explicit date wins over the day count, so a permanent site keeps its own. */
+  expiresAt?: Date;
   status: "DRAFT" | "APPROVED";
 }): Promise<DemoLanding> {
   const contentJson = JSON.stringify(params.content);
-  const expiresAt = demoExpiryDate(params.expiresInDays);
+  const expiresAt = params.expiresAt ?? demoExpiryDate(params.expiresInDays);
   const approvedAt = params.status === "APPROVED" ? new Date() : null;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {

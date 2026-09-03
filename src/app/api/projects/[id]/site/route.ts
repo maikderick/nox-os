@@ -24,6 +24,8 @@ type Context = { params: Promise<{ id: string }> };
 const PREVIEW_DAYS = 14;
 /** "Permanent" in a system built around expiry: far enough to never be hit. */
 const PERMANENT_DAYS = 3650;
+/** Anything further than a year out is treated as permanent. */
+const PERMANENT_THRESHOLD_MS = 365 * 86_400_000;
 
 const generateSchema = z
   .object({
@@ -133,11 +135,19 @@ export async function POST(request: Request, context: Context) {
       }
     }
 
+    // A permanent site keeps its date through a regeneration; only a preview
+    // gets a fresh 14-day window.
+    const existing = await prisma.demoLanding.findUnique({ where: { businessId: business.id } });
+    const keepExpiry =
+      existing && existing.status === "APPROVED" && existing.expiresAt.getTime() - Date.now() > PERMANENT_THRESHOLD_MS
+        ? existing.expiresAt
+        : null;
     const landing = await saveGeneratedDemoLanding({
       business: { id: business.id, name: brief.businessName.value },
       content,
       createdById: actor.userId,
       expiresInDays: body.data.expiresInDays,
+      expiresAt: keepExpiry ?? undefined,
       status: "APPROVED",
     });
 
@@ -174,6 +184,14 @@ export async function PATCH(request: Request, context: Context) {
     }
 
     const action = body.data.action;
+    // Making a site permanent is the publishing decision; it takes the same
+    // permission the state machine asks for.
+    if (action === "tornar_permanente" && !actor.permissions.includes("publish:approve")) {
+      return NextResponse.json(
+        { error: "Tornar o site permanente exige a permissão de aprovar publicação.", code: "sem_permissao" },
+        { status: 403 },
+      );
+    }
     const updated = await prisma.demoLanding.update({
       where: { id: landing.id },
       data:

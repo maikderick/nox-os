@@ -61,7 +61,7 @@ const FAMILIES: Record<SectorFamily, FamilyProfile> = {
     servicesTitle: "Serviços",
     processTitle: "Como agendar",
     action: "agendar",
-    outcome: "Chegue no horário combinado e seja atendido sem espera.",
+    outcome: "Chegue no horário combinado e seja atendido pela equipe.",
     ctaWhatsApp: "Agendar pelo WhatsApp",
     finalCtaTitle: "Agende seu horário pelo WhatsApp",
     tagline: "Serviços, horários e agendamento em um só lugar.",
@@ -87,8 +87,8 @@ const FAMILIES: Record<SectorFamily, FamilyProfile> = {
     action: "agendar uma visita",
     outcome: "Conheça o espaço e comece no plano que fizer sentido para você.",
     ctaWhatsApp: "Falar no WhatsApp",
-    finalCtaTitle: "Dê o primeiro passo hoje",
-    tagline: "Modalidades, horários e matrícula sem complicação.",
+    finalCtaTitle: "Fale com a equipe pelo WhatsApp",
+    tagline: "Modalidades, horários e matrícula em um só lugar.",
     primary: "#15803d",
     accent: "#4ade80",
   },
@@ -145,7 +145,7 @@ const FAMILIES: Record<SectorFamily, FamilyProfile> = {
     servicesTitle: "Áreas de atuação",
     processTitle: "Como funciona o atendimento",
     action: "agendar uma conversa",
-    outcome: "Receba uma proposta clara e decida com tranquilidade.",
+    outcome: "Receba a proposta e decida o próximo passo.",
     ctaWhatsApp: "Falar no WhatsApp",
     finalCtaTitle: "Vamos conversar sobre o seu caso",
     tagline: "Atuação, forma de trabalho e contato direto.",
@@ -196,10 +196,23 @@ const normalize = (value: string) =>
     .normalize("NFD")
     .replace(/\p{M}/gu, "");
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * A keyword counts only at the start of a word: "pet" must not match
+ * "competitivo". A keyword written with a trailing space ("bar ") must also
+ * end the word, so "barbearia" stays out of the food family.
+ */
+function hasKeyword(text: string, keyword: string): boolean {
+  const wholeWord = keyword.endsWith(" ");
+  const tail = wholeWord ? "($|[^a-z0-9])" : "";
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(keyword.trim())}${tail}`).test(text);
+}
+
 export function sectorFamily(sector: string): SectorFamily {
   const wanted = normalize(sector);
   const found = (Object.keys(FAMILIES) as SectorFamily[]).find(
-    (family) => family !== "default" && FAMILIES[family].keywords.some((keyword) => wanted.includes(keyword)),
+    (family) => family !== "default" && FAMILIES[family].keywords.some((keyword) => hasKeyword(wanted, keyword)),
   );
   return found ?? "default";
 }
@@ -431,7 +444,7 @@ export function buildSiteContentFromBrief(params: {
 
   const finalCtaText = clip(
     channels.whatsapp
-      ? `Chame ${name} no WhatsApp para ${family.action}. O atendimento continua por lá, sem cadastro e sem espera.`
+      ? `Chame ${name} no WhatsApp para ${family.action}. O atendimento continua por lá.`
       : `Entre em contato com ${name} pelos canais desta página para ${family.action}.`,
     600,
   );

@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ArrowLeft, Building2, FileText, MapPin, Phone, Server } from "lucide-react";
@@ -15,8 +16,13 @@ import { requireUser } from "@/lib/session";
 
 type PageProps = { params: Promise<{ id: string }> };
 
-function siteOrigin(): string {
-  return process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+/** The origin the visitor is actually on, so the copied link matches the API's. */
+async function siteOrigin(): Promise<string> {
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  if (!host) return process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const proto = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
 }
 
 function parseBrief(json: string | undefined): SiteBrief | null {
@@ -39,7 +45,7 @@ export default async function ProjectPage({ params }: PageProps) {
   const businessId = project.client.businessId;
   const stored = businessId ? await prisma.demoLanding.findUnique({ where: { businessId } }) : null;
   const landing = stored ? await markExpiredIfNeeded(stored) : null;
-  const site = landing ? (toDemoLandingDto(landing, siteOrigin()) as unknown as SiteDto) : null;
+  const site = landing ? (toDemoLandingDto(landing, await siteOrigin()) as unknown as SiteDto) : null;
 
   const current =
     project.briefVersions.find((version) => version.id === project.currentBriefVersionId) ??

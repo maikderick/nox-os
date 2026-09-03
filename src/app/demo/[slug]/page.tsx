@@ -433,7 +433,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
         }}
       />
 
-      <div className="sticky top-0 z-[60] flex h-9 items-center justify-center border-b border-amber-200/15 bg-[#17130d]/95 px-3 text-center text-[9px] font-semibold uppercase tracking-[0.13em] text-amber-100 backdrop-blur-2xl sm:text-[10px] sm:tracking-[0.17em]">
+      <div className="sticky top-0 z-[60] flex h-9 items-center justify-center border-b border-amber-200/15 bg-[#17130d]/95 px-3 text-center text-[11px] font-semibold uppercase tracking-[0.13em] text-amber-100 backdrop-blur-2xl sm:text-xs sm:tracking-[0.17em]">
         <span className="inline-flex min-w-0 items-center justify-center gap-2">
           <Info aria-hidden="true" className="h-3.5 w-3.5" />
           <span className="truncate">{isPermanent ? `Site de ${business.name}` : `Prévia temporária · válida até ${validUntil}`}</span>
@@ -793,7 +793,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
                   >
                     <img
                       src={image.url}
-                      alt=""
+                      alt={image.alt}
                       className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.025]"
                       decoding="async"
                       loading="lazy"
@@ -1338,10 +1338,12 @@ export default async function DemoLandingPage({ params }: PageProps) {
               </div>
             </div>
 
-            <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-300/10 bg-emerald-300/[0.045] p-4 text-xs leading-6 text-emerald-100/65">
-              <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-              Contato e endereço confirmados antes da publicação desta página.
-            </div>
+            {whatsapp || safePhone || hasLocationDetails ? (
+              <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-300/10 bg-emerald-300/[0.045] p-4 text-xs leading-6 text-emerald-100/65">
+                <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                Contato e endereço confirmados antes da publicação desta página.
+              </div>
+            ) : null}
           </div>
         </section>
 

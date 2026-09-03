@@ -54,6 +54,7 @@ export const DEMO_AI_PROTECTED_FIELDS = [
   "galleryImages",
   "builtSiteUrl",
   "instagramPosts",
+  "whatsappE164",
 ] as const;
 
 /**
