@@ -55,6 +55,10 @@ export const DEMO_AI_PROTECTED_FIELDS = [
   "builtSiteUrl",
   "instagramPosts",
   "whatsappE164",
+  "menu",
+  "openingHours",
+  "theme",
+  "eyebrow",
 ] as const;
 
 /**

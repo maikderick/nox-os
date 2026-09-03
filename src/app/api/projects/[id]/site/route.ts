@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db";
 import { demoExpiryDate, isDemoLandingExpired, toDemoLandingDto } from "@/lib/demo-landing";
 import { buildDemoAiFacts } from "@/lib/demo-landing-ai";
 import { applyStockPhotos, fetchDemoStockPhotos } from "@/lib/demo-landing-photos";
+import { demoLandingContentSchema } from "@/lib/demo-landing-schema";
+import { searchStockPhotos, stockPhotoLabelForCategory } from "@/lib/stock-photos";
 import { markExpiredIfNeeded, saveGeneratedDemoLanding } from "@/lib/demo-landing-store";
 import { writeAudit } from "@/lib/settings";
 import { siteBriefSchema } from "@/lib/site-factory/brief-schema";
@@ -121,6 +123,7 @@ export async function POST(request: Request, context: Context) {
     });
     const photos = await fetchDemoStockPhotos(brief.sector.value);
     content = applyStockPhotos(content, photos);
+    content = await withMenuPhotos(content, brief.sector.value);
 
     let improvedByAi = false;
     if (getDemoAiConfig().configured) {
@@ -222,6 +225,37 @@ export async function PATCH(request: Request, context: Context) {
       expired: isDemoLandingExpired(updated.expiresAt) || updated.status === "EXPIRED",
     });
   });
+}
+
+/** How many menu entries get their own illustrative photo per generation. */
+const MENU_PHOTO_LIMIT = 8;
+
+/**
+ * One licensed illustrative photo per menu entry, looked up by the entry's own
+ * name. Failure-tolerant like the hero photo: a missing key or a provider
+ * outage leaves the entry without a photo, never without a page.
+ */
+async function withMenuPhotos(content: ReturnType<typeof buildSiteContentFromBrief>, sector: string) {
+  if (content.menu.length === 0) return content;
+  const label = stockPhotoLabelForCategory(sector);
+  const results = await Promise.allSettled(
+    content.menu.slice(0, MENU_PHOTO_LIMIT).map((item) =>
+      searchStockPhotos({ query: `${item.name} ${label}`, altLabel: item.name, perPage: 1 }),
+    ),
+  );
+  const menu = content.menu.map((item, index) => {
+    const result = results[index];
+    const photo = result && result.status === "fulfilled" ? result.value[0] : undefined;
+    if (!photo) return item;
+    return {
+      ...item,
+      photoUrl: photo.url,
+      photoAlt: photo.alt,
+      photoCredit: photo.credit,
+      photoCreditUrl: photo.creditUrl,
+    };
+  });
+  return demoLandingContentSchema.parse({ ...content, menu, businessSnapshot: content.businessSnapshot ?? null });
 }
 
 /**

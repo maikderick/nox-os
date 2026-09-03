@@ -67,6 +67,10 @@ const DEFAULT_CONTACT_TEXT =
 
 const EMPTY_DRAFT: Draft = {
   whatsappE164: null,
+  menu: [],
+  openingHours: [],
+  theme: "dark",
+  eyebrow: null,
   headline: "",
   subheadline: "",
   heroImageUrl: "",
@@ -1592,6 +1596,10 @@ function ColorField({
 function toDraft(content: EditableLandingContent): Draft {
   return {
     whatsappE164: content.whatsappE164 ?? null,
+    menu: content.menu ?? [],
+    openingHours: content.openingHours ?? [],
+    theme: content.theme ?? "dark",
+    eyebrow: content.eyebrow ?? null,
     headline: content.headline ?? "",
     subheadline: content.subheadline ?? "",
     heroImageUrl: content.heroImageUrl ?? "",

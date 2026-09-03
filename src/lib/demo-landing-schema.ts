@@ -55,6 +55,39 @@ const faqItemSchema = z
   .strict();
 
 /**
+ * A menu or service entry of the generated site. Everything here was confirmed
+ * in the brief (name, summary, body, price); the photo is a licensed stock
+ * illustration chosen by the generator, marked as such on the page.
+ */
+const siteMenuItemSchema = z
+  .object({
+    id: plainText(64),
+    name: plainText(160),
+    summary: plainText(320),
+    body: z.array(plainText(1_500)).max(12).default([]),
+    price: nullablePlainText(40).default(null),
+    featured: z.boolean().default(false),
+    photoUrl: optionalHttpsUrl.default(""),
+    photoAlt: nullablePlainText(180).default(null),
+    photoCredit: nullablePlainText(180).default(null),
+    photoCreditUrl: optionalHttpsUrl.default(""),
+  })
+  .strict();
+
+export type SiteMenuItem = z.infer<typeof siteMenuItemSchema>;
+
+const siteOpeningHoursSchema = z
+  .object({
+    day: plainText(20),
+    opens: plainText(5),
+    closes: plainText(5),
+  })
+  .strict();
+
+export const SITE_THEMES = ["dark", "light"] as const;
+export type SiteTheme = (typeof SITE_THEMES)[number];
+
+/**
  * Building blocks shared with the Claude improvement contract. Exporting them
  * keeps the assisted draft bound to the exact same limits as the public content.
  */
@@ -217,6 +250,12 @@ export const demoLandingContentSchema = z
     businessSnapshot: demoBusinessSnapshotSchema.nullable().default(null),
     /** A WhatsApp number confirmed in the brief; only then does the page offer a wa.me link. */
     whatsappE164: phoneE164Schema.nullable().default(null),
+    /** The site's menu or service list, built from the brief's confirmed services. */
+    menu: z.array(siteMenuItemSchema).max(40).default([]),
+    openingHours: z.array(siteOpeningHoursSchema).max(14).default([]),
+    theme: z.enum(SITE_THEMES).default("dark"),
+    /** Short line under the name in the hero: sector and city. */
+    eyebrow: nullablePlainText(120).default(null),
     ctaLabel: plainText(60),
     primaryColor: hexColor,
     accentColor: hexColor,

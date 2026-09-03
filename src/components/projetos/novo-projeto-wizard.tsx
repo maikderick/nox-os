@@ -1538,6 +1538,15 @@ function ServiceCard({
         placeholder="Um parágrafo por linha. Ao menos um."
         hint="Cada linha vira um parágrafo confirmado."
       />
+      <TextField
+        id={`${base}-preco`}
+        label="Preço (opcional)"
+        className="mt-4 max-w-xs"
+        value={service.price}
+        onChange={(value) => onChange((current) => ({ ...current, price: value, confirmedAt: nowIso() }))}
+        placeholder="R$ 28,00 · a partir de R$ 90 · sob consulta"
+        hint="Aparece no cardápio ou na lista de serviços exatamente como escrito."
+      />
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <label htmlFor={`${base}-destaque`} className="inline-flex items-center gap-2 text-xs text-nox-muted">
           <input

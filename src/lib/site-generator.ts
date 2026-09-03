@@ -221,6 +221,28 @@ export function sectorFamily(sector: string): SectorFamily {
  * The brief's visual direction is free text. A few words in it are enough to
  * pick a palette family; anything else keeps the sector's own colours.
  */
+/**
+ * Dark or light ground. The brief's visual direction decides when it says so;
+ * otherwise food, auto and fitness sites go dark and the rest go light.
+ */
+export function themeFor(sector: string, visualDirection: string): "dark" | "light" {
+  const direction = normalize(visualDirection);
+  if (/escur|marcant|preto|noturn|dark/.test(direction)) return "dark";
+  if (/clar|limpo|leve|minimal|suave|branco|clinic|sereno|light/.test(direction)) return "light";
+  const family = sectorFamily(sector);
+  return family === "food" || family === "auto" || family === "fitness" ? "dark" : "light";
+}
+
+const DAY_LABELS: Record<string, string> = {
+  SEGUNDA: "Segunda",
+  TERCA: "Terça",
+  QUARTA: "Quarta",
+  QUINTA: "Quinta",
+  SEXTA: "Sexta",
+  SABADO: "Sábado",
+  DOMINGO: "Domingo",
+};
+
 export function paletteFor(sector: string, visualDirection: string): { primary: string; accent: string } {
   const family = FAMILIES[sectorFamily(sector)];
   const direction = normalize(visualDirection);
@@ -362,6 +384,23 @@ export function buildSiteContentFromBrief(params: {
 
   // --- services (confirmed) ----------------------------------------------
   const orderedServices = [...brief.services].sort((a, b) => Number(b.featured) - Number(a.featured));
+  const menu = orderedServices.slice(0, 40).map((service) => ({
+    id: service.id,
+    name: clip(service.name.value, 160),
+    summary: clip(service.summary.value, 320),
+    body: service.body.map((paragraph) => clip(paragraph.value, 1_500)),
+    price: service.price?.value ? clip(service.price.value, 40) : null,
+    featured: service.featured,
+    photoUrl: "",
+    photoAlt: null,
+    photoCredit: null,
+    photoCreditUrl: "",
+  }));
+  const openingHours = (brief.publicContact.openingHours?.value ?? []).map((slot) => ({
+    day: DAY_LABELS[slot.dayOfWeek] ?? slot.dayOfWeek,
+    opens: slot.opens,
+    closes: slot.closes,
+  }));
   const services = orderedServices
     .map((service) => {
       const summary = service.summary.value.trim();
@@ -474,6 +513,10 @@ export function buildSiteContentFromBrief(params: {
     contactText,
     businessSnapshot: createDemoBusinessSnapshot(briefToDemoLead(brief, params.lead)),
     whatsappE164: channels.whatsapp,
+    menu,
+    openingHours,
+    theme: themeFor(sector, brief.visualDirection.value),
+    eyebrow: clip(`${sector}${where}`, 120),
     ctaLabel: ctaLabelFor(brief, channels),
     primaryColor: palette.primary,
     accentColor: palette.accent,

@@ -34,6 +34,7 @@ function brief(overrides: Partial<SiteBriefV2> = {}): SiteBriefV2 {
         name: fact("Smash burger"),
         summary: { ...fact("Blend bovino, queijo e molho da casa no pão brioche.") },
         body: [fact("Preparado na chapa na hora.")],
+        price: fact("R$ 28,00"),
         relatedIds: [],
         featured: false,
       },
@@ -42,6 +43,7 @@ function brief(overrides: Partial<SiteBriefV2> = {}): SiteBriefV2 {
         name: fact("Combo família"),
         summary: { ...fact("Quatro lanches, batata e refrigerante.") },
         body: [fact("Serve quatro pessoas.")],
+        price: null,
         relatedIds: [],
         featured: true,
       },
@@ -120,6 +122,14 @@ describe("buildSiteContentFromBrief", () => {
     expect(content.processTitle).toBe("Como pedir");
   });
 
+  it("builds the menu from the services, with price and theme", () => {
+    expect(content.menu).toHaveLength(2);
+    expect(content.menu[0]).toMatchObject({ id: "combo-familia", featured: true, price: null });
+    expect(content.menu[1]).toMatchObject({ id: "smash-burger", price: "R$ 28,00", body: ["Preparado na chapa na hora."] });
+    expect(content.theme).toBe("dark");
+    expect(content.eyebrow).toBe("Hamburgueria em Recife");
+  });
+
   it("turns confirmed differentiators into benefits", () => {
     expect(content.benefits).toEqual(["Entrega no bairro", "Pão feito na casa"]);
     expect(content.factsTitle).toBe("Por que escolher");
@@ -155,7 +165,7 @@ describe("buildSiteContentFromBrief", () => {
     for (const text of texts) {
       expect(findClaimRisks([{ field: "texto", value: text }], { allow: ["contato"] })).toEqual([]);
     }
-    expect(JSON.stringify(content)).not.toMatch(/melhor|garanti|R\$/i);
+    expect(JSON.stringify({ ...content, menu: [] })).not.toMatch(/melhor|garanti|R\$/i);
   });
 
   it("copes with a brief that confirmed nothing beyond the narrative", () => {
