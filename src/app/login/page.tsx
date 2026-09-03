@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, FolderKanban, Loader2, Search, ShieldCheck } from "lucide-react";
 
+import { BrandMark, BrandWordmark } from "@/components/shell/brand";
+
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -62,13 +64,9 @@ export default function LoginPage() {
 
       <section className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
-          <Link href="/" className="inline-flex items-center gap-2.5 text-lg font-semibold tracking-tight">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-nox-cyan/40 bg-nox-cyan/10">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 text-nox-cyan" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <path d="M5 19V5l14 14V5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
-            <span><span className="text-nox-cyan">NOX</span> OS</span>
+          <Link href="/" className="inline-flex items-center gap-2.5 text-lg font-semibold tracking-tight" aria-label="Voltar ao site">
+            <BrandMark />
+            <BrandWordmark name="NOX OS" />
           </Link>
           <h1 className="mt-8 text-2xl font-semibold tracking-tight text-white">Entrar no painel</h1>
           <p className="mt-2 text-sm text-nox-muted">Use o e-mail e a senha da sua conta.</p>

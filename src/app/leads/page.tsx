@@ -102,22 +102,31 @@ export default function LeadsDashboardPage() {
     return sp.toString();
   }, [filters, includeWithWebsite, page]);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const [sRes, lRes] = await Promise.all([
-      fetch(
-        includeWithWebsite
-          ? "/api/leads/stats?includeWithWebsite=true"
-          : "/api/leads/stats",
-      ),
-      fetch(`/api/leads?${query}`),
-    ]);
-    const s = (await sRes.json()) as Stats;
-    const l = (await lRes.json()) as { total: number; items: LeadItem[] };
-    setStats(s);
-    setTotal(l.total);
-    setItems(l.items);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [sRes, lRes] = await Promise.all([
+        fetch(
+          includeWithWebsite
+            ? "/api/leads/stats?includeWithWebsite=true"
+            : "/api/leads/stats",
+        ),
+        fetch(`/api/leads?${query}`),
+      ]);
+      if (!sRes.ok || !lRes.ok) throw new Error("A API de leads respondeu com erro.");
+      const s = (await sRes.json()) as Stats;
+      const l = (await lRes.json()) as { total: number; items: LeadItem[] };
+      setStats(s);
+      setTotal(l.total);
+      setItems(l.items);
+    } catch (reason) {
+      setLoadError(reason instanceof Error ? reason.message : "Não foi possível carregar os leads.");
+    } finally {
+      setLoading(false);
+    }
   }, [includeWithWebsite, query]);
 
   useEffect(() => {
@@ -171,6 +180,15 @@ export default function LeadsDashboardPage() {
         </div>
       </div>
 
+      {loadError ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => void load()} className="nox-btn-secondary px-3 py-1.5 text-xs">
+            Tentar de novo
+          </button>
+        </div>
+      ) : null}
+
       {stats && (
         <>
           <section className="nox-card p-5" aria-label="Meta de leads">
@@ -186,7 +204,7 @@ export default function LeadsDashboardPage() {
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-nox-panel">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-nox-purple to-nox-cyan transition-all"
+                className="h-full rounded-full bg-linear-to-r from-nox-purple to-nox-cyan transition-all"
                 style={{ width: `${stats.progressPct}%` }}
                 role="progressbar"
                 aria-valuenow={stats.progressPct}
@@ -334,7 +352,10 @@ export default function LeadsDashboardPage() {
             aria-label="Ordenação"
             className={SELECT_CLASS}
             value={filters.sort}
-            onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}
+            onChange={(e) => {
+              setPage(1);
+              setFilters((f) => ({ ...f, sort: e.target.value }));
+            }}
           >
             <option value="score_desc">Maior score</option>
             <option value="score_asc">Menor score</option>
@@ -732,24 +753,26 @@ function ChartCard({
           </BarChart>
         </ResponsiveContainer>
       </div>
-      {onSelect && (
-        <div className="mt-3 flex flex-wrap gap-2" aria-label="Filtrar por categoria">
-          {data.map((item) => {
-            const selected = selectedName === item.name;
-            return (
-              <button
-                key={item.name}
-                type="button"
-                aria-pressed={selected}
-                className={cn("nox-chip", selected && "nox-chip-active")}
-                onClick={() => onSelect(item.name)}
-              >
-                {item.name} <span className="opacity-70">({item.count})</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div className="mt-3 flex flex-wrap gap-2" aria-label={onSelect ? "Filtrar por categoria" : "Legenda"}>
+        {data.map((item) => {
+          const selected = selectedName === item.name;
+          return onSelect ? (
+            <button
+              key={item.name}
+              type="button"
+              aria-pressed={selected}
+              className={cn("nox-chip", selected && "nox-chip-active")}
+              onClick={() => onSelect(item.name)}
+            >
+              {item.name} <span className="opacity-70">({item.count})</span>
+            </button>
+          ) : (
+            <span key={item.name} className="nox-chip cursor-default hover:border-nox-border hover:text-nox-muted">
+              {item.name} <span className="opacity-70">({item.count})</span>
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }

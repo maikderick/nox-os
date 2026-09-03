@@ -25,6 +25,7 @@ export default async function ProjectsPage() {
   await requireUser();
   const actor = await requirePermission("project:read");
   const projects = await listSiteProjects(actor);
+  const canOpen = actor.permissions.includes("provisioning:read");
 
   const published = projects.filter((project) => project.status === "PUBLICADO").length;
   const active = projects.filter((project) => !["RASCUNHO", "PUBLICADO", "FALHOU"].includes(project.status)).length;
@@ -70,11 +71,19 @@ export default async function ProjectsPage() {
             {projects.map((project) => {
               const state = isSiteProjectState(project.status) ? project.status : "RASCUNHO";
               return (
-                <article key={project.id} className="nox-card p-5 transition hover:border-nox-border-strong">
+                <article key={project.id} className="nox-card relative p-5 transition hover:border-nox-border-strong">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="truncate text-xs uppercase tracking-[0.16em] text-nox-muted">{project.client.name}</p>
-                      <h3 className="mt-1.5 truncate text-lg font-semibold text-white">{project.name}</h3>
+                      <h3 className="mt-1.5 truncate text-lg font-semibold text-white">
+                        {canOpen ? (
+                          <Link href={`/projetos/${project.id}/provisionamento`} className="after:absolute after:inset-0 hover:text-nox-cyan">
+                            {project.name}
+                          </Link>
+                        ) : (
+                          project.name
+                        )}
+                      </h3>
                     </div>
                     <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium ${STATUS_STYLES[state]}`}>
                       {SITE_PROJECT_STATE_LABELS[state]}

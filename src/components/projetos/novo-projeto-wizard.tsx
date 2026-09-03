@@ -173,7 +173,7 @@ function buildApproachScript(params: {
   const brand = params.studio.brandName;
 
   const diagnosis = params.hasWebsite
-    ? `Procurei pela ${business} no Google e encontrei o site atual. Quem procura por ${sector}${where} decide em segundos, e um site lento ou sem botão de contato faz o cliente fechar com quem responde mais rápido.`
+    ? `Procurei pela ${business} no Google e encontrei o site atual. Quem procura por ${sector}${where} decide em segundos, então vale conferir se a página abre bem no celular e leva ao WhatsApp em um toque.`
     : `Procurei pela ${business} no Google e não encontrei um site próprio, só o cadastro no mapa. Quem procura por ${sector}${where} e não acha uma página com serviços e contato acaba fechando com quem tem.`;
 
   return [
@@ -217,6 +217,7 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
   const [projectName, setProjectName] = useState("");
   const [draft, setDraft] = useState<BriefDraft>(initialBriefDraft);
   const [outcome, setOutcome] = useState<BriefCapabilities | null>(null);
+  const [createdPath, setCreatedPath] = useState("/projetos");
   const [nicheQuery, setNicheQuery] = useState("");
   const [leadQuery, setLeadQuery] = useState("");
   const [leadFilter, setLeadFilter] = useState<"all" | "high" | "phone">("all");
@@ -416,7 +417,7 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
         }),
       });
       const payload = (await response.json().catch(() => null)) as
-        | { error?: unknown; capabilities?: BriefCapabilities }
+        | { error?: unknown; capabilities?: BriefCapabilities; project?: { id?: string } }
         | null;
 
       if (!response.ok) {
@@ -426,8 +427,11 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
       }
 
       const capabilities = payload?.capabilities ?? null;
+      const projectId = payload?.project?.id;
+      const destination = projectId ? `/projetos/${projectId}/provisionamento` : "/projetos";
+      setCreatedPath(destination);
       if (!capabilities || capabilities.gaps.length === 0) {
-        router.push("/projetos");
+        router.push(destination);
         router.refresh();
         return;
       }
@@ -498,12 +502,12 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
           <button
             type="button"
             onClick={() => {
-              router.push("/projetos");
+              router.push(createdPath);
               router.refresh();
             }}
             className="nox-btn-primary mt-6"
           >
-            Ir para os projetos <ArrowRight size={16} aria-hidden="true" />
+            Abrir o projeto <ArrowRight size={16} aria-hidden="true" />
           </button>
         </section>
       </div>
@@ -1265,7 +1269,7 @@ function ApproachScript({
           ["Empresa", lead?.name ?? "—"],
           ["Nicho", sector.trim() || "—"],
           ["Cidade", city.trim() || "—"],
-          ["Objetivo", "Agendar uma conversa"],
+          ["Meta do contato", "Agendar uma conversa"],
         ].map(([label, value]) => (
           <div key={label} className="rounded-lg border border-nox-border bg-nox-surface px-3 py-2">
             <dt className="text-[10px] uppercase tracking-[0.16em] text-nox-muted">{label}</dt>

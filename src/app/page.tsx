@@ -13,6 +13,7 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 
+import { BrandMark, BrandWordmark } from "@/components/shell/brand";
 import { isHttpUrl, publicValue, whatsappLink } from "@/lib/brand";
 import { NICHES } from "@/lib/niches";
 import { ensureDefaultSettings } from "@/lib/settings";
@@ -38,15 +39,9 @@ export default async function LandingPage() {
     <div className="min-h-screen bg-nox-bg text-nox-text">
       <header className="sticky top-0 z-40 border-b border-nox-border/80 bg-nox-bg/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-          <Link href="/" className="flex items-center gap-2.5 text-base font-semibold tracking-tight">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-nox-cyan/40 bg-nox-cyan/10">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 text-nox-cyan" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <path d="M5 19V5l14 14V5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
-            <span>
-              <span className="text-nox-cyan">NOX</span> OS
-            </span>
+          <Link href="/" className="flex items-center gap-2.5 text-base font-semibold tracking-tight" aria-label={`${brand} — início`}>
+            <BrandMark />
+            <BrandWordmark name={brand} />
           </Link>
           <nav className="hidden items-center gap-7 text-sm text-nox-muted md:flex" aria-label="Seções">
             <a href="#entregas" className="hover:text-white">O que entregamos</a>
@@ -297,7 +292,7 @@ export default async function LandingPage() {
             {city ? ` · ${city}` : ""}
           </p>
           <div className="flex flex-wrap items-center gap-5">
-            <Link href="/privacidade" className="hover:text-white">Privacidade</Link>
+            <Link href="/privacy" className="hover:text-white">Privacidade</Link>
             {email ? (
               <a href={`mailto:${email}`} className="hover:text-white">{email}</a>
             ) : null}
@@ -312,7 +307,7 @@ export default async function LandingPage() {
 function Feature({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
   return (
     <article className="nox-card p-6">
-      <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-nox-cyan/10 text-nox-cyan">{icon}</span>
+      <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-nox-cyan/10 text-nox-cyan" aria-hidden="true">{icon}</span>
       <h3 className="mt-5 text-lg font-semibold text-white">{title}</h3>
       <p className="mt-2 text-sm leading-6 text-nox-muted">{text}</p>
     </article>
@@ -324,7 +319,7 @@ function Step({ number, icon, title, text }: { number: string; icon: React.React
     <li className="nox-card flex gap-5 p-6">
       <div className="flex flex-col items-center gap-3">
         <span className="font-mono text-xs text-nox-cyan">{number}</span>
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-nox-border bg-nox-panel text-nox-cyan">{icon}</span>
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-nox-border bg-nox-panel text-nox-cyan" aria-hidden="true">{icon}</span>
       </div>
       <div>
         <h3 className="text-lg font-semibold text-white">{title}</h3>
@@ -341,7 +336,7 @@ function Step({ number, icon, title, text }: { number: string; icon: React.React
 function HeroPreview() {
   return (
     <div className="relative mx-auto w-full max-w-lg lg:max-w-none" aria-hidden="true">
-      <div className="absolute -inset-6 rounded-[2rem] bg-gradient-to-br from-nox-cyan/15 via-transparent to-nox-purple/20 blur-2xl" />
+      <div className="absolute -inset-6 rounded-[2rem] bg-linear-to-br from-nox-cyan/15 via-transparent to-nox-purple/20 blur-2xl" />
       <div className="relative overflow-hidden rounded-2xl border border-nox-border bg-nox-surface shadow-2xl shadow-black/50">
         <div className="flex items-center gap-2 border-b border-nox-border bg-nox-panel px-4 py-2.5">
           <span className="h-2.5 w-2.5 rounded-full bg-nox-border-strong" />
@@ -364,7 +359,7 @@ function HeroPreview() {
                 <div className="h-7 w-20 rounded-md border border-nox-border-strong" />
               </div>
             </div>
-            <div className="rounded-xl bg-gradient-to-br from-nox-purple/40 via-nox-panel to-nox-cyan/30" />
+            <div className="rounded-xl bg-linear-to-br from-nox-purple/40 via-nox-panel to-nox-cyan/30" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             {[0, 1, 2].map((item) => (

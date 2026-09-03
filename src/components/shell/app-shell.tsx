@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+
+import { BrandMark, BrandWordmark } from "./brand";
 
 type NavItem = {
   href: string;
@@ -70,7 +72,7 @@ export function AppShell({
   const operation: NavItem[] = [
     { href: "/leads", label: "Dashboard", icon: LayoutDashboard, exact: true },
     { href: "/projetos", label: "Projetos", icon: FolderKanban },
-    { href: "/leads/import", label: "Prospecção", icon: Search },
+    { href: "/leads/import", label: "Buscar negócios", icon: Search },
     { href: "/leads/opportunities", label: "Meus leads", icon: Target },
     { href: "/leads/map", label: "Mapa", icon: MapIcon },
   ];
@@ -84,6 +86,21 @@ export function AppShell({
   const roleLabel = role ? (ROLE_LABELS[role] ?? role) : null;
   const displayName = user.name?.trim() || user.email;
 
+  // Escape closes the drawer, and the page behind it stops scrolling while it is open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   // Following a link closes the drawer on small screens.
   const sidebar = (
     <div
@@ -93,11 +110,9 @@ export function AppShell({
       }}
     >
       <div className="flex items-center justify-between px-5 pt-5">
-        <Link href="/leads" className="flex items-center gap-2.5" aria-label={`${brandName} — início`}>
+        <Link href="/leads" className="flex items-center gap-2.5 text-base font-semibold tracking-tight" aria-label={`${brandName} — início`}>
           <BrandMark />
-          <span className="text-base font-semibold tracking-tight">
-            <span className="text-nox-cyan">NOX</span> <span className="text-white">OS</span>
-          </span>
+          <BrandWordmark name={brandName} />
         </Link>
         <button
           type="button"
@@ -169,7 +184,7 @@ export function AppShell({
             aria-label="Fechar menu"
             onClick={() => setOpen(false)}
           />
-          <aside className="absolute inset-y-0 left-0 w-[min(88vw,var(--nox-sidebar-w))] border-r border-nox-border bg-nox-surface shadow-2xl">
+          <aside role="dialog" aria-modal="true" aria-label="Menu" className="absolute inset-y-0 left-0 w-[min(88vw,var(--nox-sidebar-w))] border-r border-nox-border bg-nox-surface shadow-2xl">
             {sidebar}
           </aside>
         </div>
@@ -186,7 +201,7 @@ export function AppShell({
             <Menu size={20} aria-hidden="true" />
           </button>
           <Link href="/leads" className="text-sm font-semibold lg:hidden">
-            <span className="text-nox-cyan">NOX</span> OS
+            <BrandWordmark name={brandName} />
           </Link>
           <div className="ml-auto flex items-center gap-2 text-xs text-nox-muted">
             {organizationName ? (
@@ -244,21 +259,5 @@ function NavGroup({ title, items, pathname }: { title: string; items: NavItem[];
         })}
       </ul>
     </div>
-  );
-}
-
-export function BrandMark({ className }: { className?: string }) {
-  return (
-    <span
-      className={cn(
-        "relative flex h-8 w-8 items-center justify-center rounded-lg border border-nox-cyan/40 bg-nox-cyan/10",
-        className,
-      )}
-      aria-hidden="true"
-    >
-      <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2.2">
-        <path d="M5 19V5l14 14V5" className="text-nox-cyan" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </span>
   );
 }
