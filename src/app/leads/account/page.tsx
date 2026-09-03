@@ -49,7 +49,7 @@ export default function AccountPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Minha conta</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-white">Minha conta</h1>
         <p className="text-sm text-nox-muted">Altere sua senha de acesso ao painel NOX OS.</p>
       </div>
 
@@ -108,7 +108,7 @@ export default function AccountPage() {
         <button
           type="submit"
           disabled={busy}
-          className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium disabled:opacity-50"
+          className="nox-btn-primary disabled:opacity-50"
         >
           {busy ? "Alterando…" : "Alterar senha"}
         </button>

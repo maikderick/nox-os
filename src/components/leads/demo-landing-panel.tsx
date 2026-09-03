@@ -612,7 +612,7 @@ export function DemoLandingPanel({
             O gerador de demonstrações entrou em modo de compatibilidade. Novos trabalhos começam
             na fábrica de sites, com briefing versionado e aprovação separada.
           </p>
-          <a href="/projetos/novo" className="mt-4 inline-flex rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white hover:bg-violet-500">
+          <a href="/projetos/novo" className="mt-4 inline-flex nox-btn-primary">
             Abrir novo projeto
           </a>
         </div>
@@ -770,7 +770,7 @@ export function DemoLandingPanel({
                     type="button"
                     disabled={!lovablePrompt.trim()}
                     onClick={openInLovable}
-                    className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    className="nox-btn-primary disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Abrir no Lovable ↗
                   </button>
@@ -1370,7 +1370,7 @@ export function DemoLandingPanel({
                 type="button"
                 disabled={busy || expiryInvalid}
                 onClick={() => void updateLanding("APPROVED")}
-                className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                className="nox-btn-primary disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Aprovar demonstração
               </button>

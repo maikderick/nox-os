@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -8,8 +9,14 @@ import {
   Building2,
   Check,
   CircleAlert,
+  Copy,
+  ExternalLink,
   Loader2,
+  MapPin,
+  MessageCircle,
+  Phone,
   Plus,
+  Search,
   Sparkles,
   TriangleAlert,
   Trash2,
@@ -46,7 +53,10 @@ import {
   type ServiceDraft,
   type SocialLinkDraft,
 } from "@/lib/site-factory/brief-draft";
+import { categoryMatchesNiche, findNicheByLabel, searchNiches, type Niche } from "@/lib/niches";
 import { normalizePhoneE164 } from "@/lib/phone";
+import { cn, opportunityBand } from "@/lib/utils";
+import { hasOwnWebsite } from "@/lib/website";
 
 type Lead = {
   id: string;
@@ -58,11 +68,19 @@ type Lead = {
   address: string | null;
   postalCode: string | null;
   phoneE164: string | null;
+  website?: string | null;
   socialLinks: string[];
   opportunityScore: number;
 };
 
-const STEPS = ["Setor", "Lead", "Negócio", "Abordagem", "Briefing"];
+/** What the studio calls itself, for the approach script. Placeholders arrive as null. */
+export type StudioIdentity = {
+  brandName: string;
+  sellerName: string | null;
+  city: string | null;
+};
+
+const STEPS = ["Setor", "Leads", "Negócio", "Abordagem", "Briefing"];
 
 /**
  * Which draft fields each step is responsible for.
@@ -89,11 +107,35 @@ const SOCIAL_PLATFORM_LABELS: Record<BriefSocialPlatform, string> = {
 
 const SOCIAL_PLATFORMS = Object.keys(SOCIAL_PLATFORM_LABELS) as BriefSocialPlatform[];
 
+/**
+ * Quick fills. Each one writes plain operator text into an existing field, so
+ * nothing new reaches the payload — the operator still owns every sentence.
+ */
+const OBJECTIVE_PRESETS: { label: string; text: string }[] = [
+  { label: "Receber pedidos pelo WhatsApp", text: "Receber pedidos e dúvidas pelo WhatsApp a partir do site." },
+  { label: "Agendar atendimentos", text: "Facilitar o agendamento de atendimentos pelo WhatsApp." },
+  { label: "Gerar orçamentos", text: "Receber pedidos de orçamento já com as informações necessárias." },
+  { label: "Apresentar serviços e localização", text: "Apresentar os serviços, o endereço e os horários para quem busca na região." },
+];
+
+const TONE_PRESETS: { label: string; text: string }[] = [
+  { label: "Profissional e sóbrio", text: "Atendimento profissional e direto, com foco em confiança e clareza nas informações." },
+  { label: "Acolhedor e próximo", text: "Atendimento próximo e acolhedor, com linguagem simples e foco no relacionamento com o cliente." },
+  { label: "Direto e objetivo", text: "Comunicação direta e objetiva: o cliente encontra o que precisa e entra em contato em poucos toques." },
+  { label: "Sofisticado", text: "Apresentação cuidadosa e elegante, com foco na qualidade do serviço e na experiência do cliente." },
+];
+
+const VISUAL_PRESETS: { label: string; text: string }[] = [
+  { label: "Escuro e marcante", text: "Fundo escuro, contraste alto, uma cor de destaque forte e fotos grandes." },
+  { label: "Claro e limpo", text: "Fundo claro, bastante espaço em branco, tipografia leve e cores suaves." },
+  { label: "Quente e artesanal", text: "Tons quentes como terracota e âmbar, texturas discretas e fotos do produto em destaque." },
+  { label: "Clínico e sereno", text: "Tons frios e claros como azul e verde-água, layout organizado, sensação de calma e confiança." },
+];
+
 /** The draft keys that hold a single confirmable fact. */
 type FactField = {
   [K in keyof BriefDraft]: BriefDraft[K] extends DraftFact ? K : never;
 }[keyof BriefDraft];
-
 
 function describeApiError(error: unknown): string {
   if (typeof error === "string") return error;
@@ -110,7 +152,60 @@ function describeApiError(error: unknown): string {
   return "Revise o briefing: há campos inválidos ou afirmações sem confirmação.";
 }
 
-export function NewProjectWizard() {
+type ScriptBlock = { title: string; hint: string; text: string };
+
+/**
+ * The pre-sales script, in blocks. Only says what the panel knows: the lead
+ * has no own website (that is why it is in the queue) and what the studio
+ * offers. No prices, no promises.
+ */
+function buildApproachScript(params: {
+  businessName: string;
+  sector: string;
+  city: string;
+  studio: StudioIdentity;
+  hasWebsite: boolean;
+}): ScriptBlock[] {
+  const business = params.businessName.trim() || "o seu negócio";
+  const sector = params.sector.trim().toLocaleLowerCase("pt-BR") || "negócios locais";
+  const where = params.city.trim() ? ` em ${params.city.trim()}` : "";
+  const seller = params.studio.sellerName ?? "[seu nome]";
+  const brand = params.studio.brandName;
+
+  const diagnosis = params.hasWebsite
+    ? `Procurei pela ${business} no Google e encontrei o site atual. Quem procura por ${sector}${where} decide em segundos, e um site lento ou sem botão de contato faz o cliente fechar com quem responde mais rápido.`
+    : `Procurei pela ${business} no Google e não encontrei um site próprio, só o cadastro no mapa. Quem procura por ${sector}${where} e não acha uma página com serviços e contato acaba fechando com quem tem.`;
+
+  return [
+    {
+      title: "Abertura",
+      hint: "Curta. Só confirma que está falando com quem decide.",
+      text: `Olá! Tudo bem? Falo com o responsável pela ${business}?`,
+    },
+    {
+      title: "Apresentação",
+      hint: "Quem você é, em uma frase.",
+      text: `Meu nome é ${seller}, da ${brand}. Eu crio sites para ${sector}${where}: páginas feitas para o cliente achar e entrar em contato, não só um cartão de visitas online.`,
+    },
+    {
+      title: "Diagnóstico",
+      hint: "Mostre o que você olhou. Só afirme o que dá para verificar.",
+      text: diagnosis,
+    },
+    {
+      title: "Proposta de valor",
+      hint: "O que ele ganha, em coisas concretas.",
+      text: `Eu montaria para a ${business} uma página com:\n• Seus serviços explicados do jeito que o cliente entende\n• Botão de WhatsApp em todas as seções, para o contato ser em um toque\n• Estrutura pensada para aparecer nas buscas de ${sector}${where}\n\nFica pronta rápido e você aprova antes de qualquer coisa ir ao ar.`,
+    },
+    {
+      title: "Fechamento",
+      hint: "Peça uma ação pequena, não a venda inteira.",
+      text: `Posso montar uma prévia da página da ${business} e te mandar ainda hoje? Se não fizer sentido, você me diz e não custa nada.`,
+    },
+  ];
+}
+
+export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -122,6 +217,9 @@ export function NewProjectWizard() {
   const [projectName, setProjectName] = useState("");
   const [draft, setDraft] = useState<BriefDraft>(initialBriefDraft);
   const [outcome, setOutcome] = useState<BriefCapabilities | null>(null);
+  const [nicheQuery, setNicheQuery] = useState("");
+  const [leadQuery, setLeadQuery] = useState("");
+  const [leadFilter, setLeadFilter] = useState<"all" | "high" | "phone">("all");
   const keySeed = useRef(0);
 
   const nextKey = () => `row-${(keySeed.current += 1)}`;
@@ -153,31 +251,55 @@ export function NewProjectWizard() {
     };
   }, []);
 
-  const categories = useMemo(
-    () => [...new Set(leads.map((lead) => lead.category).filter(Boolean))].sort(),
-    [leads],
+  const selectedNiche: Niche | null = useMemo(
+    () => findNicheByLabel(draft.sector.value),
+    [draft.sector.value],
   );
+  const visibleNiches = useMemo(() => searchNiches(nicheQuery), [nicheQuery]);
+
   /**
    * The sector narrows the list, it does not gate it.
    *
-   * An exact category match meant that typing a sector of your own — which the
-   * field invites — emptied the list and left the wizard unable to advance.
-   * A loose match keeps the filter useful, and a sector that matches nothing
-   * falls back to every lead instead of to none.
+   * A niche matches through its keywords, free text through a loose match. A
+   * sector that matches nothing falls back to every lead instead of to none.
    */
-  const filteredLeads = useMemo(
-    () => {
-      const sector = draft.sector.value.trim().toLowerCase();
-      if (!sector) return leads;
-      const matching = leads.filter((lead) => {
+  const filteredLeads = useMemo(() => {
+    const sector = draft.sector.value.trim().toLowerCase();
+    let matching = leads;
+    if (sector) {
+      matching = leads.filter((lead) => {
         const category = lead.category.toLowerCase();
+        if (selectedNiche && categoryMatchesNiche(lead.category, selectedNiche)) return true;
         return category.includes(sector) || sector.includes(category);
       });
-      return matching.length > 0 ? matching : leads;
-    },
-    [leads, draft.sector.value],
-  );
+      if (matching.length === 0) matching = leads;
+    }
+    const query = leadQuery.trim().toLowerCase();
+    if (query) {
+      matching = matching.filter((lead) =>
+        [lead.name, lead.city, lead.neighborhood, lead.category, lead.address]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(query)),
+      );
+    }
+    if (leadFilter === "high") matching = matching.filter((lead) => lead.opportunityScore >= 70);
+    if (leadFilter === "phone") matching = matching.filter((lead) => Boolean(lead.phoneE164));
+    return matching;
+  }, [leads, draft.sector.value, selectedNiche, leadQuery, leadFilter]);
+
   const selectedLead = leads.find((lead) => lead.id === leadId) ?? null;
+
+  const script = useMemo(
+    () =>
+      buildApproachScript({
+        businessName: draft.businessName.value || selectedLead?.name || "",
+        sector: draft.sector.value,
+        city: draft.city.value || selectedLead?.city || "",
+        studio,
+        hasWebsite: hasOwnWebsite(selectedLead?.website),
+      }),
+    [draft.businessName.value, draft.sector.value, draft.city.value, selectedLead, studio],
+  );
 
   const allIssues = useMemo(
     () => [
@@ -196,7 +318,7 @@ export function NewProjectWizard() {
       ),
     );
     if (step === 1 && !selectedLead) {
-      own.push({ field: "lead", message: "Escolha o lead que origina o projeto." });
+      own.push({ field: "lead", message: "Escolha o negócio que origina o projeto." });
     }
     if (step === 2 && !projectName.trim()) {
       own.push({ field: "projectName", message: "Nome do projeto: informe como a operação chama este trabalho." });
@@ -263,6 +385,12 @@ export function NewProjectWizard() {
     }));
   }
 
+  /** Picking a lead pre-fills the project name when the operator has not typed one. */
+  function chooseLead(lead: Lead) {
+    setLeadId(lead.id);
+    setProjectName((current) => (current.trim() ? current : `Site ${lead.name}`));
+  }
+
   // --- envio --------------------------------------------------------------
 
   async function submit() {
@@ -320,6 +448,7 @@ export function NewProjectWizard() {
     }
     setError(null);
     setStep((value) => Math.min(STEPS.length - 1, value + 1));
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   if (outcome) {
@@ -372,7 +501,7 @@ export function NewProjectWizard() {
               router.push("/projetos");
               router.refresh();
             }}
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-nox-bg"
+            className="nox-btn-primary mt-6"
           >
             Ir para os projetos <ArrowRight size={16} aria-hidden="true" />
           </button>
@@ -382,54 +511,108 @@ export function NewProjectWizard() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <div className="mb-8 max-w-2xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-nox-cyan">Novo projeto</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-          Transforme um lead em briefing executável.
-        </h1>
-        <p className="mt-3 text-sm leading-6 text-nox-muted">
-          Cinco decisões curtas. Nada do lead entra no site sem confirmação campo a campo.
-        </p>
+    <div className="mx-auto max-w-6xl">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <Link href="/projetos" className="inline-flex items-center gap-1.5 text-xs text-nox-muted hover:text-white">
+            <ArrowLeft size={13} aria-hidden="true" /> Projetos
+          </Link>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Novo projeto</h1>
+          <p className="mt-1.5 text-sm text-nox-muted">
+            Do nicho ao script de venda. O site vem no fim, só com o que for confirmado.
+          </p>
+        </div>
+        {selectedLead ? (
+          <div className="nox-card-raised flex items-center gap-3 px-4 py-2.5 text-sm">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-nox-cyan/10 text-nox-cyan">
+              <Building2 size={15} aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block text-[10px] uppercase tracking-[0.18em] text-nox-muted">Negócio escolhido</span>
+              <span className="block font-medium text-white">{selectedLead.name}</span>
+            </span>
+          </div>
+        ) : null}
       </div>
 
-      <ol className="mb-6 grid grid-cols-5 gap-2" aria-label="Etapas do projeto">
-        {STEPS.map((label, index) => (
-          <li key={label} className="min-w-0" aria-current={index === step ? "step" : undefined}>
-            <div
-              className={`h-1 rounded-full ${index <= step ? "bg-gradient-to-r from-nox-purple to-nox-cyan" : "bg-nox-border"}`}
-            />
-            <p className={`mt-2 truncate text-[11px] sm:text-xs ${index === step ? "text-white" : "text-nox-muted"}`}>
-              {index + 1}. {label}
-            </p>
-          </li>
-        ))}
-      </ol>
+      <Stepper step={step} />
 
-      <section className="min-h-[430px] rounded-3xl border border-nox-border bg-nox-surface p-5 shadow-2xl shadow-black/20 sm:p-8">
+      <section className="nox-card mt-6 min-h-[460px] p-5 sm:p-8">
         {step === 0 && (
-          <Step title="Qual setor será atendido?" description="O setor orienta linguagem, estrutura e direção visual.">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {categories.map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  onClick={() => setFact("sector", authoredFact(category))}
-                  aria-pressed={draft.sector.value === category}
-                  className={`rounded-2xl border p-4 text-left text-sm transition ${draft.sector.value === category ? "border-nox-cyan bg-nox-cyan/10 text-white" : "border-nox-border bg-nox-bg/40 text-nox-muted hover:border-nox-purple hover:text-white"}`}
-                >
-                  <Building2 className="mb-3" size={19} aria-hidden="true" />
-                  <span className="font-medium">{category}</span>
-                </button>
-              ))}
+          <Step
+            title="Qual o setor do negócio?"
+            description="Define o vocabulário, a estrutura e as regras do texto do site."
+          >
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-nox-muted" aria-hidden="true" />
+              <input
+                id="buscar-setor"
+                value={nicheQuery}
+                onChange={(event) => setNicheQuery(event.target.value)}
+                className="nox-input pl-11"
+                placeholder="Buscar setor (ex.: pizzaria, advocacia, pet)"
+                aria-label="Buscar setor"
+              />
             </div>
+
+            {visibleNiches.length > 0 ? (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+                {visibleNiches.map((niche) => {
+                  const Icon = niche.icon;
+                  const active = selectedNiche?.id === niche.id;
+                  return (
+                    <button
+                      key={niche.id}
+                      type="button"
+                      onClick={() => setFact("sector", authoredFact(niche.label))}
+                      aria-pressed={active}
+                      className={cn(
+                        "group relative flex items-start gap-3 rounded-2xl border p-4 text-left transition",
+                        active
+                          ? "border-nox-cyan bg-nox-cyan/10"
+                          : "border-nox-border bg-nox-bg/40 hover:border-nox-border-strong hover:bg-nox-panel",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                          active ? "bg-nox-cyan text-nox-bg" : "bg-nox-panel text-nox-cyan",
+                        )}
+                      >
+                        <Icon size={18} aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-white">{niche.label}</span>
+                        <span className="mt-0.5 block text-xs text-nox-muted">{niche.hint}</span>
+                      </span>
+                      {active ? (
+                        <Check size={16} className="absolute right-3 top-3 text-nox-cyan" aria-hidden="true" />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-dashed border-nox-border p-6 text-center text-sm text-nox-muted">
+                Nenhum setor com esse nome no catálogo.{" "}
+                <button
+                  type="button"
+                  onClick={() => setFact("sector", authoredFact(nicheQuery.trim()))}
+                  className="font-medium text-nox-cyan hover:underline"
+                >
+                  Usar “{nicheQuery.trim()}” como setor personalizado
+                </button>
+              </div>
+            )}
+
             <TextField
               id="setor"
-              label="Outro setor"
-              className="mt-5"
+              label="Setor personalizado"
+              className="mt-6 max-w-md"
               value={draft.sector.value}
               onChange={(value) => setFact("sector", authoredFact(value))}
               placeholder="Ex.: Clínica odontológica"
+              hint="Escolha um card acima ou escreva o setor do seu jeito."
               invalid={isInvalid("sector")}
               describedBy={showIssues ? issuesId : undefined}
             />
@@ -438,180 +621,313 @@ export function NewProjectWizard() {
 
         {step === 1 && (
           <Step
-            title="Escolha a oportunidade"
-            description="Exibimos leads sem site próprio, priorizados pelo score de oportunidade. A ficha do lead permanece intocada."
+            title="Encontre seus clientes"
+            description={
+              selectedNiche
+                ? `Negócios sem site próprio no nicho ${selectedNiche.label}, ordenados pela oportunidade. A ficha do lead permanece intocada.`
+                : "Negócios sem site próprio, ordenados pela oportunidade. A ficha do lead permanece intocada."
+            }
           >
-            {loadingLeads ? (
-              <p className="flex items-center gap-2 text-sm text-nox-muted">
-                <Loader2 className="animate-spin" size={16} aria-hidden="true" /> Carregando oportunidades…
-              </p>
-            ) : (
-              <div className="grid max-h-[330px] gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
-                {filteredLeads.map((lead) => (
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative flex-1">
+                <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-nox-muted" aria-hidden="true" />
+                <input
+                  value={leadQuery}
+                  onChange={(event) => setLeadQuery(event.target.value)}
+                  className="nox-input pl-11"
+                  placeholder="Buscar por nome, bairro ou cidade"
+                  aria-label="Buscar negócios"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {(
+                  [
+                    ["all", "Todos"],
+                    ["high", "Score alto"],
+                    ["phone", "Com telefone"],
+                  ] as const
+                ).map(([value, label]) => (
                   <button
-                    key={lead.id}
+                    key={value}
                     type="button"
-                    onClick={() => setLeadId(lead.id)}
-                    aria-pressed={leadId === lead.id}
-                    className={`rounded-2xl border p-4 text-left transition ${leadId === lead.id ? "border-nox-cyan bg-nox-cyan/10" : "border-nox-border bg-nox-bg/40 hover:border-nox-purple"}`}
+                    onClick={() => setLeadFilter(value)}
+                    aria-pressed={leadFilter === value}
+                    className={cn("nox-chip", leadFilter === value && "nox-chip-active")}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="font-medium text-white">{lead.name}</span>
-                      <span className="font-mono text-sm text-nox-cyan">{lead.opportunityScore}</span>
-                    </div>
-                    <p className="mt-2 text-xs text-nox-muted">
-                      {lead.category} ·{" "}
-                      {[lead.neighborhood, lead.city].filter(Boolean).join(", ") || "Local não informado"}
-                    </p>
+                    {label}
                   </button>
                 ))}
+                <Link href="/leads/import" className="nox-btn-secondary px-3 py-1.5 text-xs">
+                  <Search size={13} aria-hidden="true" /> Buscar novos negócios
+                </Link>
               </div>
+            </div>
+
+            <p className="mt-4 text-xs text-nox-muted">
+              {loadingLeads
+                ? "Carregando oportunidades…"
+                : `${filteredLeads.length} ${filteredLeads.length === 1 ? "negócio" : "negócios"} · ordenados por oportunidade`}
+            </p>
+
+            {loadingLeads ? (
+              <p className="mt-6 flex items-center gap-2 text-sm text-nox-muted">
+                <Loader2 className="animate-spin" size={16} aria-hidden="true" /> Carregando oportunidades…
+              </p>
+            ) : filteredLeads.length === 0 ? (
+              <div className="mt-6 rounded-2xl border border-dashed border-nox-border p-8 text-center">
+                <p className="text-sm text-white">Nenhum negócio encontrado com esses filtros.</p>
+                <p className="mt-1 text-xs text-nox-muted">
+                  Traga novos negócios pela prospecção ou limpe os filtros.
+                </p>
+                <Link href="/leads/import" className="nox-btn-primary mt-4">
+                  <Search size={15} aria-hidden="true" /> Buscar negócios
+                </Link>
+              </div>
+            ) : (
+              <ul className="nox-scroll mt-3 max-h-[440px] space-y-2 overflow-y-auto pr-1">
+                {filteredLeads.map((lead) => {
+                  const active = leadId === lead.id;
+                  const place = [lead.address, lead.neighborhood, lead.city, lead.state]
+                    .filter(Boolean)
+                    .join(", ");
+                  return (
+                    <li
+                      key={lead.id}
+                      className={cn(
+                        "flex flex-col gap-3 rounded-2xl border p-4 transition sm:flex-row sm:items-center",
+                        active ? "border-nox-cyan bg-nox-cyan/10" : "border-nox-border bg-nox-bg/40 hover:border-nox-border-strong",
+                      )}
+                    >
+                      <ScoreBadge score={lead.opportunityScore} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-white">{lead.name}</span>
+                          <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-medium text-emerald-200">
+                            {hasOwnWebsite(lead.website) ? "Com site" : "Sem site próprio"}
+                          </span>
+                          <span className="text-xs text-nox-muted">{lead.category}</span>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-nox-muted">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Phone size={12} aria-hidden="true" /> {lead.phoneE164 ?? "Sem telefone"}
+                          </span>
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <MapPin size={12} className="shrink-0" aria-hidden="true" />
+                            <span className="truncate">{place || "Local não informado"}</span>
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Link
+                          href={`/leads/${lead.id}`}
+                          target="_blank"
+                          className="nox-btn-ghost px-2.5 py-2 text-xs"
+                          aria-label={`Abrir ficha de ${lead.name}`}
+                        >
+                          <ExternalLink size={14} aria-hidden="true" /> Ficha
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => chooseLead(lead)}
+                          aria-pressed={active}
+                          className={cn(active ? "nox-btn-primary" : "nox-btn-secondary", "px-3.5 py-2 text-xs")}
+                        >
+                          {active ? (
+                            <>
+                              <Check size={14} aria-hidden="true" /> Selecionado
+                            </>
+                          ) : (
+                            "Usar este negócio"
+                          )}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </Step>
         )}
 
         {step === 2 && (
           <Step
-            title="Defina o negócio do projeto"
+            title="Conte sobre o negócio"
             description="Os dados do lead aparecem como sugestões. Só entram no briefing quando você usa a sugestão."
           >
-            <TextField
-              id="nome-projeto"
-              label="Nome do projeto"
-              value={projectName}
-              onChange={setProjectName}
-              placeholder="Site Nome do Negócio"
-              invalid={isInvalid("projectName")}
-              describedBy={showIssues ? issuesId : undefined}
-              suggestion={
-                selectedLead
-                  ? { label: `Site ${selectedLead.name}`, onUse: () => setProjectName(`Site ${selectedLead.name}`) }
-                  : undefined
-              }
-            />
-            <TextField
-              id="nome-negocio"
-              label="Nome do negócio"
-              className="mt-4"
-              value={draft.businessName.value}
-              onChange={(value) => setFact("businessName", authoredFact(value))}
-              placeholder="Como o negócio se apresenta"
-              hint="Vai para o site. Escreva ou use a sugestão do lead."
-              source={draft.businessName.source}
-              invalid={isInvalid("businessName")}
-              describedBy={showIssues ? issuesId : undefined}
-              suggestion={
-                selectedLead
-                  ? {
-                      label: selectedLead.name,
-                      onUse: () => setFact("businessName", { value: selectedLead.name, source: "LEAD", confirmedAt: nowIso() }),
-                    }
-                  : undefined
-              }
-            />
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <TextField
-                id="cidade"
-                label="Cidade (opcional)"
-                value={draft.city.value}
-                onChange={(value) => setFact("city", authoredFact(value))}
-                source={draft.city.source}
-                invalid={isInvalid("city")}
-                suggestion={
-                  selectedLead?.city
-                    ? {
-                        label: selectedLead.city,
-                        onUse: () =>
-                          setFact("city", { value: selectedLead.city ?? "", source: "LEAD", confirmedAt: nowIso() }),
-                      }
-                    : undefined
-                }
+            <Section title="Identidade" text="O nome que aparece no site e como a operação chama este trabalho.">
+              <div className="grid gap-4 md:grid-cols-2">
+                <TextField
+                  id="nome-negocio"
+                  label="Nome do negócio"
+                  value={draft.businessName.value}
+                  onChange={(value) => setFact("businessName", authoredFact(value))}
+                  placeholder="Como o negócio se apresenta"
+                  hint="Vai para o site."
+                  source={draft.businessName.source}
+                  invalid={isInvalid("businessName")}
+                  describedBy={showIssues ? issuesId : undefined}
+                  suggestion={
+                    selectedLead
+                      ? {
+                          label: selectedLead.name,
+                          onUse: () => setFact("businessName", { value: selectedLead.name, source: "LEAD", confirmedAt: nowIso() }),
+                        }
+                      : undefined
+                  }
+                />
+                <TextField
+                  id="nome-projeto"
+                  label="Nome do projeto"
+                  value={projectName}
+                  onChange={setProjectName}
+                  placeholder="Site Nome do Negócio"
+                  hint="Uso interno, não vai para o site."
+                  invalid={isInvalid("projectName")}
+                  describedBy={showIssues ? issuesId : undefined}
+                />
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <TextField
+                  id="setor-confirmado"
+                  label="Setor"
+                  value={draft.sector.value}
+                  onChange={(value) => setFact("sector", authoredFact(value))}
+                  source={draft.sector.source}
+                  invalid={isInvalid("sector")}
+                  suggestion={
+                    selectedLead?.category && selectedLead.category !== draft.sector.value
+                      ? {
+                          label: selectedLead.category,
+                          onUse: () =>
+                            setFact("sector", { value: selectedLead.category, source: "LEAD", confirmedAt: nowIso() }),
+                        }
+                      : undefined
+                  }
+                />
+                <TextField
+                  id="cidade"
+                  label="Cidade (opcional)"
+                  value={draft.city.value}
+                  onChange={(value) => setFact("city", authoredFact(value))}
+                  source={draft.city.source}
+                  invalid={isInvalid("city")}
+                  suggestion={
+                    selectedLead?.city
+                      ? {
+                          label: selectedLead.city,
+                          onUse: () =>
+                            setFact("city", { value: selectedLead.city ?? "", source: "LEAD", confirmedAt: nowIso() }),
+                        }
+                      : undefined
+                  }
+                />
+              </div>
+            </Section>
+
+            <Section title="Objetivo do site" text="O que o cliente precisa conseguir fazer ao abrir a página." className="mt-5">
+              <PresetChips
+                presets={OBJECTIVE_PRESETS}
+                current={draft.objective.value}
+                onPick={(text) => setFact("objective", authoredFact(text))}
               />
               <TextField
-                id="setor-confirmado"
-                label="Setor"
-                value={draft.sector.value}
-                onChange={(value) => setFact("sector", authoredFact(value))}
-                source={draft.sector.source}
-                invalid={isInvalid("sector")}
-                suggestion={
-                  selectedLead?.category
-                    ? {
-                        label: selectedLead.category,
-                        onUse: () =>
-                          setFact("sector", { value: selectedLead.category, source: "LEAD", confirmedAt: nowIso() }),
-                      }
-                    : undefined
-                }
+                id="objetivo"
+                label="Objetivo principal"
+                className="mt-4"
+                multiline
+                value={draft.objective.value}
+                onChange={(value) => setFact("objective", authoredFact(value))}
+                placeholder="Ex.: Receber pedidos pelo WhatsApp a partir do site."
+                invalid={isInvalid("objective")}
+                describedBy={showIssues ? issuesId : undefined}
               />
-            </div>
-            <TextField
-              id="objetivo"
-              label="Objetivo principal"
-              className="mt-4"
-              multiline
-              value={draft.objective.value}
-              onChange={(value) => setFact("objective", authoredFact(value))}
-              invalid={isInvalid("objective")}
-              describedBy={showIssues ? issuesId : undefined}
-            />
+            </Section>
           </Step>
         )}
 
         {step === 3 && (
           <Step
-            title="Escolha a abordagem"
+            title="Abordagem e posicionamento"
             description="Descreva apenas o que foi confirmado. Promessas, preços e avaliações não verificadas serão recusados."
           >
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextField
-                id="publico"
-                label="Público"
-                multiline
-                value={draft.audience.value}
-                onChange={(value) => setFact("audience", authoredFact(value))}
-                invalid={isInvalid("audience")}
-                describedBy={showIssues ? issuesId : undefined}
-              />
-              <TextField
-                id="posicionamento"
-                label="Posicionamento"
-                multiline
-                value={draft.positioning.value}
-                onChange={(value) => setFact("positioning", authoredFact(value))}
-                invalid={isInvalid("positioning")}
-                describedBy={showIssues ? issuesId : undefined}
-              />
-            </div>
-            <TextField
-              id="direcao-visual"
-              label="Direção visual"
-              className="mt-4"
-              multiline
-              value={draft.visualDirection.value}
-              onChange={(value) => setFact("visualDirection", authoredFact(value))}
-              invalid={isInvalid("visualDirection")}
-              describedBy={showIssues ? issuesId : undefined}
-            />
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <TextField
-                id="diferenciais"
-                label="Diferenciais confirmados"
-                multiline
-                value={draft.differentiators.value}
-                onChange={(value) => setFact("differentiators", authoredFact(value))}
-                placeholder="Separe por vírgula. Deixe vazio se não houver confirmação."
-                invalid={isInvalid("differentiators")}
-              />
-              <TextField
-                id="meta-description"
-                label="Meta description (opcional)"
-                multiline
-                value={draft.metaDescription.value}
-                onChange={(value) => setFact("metaDescription", authoredFact(value))}
-                placeholder="Até 180 caracteres para o resultado de busca."
-                hint={`${draft.metaDescription.value.trim().length}/180 caracteres`}
-                invalid={isInvalid("metaDescription")}
+            <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+              <div className="space-y-5">
+                <Section title="Tom de voz" text="Como o site fala com o cliente. Escolha um ponto de partida e ajuste.">
+                  <PresetChips
+                    presets={TONE_PRESETS}
+                    current={draft.positioning.value}
+                    onPick={(text) => setFact("positioning", authoredFact(text))}
+                  />
+                  <TextField
+                    id="posicionamento"
+                    label="Posicionamento"
+                    className="mt-4"
+                    multiline
+                    value={draft.positioning.value}
+                    onChange={(value) => setFact("positioning", authoredFact(value))}
+                    invalid={isInvalid("positioning")}
+                    describedBy={showIssues ? issuesId : undefined}
+                  />
+                </Section>
+
+                <Section title="Direção visual" text="A sensação do site. Cores exatas ficam para o briefing visual.">
+                  <PresetChips
+                    presets={VISUAL_PRESETS}
+                    current={draft.visualDirection.value}
+                    onPick={(text) => setFact("visualDirection", authoredFact(text))}
+                  />
+                  <TextField
+                    id="direcao-visual"
+                    label="Direção visual"
+                    className="mt-4"
+                    multiline
+                    value={draft.visualDirection.value}
+                    onChange={(value) => setFact("visualDirection", authoredFact(value))}
+                    invalid={isInvalid("visualDirection")}
+                    describedBy={showIssues ? issuesId : undefined}
+                  />
+                </Section>
+
+                <Section title="Público e diferenciais" text="Para quem o site fala e o que só este negócio pode afirmar.">
+                  <TextField
+                    id="publico"
+                    label="Público"
+                    multiline
+                    value={draft.audience.value}
+                    onChange={(value) => setFact("audience", authoredFact(value))}
+                    placeholder="Ex.: famílias do bairro, condomínios e escritórios da região."
+                    invalid={isInvalid("audience")}
+                    describedBy={showIssues ? issuesId : undefined}
+                  />
+                  <TextField
+                    id="diferenciais"
+                    label="Diferenciais confirmados"
+                    className="mt-4"
+                    multiline
+                    value={draft.differentiators.value}
+                    onChange={(value) => setFact("differentiators", authoredFact(value))}
+                    placeholder="Separe por vírgula. Deixe vazio se não houver confirmação."
+                    invalid={isInvalid("differentiators")}
+                  />
+                  <TextField
+                    id="meta-description"
+                    label="Meta description (opcional)"
+                    className="mt-4"
+                    multiline
+                    value={draft.metaDescription.value}
+                    onChange={(value) => setFact("metaDescription", authoredFact(value))}
+                    placeholder="Até 180 caracteres para o resultado de busca."
+                    hint={`${draft.metaDescription.value.trim().length}/180 caracteres`}
+                    invalid={isInvalid("metaDescription")}
+                  />
+                </Section>
+              </div>
+
+              <ApproachScript
+                blocks={script}
+                lead={selectedLead}
+                sector={draft.sector.value}
+                city={draft.city.value || selectedLead?.city || ""}
               />
             </div>
           </Step>
@@ -676,7 +992,7 @@ export function NewProjectWizard() {
                     services: [...current.services, createServiceDraft(nextKey())],
                   }))
                 }
-                className="mt-4 inline-flex items-center gap-2 rounded-xl border border-nox-border px-4 py-2.5 text-sm text-nox-muted hover:border-nox-purple hover:text-white"
+                className="nox-btn-secondary mt-4"
               >
                 <Plus size={16} aria-hidden="true" /> Adicionar serviço
               </button>
@@ -710,11 +1026,11 @@ export function NewProjectWizard() {
               }
             />
 
-            <div className="mt-6 flex items-start gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4 text-sm text-emerald-100">
-              <Sparkles className="mt-0.5 shrink-0" size={17} aria-hidden="true" />
+            <div className="mt-6 flex items-start gap-3 rounded-2xl border border-nox-cyan/20 bg-nox-cyan/5 p-4 text-sm text-cyan-100">
+              <Sparkles className="mt-0.5 shrink-0 text-nox-cyan" size={17} aria-hidden="true" />
               <p>
                 Ao criar, o sistema gera o cliente, o projeto e a primeira versão imutável do
-                briefing na versão 2, e informa o que ainda falta.
+                briefing, e informa o que ainda falta para o site ficar completo.
               </p>
             </div>
           </Step>
@@ -750,7 +1066,7 @@ export function NewProjectWizard() {
             setError(null);
             setStep((value) => Math.max(0, value - 1));
           }}
-          className="inline-flex items-center gap-2 rounded-xl border border-nox-border px-4 py-2.5 text-sm text-nox-muted hover:text-white disabled:opacity-30"
+          className="nox-btn-secondary disabled:opacity-30"
         >
           <ArrowLeft size={16} aria-hidden="true" /> Voltar
         </button>
@@ -759,7 +1075,7 @@ export function NewProjectWizard() {
             type="button"
             onClick={goForward}
             aria-disabled={stepIssues.length > 0}
-            className={`inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-nox-bg ${stepIssues.length > 0 ? "opacity-40" : ""}`}
+            className={cn("nox-btn-primary px-6", stepIssues.length > 0 && "opacity-50")}
           >
             Continuar <ArrowRight size={16} aria-hidden="true" />
           </button>
@@ -769,12 +1085,12 @@ export function NewProjectWizard() {
             disabled={submitting}
             onClick={() => void submit()}
             aria-disabled={stepIssues.length > 0}
-            className={`inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-nox-purple to-nox-cyan px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40 ${stepIssues.length > 0 ? "opacity-40" : ""}`}
+            className={cn("nox-btn-primary px-6", stepIssues.length > 0 && "opacity-50")}
           >
             {submitting ? (
               <Loader2 className="animate-spin" size={16} aria-hidden="true" />
             ) : (
-              <Check size={16} aria-hidden="true" />
+              <Sparkles size={16} aria-hidden="true" />
             )}
             Criar projeto
           </button>
@@ -788,6 +1104,37 @@ export function NewProjectWizard() {
 // Blocos
 // ---------------------------------------------------------------------------
 
+function Stepper({ step }: { step: number }) {
+  return (
+    <ol className="grid grid-cols-5 gap-2" aria-label="Etapas do projeto">
+      {STEPS.map((label, index) => {
+        const done = index < step;
+        const current = index === step;
+        return (
+          <li key={label} className="min-w-0" aria-current={current ? "step" : undefined}>
+            <div
+              className={cn(
+                "h-1 rounded-full transition-colors",
+                done || current ? "bg-nox-cyan" : "bg-nox-border",
+                current && "shadow-[0_0_12px_rgba(34,211,238,0.6)]",
+              )}
+            />
+            <p
+              className={cn(
+                "mt-2 flex items-center gap-1.5 truncate text-[11px] font-semibold uppercase tracking-[0.16em]",
+                current ? "text-nox-cyan" : done ? "text-white" : "text-nox-muted",
+              )}
+            >
+              {done ? <Check size={12} aria-hidden="true" /> : <span className="font-mono">{index + 1}</span>}
+              <span className="truncate">{label}</span>
+            </p>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function Step({
   title,
   description,
@@ -798,16 +1145,176 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <h2 className="text-xl font-semibold text-white sm:text-2xl">{title}</h2>
-      <p className="mt-2 mb-6 text-sm text-nox-muted">{description}</p>
+    <div className="nox-fade-up">
+      <h2 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">{title}</h2>
+      <p className="mt-2 mb-6 max-w-2xl text-sm text-nox-muted">{description}</p>
       {children}
     </div>
   );
 }
 
-const INPUT_CLASS =
-  "mt-2 w-full rounded-xl border border-nox-border bg-nox-bg px-4 py-3 text-sm text-white outline-none placeholder:text-nox-muted/60 focus:border-nox-cyan";
+function Section({
+  title,
+  text,
+  className,
+  children,
+}: {
+  title: string;
+  text: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className={cn("rounded-2xl border border-nox-border bg-nox-bg/40 p-5", className)}>
+      <h3 className="text-sm font-semibold text-white">{title}</h3>
+      <p className="mt-1 mb-4 text-xs text-nox-muted">{text}</p>
+      {children}
+    </section>
+  );
+}
+
+function PresetChips({
+  presets,
+  current,
+  onPick,
+}: {
+  presets: { label: string; text: string }[];
+  current: string;
+  onPick: (text: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Sugestões">
+      {presets.map((preset) => {
+        const active = current.trim() === preset.text;
+        return (
+          <button
+            key={preset.label}
+            type="button"
+            onClick={() => onPick(preset.text)}
+            aria-pressed={active}
+            className={cn("nox-chip", active && "nox-chip-active")}
+          >
+            {active ? <Check size={12} aria-hidden="true" /> : null}
+            {preset.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScoreBadge({ score }: { score: number }) {
+  const band = opportunityBand(score);
+  const tone =
+    band === "alta"
+      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+      : band === "media"
+        ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+        : "border-nox-border bg-nox-panel text-nox-muted";
+  return (
+    <span
+      className={cn("flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border font-mono", tone)}
+      title={`Score de oportunidade ${score}`}
+    >
+      <span className="text-base font-semibold leading-none">{score}</span>
+      <span className="mt-0.5 text-[9px] uppercase tracking-wider opacity-80">score</span>
+    </span>
+  );
+}
+
+function ApproachScript({
+  blocks,
+  lead,
+  sector,
+  city,
+}: {
+  blocks: ScriptBlock[];
+  lead: Lead | null;
+  sector: string;
+  city: string;
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function copy(key: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      window.setTimeout(() => setCopied((current) => (current === key ? null : current)), 1800);
+    } catch {
+      setCopied(null);
+    }
+  }
+
+  const everything = blocks.map((block) => block.text).join("\n\n");
+
+  return (
+    <aside className="rounded-2xl border border-nox-border bg-nox-bg/40 p-5" aria-label="Script de abordagem">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Sua abordagem profissional</h3>
+          <p className="mt-1 text-xs text-nox-muted">Script de pré-venda em blocos. Use inteiro ou copie por etapa.</p>
+        </div>
+        <button type="button" onClick={() => void copy("all", everything)} className="nox-btn-secondary px-3 py-1.5 text-xs">
+          {copied === "all" ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+          {copied === "all" ? "Copiado" : "Copiar tudo"}
+        </button>
+      </div>
+
+      <dl className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        {[
+          ["Empresa", lead?.name ?? "—"],
+          ["Nicho", sector.trim() || "—"],
+          ["Cidade", city.trim() || "—"],
+          ["Objetivo", "Agendar uma conversa"],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-lg border border-nox-border bg-nox-surface px-3 py-2">
+            <dt className="text-[10px] uppercase tracking-[0.16em] text-nox-muted">{label}</dt>
+            <dd className="mt-0.5 truncate text-white" title={value}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <ol className="mt-4 space-y-3">
+        {blocks.map((block, index) => (
+          <li key={block.title} className="rounded-xl border border-nox-border bg-nox-surface p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-white">
+                  <span className="mr-1.5 text-nox-cyan">{index + 1}.</span>
+                  {block.title}
+                </p>
+                <p className="mt-0.5 text-[11px] text-nox-muted">{block.hint}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void copy(block.title, block.text)}
+                className="nox-btn-ghost p-1.5"
+                aria-label={`Copiar bloco ${block.title}`}
+              >
+                {copied === block.title ? <Check size={14} className="text-emerald-300" aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+              </button>
+            </div>
+            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-nox-text/90">{block.text}</p>
+          </li>
+        ))}
+      </ol>
+
+      <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-xs text-emerald-100/90">
+        <p>
+          Ordem que funciona: mande a abordagem antes de gerar o site. Quem já demonstrou interesse
+          aprova mais rápido.
+        </p>
+        {lead ? (
+          <Link href={`/leads/${lead.id}#whatsapp`} target="_blank" className="mt-2 inline-flex items-center gap-1.5 font-medium text-emerald-300 hover:underline">
+            <MessageCircle size={13} aria-hidden="true" /> Enviar pela ficha do lead (respeita o opt-in)
+          </Link>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+const INPUT_CLASS = "nox-input mt-2";
 
 function SourceBadge({ source }: { source: string }) {
   if (source !== "LEAD") return null;
@@ -1351,7 +1858,7 @@ function ContactSection({
         <button
           type="button"
           onClick={() => onSocialAdd()}
-          className="mt-3 inline-flex items-center gap-2 rounded-xl border border-nox-border px-4 py-2.5 text-sm text-nox-muted hover:border-nox-purple hover:text-white"
+          className="nox-btn-secondary mt-3"
         >
           <Plus size={16} aria-hidden="true" /> Adicionar rede social
         </button>

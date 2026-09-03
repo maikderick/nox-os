@@ -50,7 +50,7 @@ export default function MapPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Mapa</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-white">Mapa</h1>
         <p className="text-sm text-nox-muted">
           Marcadores da página atual (máx. 100). © OpenStreetMap contributors.
         </p>

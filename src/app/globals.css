@@ -1,15 +1,25 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   NOX OS — design tokens
+   Dark, precise, one accent. Cyan is the action colour, violet is the glow.
+   --------------------------------------------------------------------------- */
 :root {
-  --nox-bg: #050508;
-  --nox-surface: #0f1117;
-  --nox-panel: #151822;
-  --nox-border: #2a2f3d;
-  --nox-text: #f4f6fb;
-  --nox-muted: #9aa3b5;
+  --nox-bg: #08090c;
+  --nox-surface: #0f1116;
+  --nox-panel: #151821;
+  --nox-raised: #1b1f2a;
+  --nox-border: #232735;
+  --nox-border-strong: #313648;
+  --nox-text: #eef1f7;
+  --nox-muted: #8b93a7;
   --nox-purple: #8b5cf6;
   --nox-cyan: #22d3ee;
   --nox-blue: #3b82f6;
+  --nox-success: #34d399;
+  --nox-warning: #fbbf24;
+  --nox-danger: #f87171;
+  --nox-sidebar-w: 264px;
   --background: var(--nox-bg);
   --foreground: var(--nox-text);
 }
@@ -20,11 +30,17 @@
   --color-nox-bg: var(--nox-bg);
   --color-nox-surface: var(--nox-surface);
   --color-nox-panel: var(--nox-panel);
+  --color-nox-raised: var(--nox-raised);
   --color-nox-border: var(--nox-border);
+  --color-nox-border-strong: var(--nox-border-strong);
+  --color-nox-text: var(--nox-text);
   --color-nox-muted: var(--nox-muted);
   --color-nox-purple: var(--nox-purple);
   --color-nox-cyan: var(--nox-cyan);
   --color-nox-blue: var(--nox-blue);
+  --color-nox-success: var(--nox-success);
+  --color-nox-warning: var(--nox-warning);
+  --color-nox-danger: var(--nox-danger);
   --font-sans: var(--font-display);
   --font-mono: var(--font-mono);
 }
@@ -35,6 +51,7 @@
 
 html {
   scroll-behavior: smooth;
+  color-scheme: dark;
 }
 
 body {
@@ -42,23 +59,128 @@ body {
   color: var(--nox-text);
   font-family: var(--font-display), "Segoe UI", sans-serif;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--nox-purple) 40%, transparent);
+  background: color-mix(in oklab, var(--nox-cyan) 35%, transparent);
 }
 
+*:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--nox-cyan) 80%, transparent);
+  outline-offset: 2px;
+}
+
+/* Native form controls inherit the panel look instead of the browser's. */
+select,
+input,
+textarea {
+  color-scheme: dark;
+}
+
+select option {
+  background: var(--nox-panel);
+  color: var(--nox-text);
+}
+
+/* ---------------------------------------------------------------------------
+   Backdrops
+   --------------------------------------------------------------------------- */
 .nox-grid {
   background-image:
-    linear-gradient(rgba(34, 211, 238, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(139, 92, 246, 0.04) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 56px 56px;
 }
 
 .nox-glow {
   background:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(139, 92, 246, 0.28), transparent),
-    radial-gradient(ellipse 50% 40% at 90% 20%, rgba(34, 211, 238, 0.12), transparent);
+    radial-gradient(ellipse 70% 55% at 50% -15%, rgba(34, 211, 238, 0.16), transparent),
+    radial-gradient(ellipse 45% 35% at 90% 10%, rgba(139, 92, 246, 0.14), transparent);
+}
+
+.nox-glow-soft {
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 0%, rgba(34, 211, 238, 0.08), transparent),
+    radial-gradient(ellipse 50% 40% at 100% 100%, rgba(139, 92, 246, 0.08), transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   Components
+   --------------------------------------------------------------------------- */
+@layer components {
+  .nox-card {
+    @apply rounded-2xl border border-nox-border bg-nox-surface;
+  }
+
+  .nox-card-raised {
+    @apply rounded-2xl border border-nox-border bg-nox-panel;
+  }
+
+  .nox-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .nox-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 bg-nox-cyan text-nox-bg hover:bg-cyan-300;
+    box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.35), 0 10px 30px -12px rgba(34, 211, 238, 0.55);
+  }
+
+  .nox-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 border border-nox-border bg-nox-panel text-nox-text hover:border-nox-border-strong hover:bg-nox-raised;
+  }
+
+  .nox-btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 text-nox-muted hover:bg-nox-panel hover:text-white;
+  }
+
+  .nox-btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 border border-red-400/30 bg-red-400/10 text-red-200 hover:bg-red-400/20;
+  }
+
+  .nox-input {
+    @apply w-full rounded-xl border border-nox-border bg-nox-bg px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-nox-muted/60 focus:border-nox-cyan;
+  }
+
+  .nox-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-nox-border bg-nox-panel px-3 py-1.5 text-xs font-medium text-nox-muted transition-colors hover:border-nox-border-strong hover:text-white;
+  }
+
+  .nox-chip-active {
+    @apply border-nox-cyan/60 bg-nox-cyan/10 text-nox-cyan;
+  }
+
+  .nox-eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.22em] text-nox-cyan;
+  }
+
+  .nox-kpi {
+    @apply rounded-2xl border border-nox-border bg-nox-surface p-5;
+  }
+
+  .nox-kpi-label {
+    @apply text-xs font-medium text-nox-muted;
+  }
+
+  .nox-kpi-value {
+    @apply mt-2 text-3xl font-semibold tracking-tight text-white;
+  }
+
+  .nox-table {
+    @apply w-full text-left text-sm;
+  }
+
+  .nox-table thead th {
+    @apply border-b border-nox-border px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-nox-muted;
+  }
+
+  .nox-table tbody td {
+    @apply border-b border-nox-border/60 px-3 py-3 align-middle;
+  }
+
+  .nox-table tbody tr:hover {
+    @apply bg-nox-panel/60;
+  }
 }
 
 .leaflet-container {
@@ -86,4 +208,40 @@ body {
 .demo-page h1 {
   letter-spacing: -0.03em;
   line-height: 0.98;
+}
+
+/* Scrollbars that match the panel instead of the OS. */
+.nox-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.nox-scroll::-webkit-scrollbar-thumb {
+  background: var(--nox-border-strong);
+  border: 3px solid var(--nox-surface);
+  border-radius: 999px;
+}
+
+@keyframes nox-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nox-fade-up {
+  animation: nox-fade-up 0.35s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nox-fade-up {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
 }

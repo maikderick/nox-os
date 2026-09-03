@@ -3,9 +3,10 @@ import { test, expect } from "@playwright/test";
 test("landing is public and professional", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    "Sites personalizados que transformam negócios locais",
+    "Sites profissionais para negócios locais",
   );
-  await expect(page.getByRole("link", { name: /Solicitar análise/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Falar (no WhatsApp|com a equipe)/i }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /Acessar painel/i })).toBeVisible();
 });
 
 test("private routes require auth", async ({ page }) => {
