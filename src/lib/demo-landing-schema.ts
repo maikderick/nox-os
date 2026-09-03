@@ -135,6 +135,14 @@ export const DEMO_CTA_LABELS = [
   "Ver informações",
   "Conhecer detalhes",
   "Ver dados do estabelecimento",
+  "Pedir no WhatsApp",
+  "Agendar pelo WhatsApp",
+  "Reservar pelo WhatsApp",
+  "Comprar pelo WhatsApp",
+  "Falar no WhatsApp",
+  "Pedir orçamento",
+  "Ligar agora",
+  "Ver contato",
 ] as const;
 
 export function normalizeDemoCtaLabel(value: string): (typeof DEMO_CTA_LABELS)[number] {
@@ -207,6 +215,8 @@ export const demoLandingContentSchema = z
       "Valide os canais informados diretamente com o estabelecimento antes de entrar em contato.",
     ),
     businessSnapshot: demoBusinessSnapshotSchema.nullable().default(null),
+    /** A WhatsApp number confirmed in the brief; only then does the page offer a wa.me link. */
+    whatsappE164: phoneE164Schema.nullable().default(null),
     ctaLabel: plainText(60),
     primaryColor: hexColor,
     accentColor: hexColor,

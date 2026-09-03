@@ -45,6 +45,7 @@ import {
   parseInstagramPostUrl,
 } from "@/lib/instagram";
 import { isValidPhoneE164 } from "@/lib/phone";
+import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { classifyWebsite, hasOwnWebsite } from "@/lib/website";
 
 export const dynamic = "force-dynamic";
@@ -191,6 +192,11 @@ function buildOsmLinks(latitude: number | null, longitude: number | null) {
     embed: `https://www.openstreetmap.org/export/embed.html?${params.toString()}`,
     external: `https://www.openstreetmap.org/?mlat=${encodeURIComponent(latitude)}&mlon=${encodeURIComponent(longitude)}#map=17/${encodeURIComponent(latitude)}/${encodeURIComponent(longitude)}`,
   };
+}
+
+/** A preview kept for more than a year is, for the visitor, the site itself. */
+function isPermanentPreview(expiresAt: Date): boolean {
+  return expiresAt.getTime() - Date.now() > 365 * 86_400_000;
 }
 
 function formatSafePhone(value: string): string {
@@ -381,8 +387,20 @@ export default async function DemoLandingPage({ params }: PageProps) {
       ].filter((credit): credit is string => Boolean(credit)),
     ),
   ).slice(0, 8);
-  const mainCtaHref = "#contato";
+  const whatsapp = isValidPhoneE164(content.whatsappE164)
+    ? {
+        href: buildWhatsAppLink(
+          content.whatsappE164,
+          `Olá! Vi a página de ${business.name} e quero falar com vocês.`,
+        ),
+        display: formatSafePhone(content.whatsappE164),
+      }
+    : null;
+  const mainCtaHref = whatsapp ? whatsapp.href : safePhone && ctaLabel === "Ligar agora" ? safePhone.href : "#contato";
   const mainCtaLabel = ctaLabel;
+  const mainCtaExternal = Boolean(whatsapp);
+  const validUntil = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(landing.expiresAt);
+  const isPermanent = isPermanentPreview(landing.expiresAt);
   const accessibleGradient = `linear-gradient(rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.58)), linear-gradient(135deg, ${content.primaryColor}, ${content.accentColor})`;
   // The page ground carries a trace of the business's own colour, so a demo for a
   // bakery does not sit on the same neutral black as one for a garage.
@@ -418,7 +436,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
       <div className="sticky top-0 z-[60] flex h-9 items-center justify-center border-b border-amber-200/15 bg-[#17130d]/95 px-3 text-center text-[9px] font-semibold uppercase tracking-[0.13em] text-amber-100 backdrop-blur-2xl sm:text-[10px] sm:tracking-[0.17em]">
         <span className="inline-flex min-w-0 items-center justify-center gap-2">
           <Info aria-hidden="true" className="h-3.5 w-3.5" />
-          <span className="truncate">Demonstração não oficial · Prévia temporária</span>
+          <span className="truncate">{isPermanent ? `Site de ${business.name}` : `Prévia temporária · válida até ${validUntil}`}</span>
         </span>
       </div>
 
@@ -480,6 +498,8 @@ export default async function DemoLandingPage({ params }: PageProps) {
 
             <a
               href={mainCtaHref}
+              target={mainCtaExternal ? "_blank" : undefined}
+              rel={mainCtaExternal ? "noopener noreferrer" : undefined}
               className="group inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-4 py-2.5 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.11] sm:px-5 sm:text-sm"
             >
               {mainCtaLabel}
@@ -535,6 +555,8 @@ export default async function DemoLandingPage({ params }: PageProps) {
             <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
               <a
                 href={mainCtaHref}
+                target={mainCtaExternal ? "_blank" : undefined}
+                rel={mainCtaExternal ? "noopener noreferrer" : undefined}
                 className="group inline-flex min-h-14 items-center justify-center gap-2 rounded-full px-7 py-3.5 text-sm font-bold text-white shadow-[0_24px_60px_-20px_rgba(0,0,0,.6)] transition hover:-translate-y-0.5"
                 style={{
                   backgroundImage: accessibleGradient,
@@ -556,14 +578,24 @@ export default async function DemoLandingPage({ params }: PageProps) {
             </div>
 
             <div className="mt-9 grid gap-3 text-xs font-medium text-slate-400 sm:flex sm:flex-wrap sm:gap-x-6 sm:gap-y-3">
-              <span className="inline-flex items-center gap-2">
-                <ShieldCheck aria-hidden="true" className="h-4 w-4 text-slate-400" />
-                Informações disponíveis
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <BadgeCheck aria-hidden="true" className="h-4 w-4 text-slate-400" />
-                Conteúdo claro e transparente
-              </span>
+              {whatsapp ? (
+                <span className="inline-flex items-center gap-2">
+                  <BadgeCheck aria-hidden="true" className="h-4 w-4 text-slate-400" />
+                  Atendimento pelo WhatsApp
+                </span>
+              ) : null}
+              {locationSummary ? (
+                <span className="inline-flex items-center gap-2">
+                  <MapPin aria-hidden="true" className="h-4 w-4 text-slate-400" />
+                  {locationSummary}
+                </span>
+              ) : null}
+              {!whatsapp && !locationSummary ? (
+                <span className="inline-flex items-center gap-2">
+                  <ShieldCheck aria-hidden="true" className="h-4 w-4 text-slate-400" />
+                  Informações confirmadas
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -1107,7 +1139,33 @@ export default async function DemoLandingPage({ params }: PageProps) {
 
             <div className="mt-12 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
               <div className="flex min-w-0 flex-col gap-4">
-                {safePhone ? (
+                {whatsapp ? (
+                  <a
+                    href={whatsapp.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex min-w-0 items-center justify-between gap-3 overflow-hidden rounded-[1.6rem] border border-emerald-300/25 bg-emerald-400/[0.07] p-5 transition hover:-translate-y-0.5 hover:border-emerald-300/50 sm:gap-5 sm:p-6"
+                  >
+                    <span className="flex min-w-0 items-center gap-4">
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300">
+                        <MessageCircle aria-hidden="true" className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[9px] font-semibold uppercase tracking-[0.17em] text-emerald-200/80">
+                          WhatsApp
+                        </span>
+                        <span className="mt-2 block truncate text-base font-semibold text-white">
+                          {whatsapp.display}
+                        </span>
+                      </span>
+                    </span>
+                    <ArrowRight
+                      aria-hidden="true"
+                      className="h-5 w-5 shrink-0 text-emerald-200 transition group-hover:translate-x-1"
+                    />
+                  </a>
+                ) : null}
+                {safePhone && (!whatsapp || safePhone.href !== `tel:${content.whatsappE164}`) ? (
                   <a
                     href={safePhone.href}
                     className="group flex min-w-0 items-center justify-between gap-3 overflow-hidden rounded-[1.6rem] border border-white/[0.09] bg-[#101016] p-5 transition hover:-translate-y-0.5 hover:border-white/20 sm:gap-5 sm:p-6"
@@ -1121,7 +1179,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
                       </span>
                       <span className="min-w-0">
                         <span className="block text-[9px] font-semibold uppercase tracking-[0.17em] text-slate-400">
-                          Telefone informado
+                          Telefone
                         </span>
                         <span className="mt-2 block truncate text-base font-semibold text-white">
                           {safePhone.display}
@@ -1145,7 +1203,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
                     </span>
                     <div className="min-w-0">
                       <p className="text-[9px] font-semibold uppercase tracking-[0.17em] text-slate-400">
-                        Endereço informado
+                        Endereço
                       </p>
                       <p className="mt-2 break-words text-sm leading-7 text-slate-200">{fullAddress}</p>
                     </div>
@@ -1159,12 +1217,12 @@ export default async function DemoLandingPage({ params }: PageProps) {
                     </span>
                     <div className="min-w-0">
                       <p className="text-[9px] font-semibold uppercase tracking-[0.17em] text-slate-400">
-                        {socialLinks.length ? "Canais encontrados" : "Canais sociais"}
+                        Redes sociais
                       </p>
                       <p className="mt-2 text-sm text-slate-400">
                         {socialLinks.length
                           ? "Acesse os perfis informados para conferir detalhes."
-                          : "Nenhum canal social seguro está disponível para exibição nesta prévia."}
+                          : "As redes sociais entram aqui na versão final."}
                       </p>
                     </div>
                   </div>
@@ -1282,8 +1340,7 @@ export default async function DemoLandingPage({ params }: PageProps) {
 
             <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-300/10 bg-emerald-300/[0.045] p-4 text-xs leading-6 text-emerald-100/65">
               <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-              Telefone, endereço, coordenadas e redes sociais aparecem somente quando estão presentes e
-              passam pelas validações de segurança desta demonstração.
+              Contato e endereço confirmados antes da publicação desta página.
             </div>
           </div>
         </section>
@@ -1349,6 +1406,8 @@ export default async function DemoLandingPage({ params }: PageProps) {
               </p>
               <a
                 href={mainCtaHref}
+                target={mainCtaExternal ? "_blank" : undefined}
+                rel={mainCtaExternal ? "noopener noreferrer" : undefined}
                 className="group mt-9 inline-flex min-h-14 items-center justify-center gap-2 rounded-full px-8 py-3.5 text-sm font-bold text-white shadow-[0_24px_60px_-20px_rgba(0,0,0,.6)] transition hover:-translate-y-0.5"
                 style={{
                   backgroundImage: accessibleGradient,
@@ -1397,15 +1456,16 @@ export default async function DemoLandingPage({ params }: PageProps) {
             </div>
             <div className="grid gap-5 pt-8 text-center md:grid-cols-[1fr_auto] md:items-center md:text-left">
               <p className="max-w-2xl text-xs leading-6 text-slate-400">
-                Demonstração não oficial criada para apresentação visual. Esta página não constitui
-                o site oficial do estabelecimento. Conteúdo sujeito à validação.
+                {isPermanent
+                  ? `Página de ${business.name}, criada e mantida pela NOX OS.`
+                  : `Prévia temporária preparada pela NOX OS para ${business.name}. Torna-se o site definitivo após a aprovação do estabelecimento.`}
                 {hasIllustrativePhotos
                   ? " As fotografias marcadas como ilustrativas são de banco de imagens licenciado e não retratam o estabelecimento."
                   : ""}
               </p>
               <div className="md:text-right">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  NOX OS · Demonstração temporária
+                  {isPermanent ? "Site por NOX OS" : "NOX OS · Prévia temporária"}
                 </p>
                 <p className="mt-2 text-[10px] text-slate-400">Não indexada por mecanismos de busca</p>
               </div>
@@ -1438,12 +1498,14 @@ export default async function DemoLandingPage({ params }: PageProps) {
 
       <div className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#09090d]/95 p-3 pb-[calc(.75rem+env(safe-area-inset-bottom))] shadow-[0_-16px_45px_rgba(0,0,0,.45)] backdrop-blur-2xl md:hidden">
         <a
-          href={safePhone?.href ?? mainCtaHref}
+          href={whatsapp ? whatsapp.href : (safePhone?.href ?? mainCtaHref)}
+          target={whatsapp ? "_blank" : undefined}
+          rel={whatsapp ? "noopener noreferrer" : undefined}
           className="flex min-h-13 items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white"
           style={{ backgroundImage: accessibleGradient }}
         >
-          {safePhone ? <Phone aria-hidden="true" className="h-4 w-4" /> : <Info aria-hidden="true" className="h-4 w-4" />}
-          {safePhone ? `Ligar · ${safePhone.display}` : "Ver contato e localização"}
+          {whatsapp ? <MessageCircle aria-hidden="true" className="h-4 w-4" /> : safePhone ? <Phone aria-hidden="true" className="h-4 w-4" /> : <Info aria-hidden="true" className="h-4 w-4" />}
+          {whatsapp ? mainCtaLabel : safePhone ? `Ligar · ${safePhone.display}` : "Ver contato e localização"}
         </a>
       </div>
     </main>

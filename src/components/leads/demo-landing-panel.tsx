@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   DEMO_CTA_LABELS,
@@ -64,6 +66,7 @@ const DEFAULT_CONTACT_TEXT =
   "Valide os canais informados diretamente com o estabelecimento antes de entrar em contato.";
 
 const EMPTY_DRAFT: Draft = {
+  whatsappE164: null,
   headline: "",
   subheadline: "",
   heroImageUrl: "",
@@ -612,9 +615,9 @@ export function DemoLandingPanel({
             O gerador de demonstrações entrou em modo de compatibilidade. Novos trabalhos começam
             na fábrica de sites, com briefing versionado e aprovação separada.
           </p>
-          <a href="/projetos/novo" className="mt-4 inline-flex nox-btn-primary">
+          <Link href="/projetos/novo" className="nox-btn-primary mt-4">
             Abrir novo projeto
-          </a>
+          </Link>
         </div>
       )}
 
@@ -1588,6 +1591,7 @@ function ColorField({
 
 function toDraft(content: EditableLandingContent): Draft {
   return {
+    whatsappE164: content.whatsappE164 ?? null,
     headline: content.headline ?? "",
     subheadline: content.subheadline ?? "",
     heroImageUrl: content.heroImageUrl ?? "",

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Layers3, Plus, Rocket, ShieldCheck } from "lucide-react";
+import { ArrowRight, ExternalLink, Globe, Layers3, Plus, Rocket, ShieldCheck } from "lucide-react";
 
 import { requirePermission } from "@/lib/authz/dal";
 import { listSiteProjects } from "@/lib/site-factory/project-service";
@@ -25,7 +25,6 @@ export default async function ProjectsPage() {
   await requireUser();
   const actor = await requirePermission("project:read");
   const projects = await listSiteProjects(actor);
-  const canOpen = actor.permissions.includes("provisioning:read");
 
   const published = projects.filter((project) => project.status === "PUBLICADO").length;
   const active = projects.filter((project) => !["RASCUNHO", "PUBLICADO", "FALHOU"].includes(project.status)).length;
@@ -70,26 +69,40 @@ export default async function ProjectsPage() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {projects.map((project) => {
               const state = isSiteProjectState(project.status) ? project.status : "RASCUNHO";
+              const landing = project.client.business?.demoLanding ?? null;
+              const siteOnline = Boolean(landing) && landing!.status === "APPROVED" && isOnline(landing!);
               return (
                 <article key={project.id} className="nox-card relative p-5 transition hover:border-nox-border-strong">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="truncate text-xs uppercase tracking-[0.16em] text-nox-muted">{project.client.name}</p>
                       <h3 className="mt-1.5 truncate text-lg font-semibold text-white">
-                        {canOpen ? (
-                          <Link href={`/projetos/${project.id}/provisionamento`} className="after:absolute after:inset-0 hover:text-nox-cyan">
-                            {project.name}
-                          </Link>
-                        ) : (
-                          project.name
-                        )}
+                        <Link href={`/projetos/${project.id}`} className="after:absolute after:inset-0 hover:text-nox-cyan">
+                          {project.name}
+                        </Link>
                       </h3>
                     </div>
                     <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium ${STATUS_STYLES[state]}`}>
                       {SITE_PROJECT_STATE_LABELS[state]}
                     </span>
                   </div>
-                  <dl className="mt-5 grid grid-cols-3 gap-2 border-t border-nox-border pt-4 text-xs">
+                  <p className="mt-4 flex items-center gap-1.5 text-xs">
+                    {siteOnline ? (
+                      <>
+                        <Globe size={13} className="text-emerald-300" aria-hidden="true" />
+                        <span className="text-emerald-200">Site no ar</span>
+                        <a href={`/demo/${landing!.slug}`} target="_blank" rel="noreferrer" className="relative z-10 ml-auto inline-flex items-center gap-1 text-nox-cyan hover:underline">
+                          Abrir <ExternalLink size={12} aria-hidden="true" />
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <Globe size={13} className="text-nox-muted" aria-hidden="true" />
+                        <span className="text-nox-muted">{landing ? "Prévia expirada" : "Site ainda não gerado"}</span>
+                      </>
+                    )}
+                  </p>
+                  <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-nox-border pt-4 text-xs">
                     <div>
                       <dt className="text-nox-muted">Briefing</dt>
                       <dd className="mt-1 font-mono text-white">v{project.currentBriefVersion?.version ?? "—"}</dd>
@@ -111,6 +124,11 @@ export default async function ProjectsPage() {
       </section>
     </div>
   );
+}
+
+/** A preview counts as online while it is approved and has not expired. */
+function isOnline(landing: { status: string; expiresAt: Date }): boolean {
+  return landing.status === "APPROVED" && landing.expiresAt.getTime() > Date.now();
 }
 
 function Metric({

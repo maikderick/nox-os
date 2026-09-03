@@ -454,7 +454,7 @@ describe("demo content validation", () => {
 
   it("keeps public calls to action aligned with the information section", () => {
     expect(normalizeDemoCtaLabel("Conhecer detalhes")).toBe("Conhecer detalhes");
-    expect(normalizeDemoCtaLabel("Pedir orçamento")).toBe("Ver informações");
+    expect(normalizeDemoCtaLabel("Compre já")).toBe("Ver informações");
   });
 
   it("requires at least one editable field in PATCH", () => {

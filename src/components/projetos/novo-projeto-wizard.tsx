@@ -428,7 +428,7 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
 
       const capabilities = payload?.capabilities ?? null;
       const projectId = payload?.project?.id;
-      const destination = projectId ? `/projetos/${projectId}/provisionamento` : "/projetos";
+      const destination = projectId ? `/projetos/${projectId}?gerar=1` : "/projetos";
       setCreatedPath(destination);
       if (!capabilities || capabilities.gaps.length === 0) {
         router.push(destination);
@@ -507,7 +507,7 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
             }}
             className="nox-btn-primary mt-6"
           >
-            Abrir o projeto <ArrowRight size={16} aria-hidden="true" />
+            Gerar o site agora <ArrowRight size={16} aria-hidden="true" />
           </button>
         </section>
       </div>

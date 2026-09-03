@@ -1,6 +1,7 @@
 import { Prisma, type DemoLanding } from "@prisma/client";
 import { prisma } from "./db";
 import { applyStockPhotos, fetchDemoStockPhotos } from "./demo-landing-photos";
+import type { DemoLandingContent } from "./demo-landing-schema";
 import {
   createDemoSlug,
   demoExpiryDate,
@@ -88,4 +89,51 @@ export async function markExpiredIfNeeded(landing: DemoLanding): Promise<DemoLan
     where: { id: landing.id },
     data: { status: "EXPIRED" },
   });
+}
+
+/**
+ * Stores content that was built elsewhere — from a confirmed brief, for
+ * instance — as the lead's one demo record. An existing record keeps its slug,
+ * so a link already sent to the client survives a regeneration.
+ */
+export async function saveGeneratedDemoLanding(params: {
+  business: { id: string; name: string };
+  content: DemoLandingContent;
+  createdById?: string | null;
+  expiresInDays: number;
+  status: "DRAFT" | "APPROVED";
+}): Promise<DemoLanding> {
+  const contentJson = JSON.stringify(params.content);
+  const expiresAt = demoExpiryDate(params.expiresInDays);
+  const approvedAt = params.status === "APPROVED" ? new Date() : null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await prisma.demoLanding.upsert({
+        where: { businessId: params.business.id },
+        create: {
+          businessId: params.business.id,
+          createdById: params.createdById ?? null,
+          slug: createDemoSlug(params.business.name),
+          status: params.status,
+          contentJson,
+          expiresAt,
+          approvedAt,
+        },
+        update: {
+          createdById: params.createdById ?? null,
+          status: params.status,
+          contentJson,
+          expiresAt,
+          approvedAt,
+        },
+      });
+    } catch (error) {
+      const isUniqueCollision =
+        error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+      if (!isUniqueCollision || attempt === 2) throw error;
+    }
+  }
+
+  throw new Error("Não foi possível gerar um endereço exclusivo para a demonstração");
 }

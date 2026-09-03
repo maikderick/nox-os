@@ -73,7 +73,14 @@ export async function listSiteProjects(actor: Actor) {
     where: { organizationId: actor.organizationId },
     orderBy: { updatedAt: "desc" },
     include: {
-      client: { select: { id: true, name: true, businessId: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          businessId: true,
+          business: { select: { demoLanding: { select: { slug: true, status: true, expiresAt: true } } } },
+        },
+      },
       currentBriefVersion: { select: { id: true, version: true, createdAt: true } },
       _count: { select: { revisions: true, deployments: true } },
     },
