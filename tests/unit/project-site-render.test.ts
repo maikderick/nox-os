@@ -399,7 +399,34 @@ describe("hero imersivo", () => {
     for (const [id, sector] of CATEGORY_CASES) {
       const html = render(sector, `semente-${id}`, full);
       expect(html, id).toContain('<h1 class="site-hero-title"');
-      expect(html, id).toContain("font-size:clamp(3rem,8vw,7rem)");
+      expect(html, id).toContain("font-size:clamp(2.6rem,12vw,4rem)");
+      expect(html, id).toContain("font-size:clamp(2.6rem,6.5vw,6rem)");
+    }
+  });
+
+  it("nunca hifeniza o nome do negócio: um nome quebra no espaco ou nao quebra", () => {
+    // "Associa-dos", "Consul-torio": um nome de negocio partido no meio le
+    // como marca quebrada, nao como tipografia. O tamanho responde a coluna;
+    // a palavra nao se parte, e nunca por `overflow-wrap: anywhere`.
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(html, id).toContain("hyphens:manual");
+      expect(html, id).not.toContain("hyphens:auto");
+      expect(html, id).not.toContain("overflow-wrap:break-word");
+      expect(html, id).not.toContain("overflow-wrap:anywhere");
+      expect(html, id).toContain("word-break:normal");
+    }
+  });
+
+  it("nunca corta o nome do negocio no cabecalho", () => {
+    // O wordmark saia com reticencias ("Pousada da...") quando a nav nao
+    // deixava espaco. A linha do cabecalho passa a quebrar: o nome fica
+    // inteiro e a nav desce.
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      const header = html.slice(html.indexOf("<header"), html.indexOf("</header"));
+      expect(header, id).not.toContain("truncate");
+      expect(html, id).toContain("flex-wrap:wrap");
     }
   });
 

@@ -124,8 +124,13 @@ const HERO_CSS =
   "width:44%;height:90%}" +
   ".site-hero-inner{position:relative;z-index:1;width:100%;max-width:64rem;margin-inline:auto;" +
   "padding-inline:1.5rem;display:grid;gap:2rem;align-items:center}" +
+  // A business name is not prose: it breaks at spaces or not at all. Letting
+  // the browser hyphenate it produced "Associa-dos" and "Consul-tório", which
+  // read as broken branding rather than as typography — so the type answers to
+  // the column instead, and the ceiling comes down until the longest word fits.
   ".site-hero-title{margin:0;font-family:var(--font-display);" +
-  "font-size:clamp(2.6rem,12vw,4rem);" +
+  "font-size:clamp(2.6rem,12vw,4rem);hyphens:manual;overflow-wrap:normal;" +
+  "word-break:normal;" +
   "line-height:0.95;letter-spacing:var(--tracking-display);color:var(--hero-ink)}" +
   ".site-hero-lede{margin:var(--space-block) 0 0;font-family:var(--font-body);" +
   "font-size:var(--text-body);line-height:var(--leading-body);color:var(--hero-ink-muted);" +
@@ -158,8 +163,11 @@ const HERO_CSS =
   // it reads as an icon. The type now wraps — hyphenated where the language
   // allows it — and the object keeps its column.
   ".site-hero-inner{grid-template-columns:minmax(0,1.1fr) minmax(24rem,0.9fr);gap:4rem}" +
-  ".site-hero-title{hyphens:auto;overflow-wrap:break-word}" +
-  ".site-hero-title{font-size:clamp(3rem,8vw,7rem)}" +
+  // 6.5vw, capped at 6rem: at the 502px the copy column holds, the longest
+  // word of every fixture name fits whole ("Consultório", the worst of them,
+  // needs 485px at the 96px ceiling). The measure decides the size; the name
+  // never decides where to break.
+  ".site-hero-title{font-size:clamp(2.6rem,6.5vw,6rem)}" +
   ".site-hero-art{max-width:none;min-height:24rem}" +
   // The stacked hero pays for its axis: it is taller than a two-column one by
   // the whole height of the object, so it takes the block step instead of the
@@ -179,6 +187,22 @@ const HERO_CSS =
   "50%{transform:translate3d(2.5%,1.5%,0)}100%{transform:translate3d(0,0,0)}}" +
   ".site-hero-spotlight{animation:site-hero-drift 12s ease-in-out infinite}" +
   "}";
+
+/**
+ * The header, as one stylesheet, for the same reason the hero is one.
+ *
+ * The row has to be able to wrap: the wordmark was `truncate`d, so a business
+ * name wider than the space left by the nav came out as "Pousada da…" — the
+ * one string on the page that must never be abbreviated, abbreviated. Now the
+ * mark keeps its whole name on one line and the nav drops to a second row when
+ * the two no longer fit side by side.
+ */
+const HEADER_CSS =
+  ".site-nav{display:flex;flex-wrap:wrap;align-items:baseline;" +
+  "justify-content:space-between;gap:0.5rem 1.5rem;width:100%;max-width:64rem;" +
+  "margin-inline:auto;padding:1.25rem 1.5rem}" +
+  ".site-nav-mark{white-space:nowrap}" +
+  ".site-nav-links{display:flex;flex-wrap:wrap;gap:1.5rem}";
 
 /**
  * The light, as the reference draws it.
@@ -667,6 +691,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
       data-ground={direction.ground}
       data-device={direction.device}
     >
+      {has("navbar") ? <style>{HEADER_CSS}</style> : null}
       {has("hero") ? <style>{HERO_CSS}</style> : null}
       {moves ? <style>{HERO_ENTRANCE_CSS}</style> : null}
 
@@ -686,13 +711,10 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
             borderBottom: heroInverted ? "none" : "1px solid var(--line)",
           }}
         >
-          <div
-            className="mx-auto flex max-w-5xl items-baseline justify-between gap-6 px-6 py-5"
-            style={{ color: "var(--hero-ink)" }}
-          >
+          <div className="site-nav" style={{ color: "var(--hero-ink)" }}>
             <a
               href="#inicio"
-              className="truncate"
+              className="site-nav-mark"
               style={{
                 fontFamily: "var(--font-display)",
                 fontSize: "var(--text-small)",
@@ -705,7 +727,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
             </a>
             <nav
               aria-label="Seções"
-              className="flex gap-6"
+              className="site-nav-links"
               style={{ ...SMALL_TEXT, color: "var(--hero-ink-muted)" }}
             >
               {has("about") ? <a href="#sobre">Sobre</a> : null}
