@@ -15,6 +15,8 @@
 import { findClaimRisks } from "@/lib/content-integrity";
 import { isMobilePhone, normalizePhoneE164 } from "@/lib/phone";
 
+import { displayBusinessName } from "./display-name";
+
 import {
   BRIEF_DAYS,
   BRIEF_FACT_SOURCES,
@@ -559,27 +561,6 @@ export function leadContactDraft(
   return draft;
 }
 
-/**
- * Lays a lead's candidates under what the operator already has.
- *
- * Anything already typed wins, field by field, so re-picking a lead never
- * overwrites work. Opening hours and e-mail are never suggested, so they pass
- * through untouched.
- */
-export function mergeLeadContactDraft(
-  current: ContactDraft,
-  suggested: ContactDraft,
-): ContactDraft {
-  return {
-    ...current,
-    phone: current.phone.value.trim() ? current.phone : suggested.phone,
-    whatsapp: current.whatsapp.value.trim() ? current.whatsapp : suggested.whatsapp,
-    address: addressHasContent(current.address) ? current.address : suggested.address,
-    socialLinks:
-      current.socialLinks.length > 0 ? current.socialLinks : suggested.socialLinks,
-  };
-}
-
 /** True while a field still shows a lead's suggestion nobody has confirmed. */
 export function isLeadSuggestion(fact: {
   value: string;
@@ -587,6 +568,89 @@ export function isLeadSuggestion(fact: {
   confirmedAt: string | null;
 }): boolean {
   return fact.source === "LEAD" && !fact.confirmedAt && fact.value.trim().length > 0;
+}
+
+/** True while an address still shows a lead's suggestion nobody has confirmed. */
+export function isLeadAddressSuggestion(address: AddressDraft): boolean {
+  return address.source === "LEAD" && !address.confirmedAt && addressHasContent(address);
+}
+
+/**
+ * Chooses between what a field holds and what the newly picked lead suggests.
+ *
+ * Three states, and the middle one is the fix: a value the operator produced
+ * (typed, or confirmed) always wins; an **unconfirmed suggestion from a
+ * previous lead** is stale and is replaced — even by nothing, when the new
+ * lead has no such datum; an empty field takes the suggestion.
+ *
+ * Without the middle case, picking the wrong lead and correcting it left the
+ * first lead's phone and address in the draft, still labelled "sugerido pelo
+ * lead — confirme". An operator who trusted that label published another
+ * business's contact details.
+ */
+function preferOperatorValue(current: DraftFact, suggested: DraftFact): DraftFact {
+  if (isLeadSuggestion(current)) return suggested;
+  return current.value.trim() ? current : suggested;
+}
+
+/**
+ * Lays a lead's candidates under what the operator already has.
+ *
+ * Opening hours and e-mail are never suggested, so they pass through
+ * untouched. Social links merge by URL rather than wholesale: a single empty
+ * row the operator had opened used to discard every suggestion at once.
+ */
+export function mergeLeadContactDraft(
+  current: ContactDraft,
+  suggested: ContactDraft,
+): ContactDraft {
+  const ownLinks = current.socialLinks.filter(
+    (link) =>
+      !isLeadSuggestion({ value: link.url, source: link.source, confirmedAt: link.confirmedAt }),
+  );
+  const takenUrls = new Set(ownLinks.map((link) => link.url.trim()).filter(Boolean));
+
+  return {
+    ...current,
+    phone: preferOperatorValue(current.phone, suggested.phone),
+    whatsapp: preferOperatorValue(current.whatsapp, suggested.whatsapp),
+    address: isLeadAddressSuggestion(current.address)
+      ? suggested.address
+      : addressHasContent(current.address)
+        ? current.address
+        : suggested.address,
+    socialLinks: [
+      ...ownLinks,
+      ...suggested.socialLinks.filter((link) => !takenUrls.has(link.url.trim())),
+    ],
+  };
+}
+
+/**
+ * The whole draft after a lead is picked.
+ *
+ * Kept here, as a pure function, because it is the decision most likely to go
+ * wrong — and the two ways it did go wrong (a name confirmed by nobody, a
+ * previous lead's contact surviving the correction) are both invisible from a
+ * component test. `businessName` follows exactly the rule the contact fields
+ * follow: it arrives as an unconfirmed `LEAD` candidate, marked as such, and
+ * reaches the payload only once someone confirms or rewrites it.
+ */
+export function applyLeadToDraft(
+  draft: BriefDraft,
+  lead: (LeadContactCandidate & { name?: string }) | null | undefined,
+  keyFor?: (index: number) => string,
+): BriefDraft {
+  const suggestedName = lead?.name?.trim() ? displayBusinessName(lead.name.trim()) : "";
+
+  return {
+    ...draft,
+    businessName: preferOperatorValue(
+      draft.businessName,
+      suggestedName ? suggestedFact(suggestedName) : emptyFact(),
+    ),
+    contact: mergeLeadContactDraft(draft.contact, leadContactDraft(lead, keyFor)),
+  };
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;

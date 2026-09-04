@@ -77,6 +77,51 @@ describe("prompt de geração", () => {
     expect(prompt.split("# DESIGN.md")[1].split("# BRIEFING")[0]).not.toContain("Sóbrio, escuro e legível.");
   });
 
+  it("nunca entrega ao agente o que o operador respondeu sobre a encomenda", () => {
+    // A terceira via de publicação. O snapshot e o renderizador já não levam
+    // `objective`/`audience`; o prompt levava — sob "use apenas os fatos
+    // listados abaixo", entregues ao modelo que escreve a copy do site. Este
+    // é o teste que impede a volta.
+    expect(prompt).not.toContain("Apresentar o negócio e facilitar novos contatos.");
+    expect(prompt).not.toContain("Pessoas que procuram corte e barba na região.");
+    expect(prompt).not.toMatch(/^- Objetivo:/m);
+    expect(prompt).not.toMatch(/^- Público:/m);
+  });
+
+  it("entrega a apresentação confirmada como fato publicável", () => {
+    const withAbout = buildGenerationPrompt({
+      ...input,
+      brief: siteBriefV2Schema.parse({
+        ...brief,
+        about: fact("A Barbearia Aurora atende corte e barba no centro de Fortaleza."),
+      }),
+    });
+
+    expect(withAbout).toContain(
+      "- Apresentação: A Barbearia Aurora atende corte e barba no centro de Fortaleza.",
+    );
+    // E continua sem os campos internos.
+    expect(withAbout).not.toContain("Pessoas que procuram corte e barba na região.");
+  });
+
+  it("cai no posicionamento quando o briefing não tem apresentação", () => {
+    // Um briefing anterior a `about` não deixa o agente sem nenhuma frase
+    // escrita para o visitante.
+    expect(prompt).toContain(
+      "- Apresentação: Informações claras e verificadas sobre o negócio.",
+    );
+  });
+
+  it("chama o negócio pelo mesmo nome que o site e o <title> usam", () => {
+    const shouted = buildGenerationPrompt({
+      ...input,
+      brief: siteBriefV2Schema.parse({ ...brief, businessName: fact("ZEN COMIDA JAPONESA") }),
+    });
+
+    expect(shouted).toContain("Zen Comida Japonesa");
+    expect(shouted).not.toContain("ZEN COMIDA JAPONESA");
+  });
+
   it("é determinístico para a mesma semente", () => {
     expect(buildGenerationPrompt(input)).toBe(buildGenerationPrompt(input));
   });

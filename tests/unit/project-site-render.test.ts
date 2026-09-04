@@ -307,8 +307,12 @@ describe("o site nunca publica o que o operador respondeu sobre a encomenda", ()
         about: fact(presentation),
         desiredSections: ["Início", "Sobre", "Contato"],
       });
-      const sobre = html.slice(html.indexOf('id="sobre"'));
       expect(html, sector).toContain('id="sobre"');
+      // Fatiado até a próxima seção: correr até o fim do documento faria a
+      // asserção passar com o texto impresso em qualquer bloco posterior.
+      const start = html.indexOf('id="sobre"');
+      const next = html.indexOf("<section", start + 1);
+      const sobre = html.slice(start, next === -1 ? undefined : next);
       expect(sobre, sector).toContain(presentation);
       expect(findSlop(html).map((rule) => rule.id), sector).toEqual([]);
     }
@@ -325,6 +329,9 @@ describe("o site nunca publica o que o operador respondeu sobre a encomenda", ()
 describe("caixa do nome do negócio", () => {
   it("desliga o caixa-alta de um nome importado aos gritos, sem tocar no fato", () => {
     const shouted = { businessName: fact("ZEN COMIDA JAPONESA") };
+
+    // O fato continua sendo o que alguém leu e confirmou; só a composição muda.
+    expect(brief("Pizzaria", shouted).businessName.value).toBe("ZEN COMIDA JAPONESA");
 
     for (const sector of DEVICE_FAMILY_SECTORS) {
       const html = render(sector, "semente-fixa", shouted);

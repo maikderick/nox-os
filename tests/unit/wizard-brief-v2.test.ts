@@ -33,6 +33,8 @@ import {
   createSocialLinkDraft,
   emptyContactDraft,
   emptyBriefDraft,
+  isLeadSuggestion,
+  applyLeadToDraft,
   leadContactDraft,
   mergeLeadContactDraft,
   pinServiceId,
@@ -221,6 +223,64 @@ describe("um campo preenchido e não confirmado não entra no payload", () => {
   });
 });
 
+describe("o rascunho depois de escolher um lead", () => {
+  const leadA = {
+    name: "ZEN COMIDA JAPONESA",
+    phoneE164: "+5585999990000",
+    address: "Rua das Flores, 120",
+    city: "Fortaleza",
+    state: "CE",
+    socialLinks: ["https://instagram.com/zen"],
+  };
+
+  it("oferece o nome do negócio como candidato, nunca como fato confirmado", () => {
+    const seeded = applyLeadToDraft(initialBriefDraft(), leadA);
+
+    // Re-caixado para quem vai ler, mas sem confirmação: clicar num cartão de
+    // lead numa etapa anterior não é ler e aprovar este campo. Sem confirmar,
+    // o briefing não é aceito.
+    expect(seeded.businessName).toEqual({
+      value: "Zen Comida Japonesa",
+      source: "LEAD",
+      confirmedAt: null,
+    });
+    expect(isLeadSuggestion(seeded.businessName)).toBe(true);
+    expect(buildBriefV2(seeded).ok).toBe(false);
+  });
+
+  it("preenche o nome mesmo quando a caixa do lead já está certa", () => {
+    // A condição antiga só preenchia quando o texto mudava — ou seja, deixava
+    // vazio justamente o caso em que não havia nada a revisar.
+    const seeded = applyLeadToDraft(initialBriefDraft(), { name: "GM Autos" });
+
+    expect(seeded.businessName.value).toBe("GM Autos");
+    expect(seeded.businessName.source).toBe("LEAD");
+    expect(seeded.businessName.confirmedAt).toBeNull();
+  });
+
+  it("troca inteiramente o candidato quando o operador escolhe outro lead", () => {
+    const first = applyLeadToDraft(initialBriefDraft(), leadA);
+    const second = applyLeadToDraft(first, { name: "PADARIA DO JOÃO", phoneE164: null });
+
+    expect(second.businessName.value).toBe("Padaria do João");
+    expect(second.contact.phone.value).toBe("");
+  });
+
+  it("preserva o que o operador escreveu ou confirmou", () => {
+    const typed = { ...initialBriefDraft(), businessName: authoredFact("Estúdio Aurora", AT) };
+    const seeded = applyLeadToDraft(typed, leadA);
+
+    expect(seeded.businessName).toEqual(typed.businessName);
+  });
+
+  it("aceita um lead sem nome sem inventar um", () => {
+    const seeded = applyLeadToDraft(initialBriefDraft(), { phoneE164: "+5585999990000" });
+
+    expect(seeded.businessName.value).toBe("");
+    expect(seeded.contact.phone.value).toBe("+5585999990000");
+  });
+});
+
 describe("apresentação para o cliente", () => {
   it("vira o fato que a seção Sobre publica", () => {
     const brief = builtBrief();
@@ -308,6 +368,60 @@ describe("o contato sugerido pelo lead escolhido", () => {
     );
   });
 
+  it("substitui o candidato do lead anterior ao trocar de lead", () => {
+    // O defeito: qualquer valor não vazio vencia, inclusive um candidato
+    // `LEAD` não confirmado do lead anterior. Trocar de lead deixava telefone
+    // e endereço do lead A no projeto do lead B — com o marcador "sugerido
+    // pelo lead — confirme" apontando para o lead errado.
+    const fromA = leadContactDraft(lead);
+    const leadB = {
+      name: "Outro Negócio",
+      phoneE164: "+5511988887777",
+      address: "Avenida Paulista, 1000",
+      city: "São Paulo",
+      state: "SP",
+      socialLinks: ["https://instagram.com/outronegocio"],
+    };
+
+    const merged = mergeLeadContactDraft(fromA, leadContactDraft(leadB, (i) => `b-${i}`));
+
+    expect(merged.phone.value).toBe("+5511988887777");
+    expect(merged.whatsapp.value).toBe("+5511988887777");
+    expect(merged.address.street).toBe("Avenida Paulista, 1000");
+    expect(merged.address.city).toBe("São Paulo");
+    expect(merged.socialLinks.map((link) => link.url)).toEqual([
+      "https://instagram.com/outronegocio",
+    ]);
+  });
+
+  it("esvazia o candidato obsoleto quando o novo lead não tem o dado", () => {
+    // Substituir por nada também é substituir: o telefone do lead A não pode
+    // ficar num projeto cujo lead B não tem telefone nenhum.
+    const merged = mergeLeadContactDraft(
+      leadContactDraft(lead),
+      leadContactDraft({ name: "Sem dados" }),
+    );
+
+    expect(merged.phone).toEqual(emptyContactDraft().phone);
+    expect(merged.whatsapp).toEqual(emptyContactDraft().whatsapp);
+    expect(merged.address).toEqual(emptyContactDraft().address);
+    expect(merged.socialLinks).toEqual([]);
+  });
+
+  it("não perde as sugestões por causa de uma linha de rede vazia", () => {
+    // Uma linha aberta com "+ Adicionar rede" descartava todas as sugestões
+    // de uma vez, porque a comparação era pelo tamanho da lista.
+    const current = emptyContactDraft();
+    current.socialLinks = [createSocialLinkDraft("vazia")];
+
+    const merged = mergeLeadContactDraft(current, leadContactDraft(lead));
+
+    expect(merged.socialLinks).toHaveLength(2);
+    expect(merged.socialLinks.map((link) => link.url)).toContain(
+      "https://instagram.com/estudioaurora",
+    );
+  });
+
   it("nunca sobrescreve o que o operador já digitou", () => {
     const current = emptyContactDraft();
     current.phone = typedFact("(85) 3333-4444");
@@ -320,7 +434,14 @@ describe("o contato sugerido pelo lead escolhido", () => {
 
     expect(merged.phone).toEqual(current.phone);
     expect(merged.address.street).toBe("Avenida Beira Mar");
-    expect(merged.socialLinks).toEqual(current.socialLinks);
+    // A rede que o operador digitou permanece, e continua sendo dele. A
+    // sugestão do lead entra ao lado porque é outra URL — a fusão é por
+    // endereço, não pelo tamanho da lista.
+    expect(merged.socialLinks[0]).toEqual(current.socialLinks[0]);
+    expect(merged.socialLinks.map((link) => link.url)).toEqual([
+      "https://instagram.com/outro",
+      "https://instagram.com/estudioaurora",
+    ]);
     // O que estava vazio recebe a sugestão.
     expect(merged.whatsapp).toEqual({
       value: "+5585999990000",

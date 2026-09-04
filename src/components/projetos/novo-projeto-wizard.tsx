@@ -30,12 +30,11 @@ import {
   createServiceDraft,
   createSocialLinkDraft,
   editSocialLinkDraft,
+  applyLeadToDraft,
   initialBriefDraft,
   guessSocialPlatform,
-  isFactConfirmed,
+  isLeadAddressSuggestion,
   isLeadSuggestion,
-  leadContactDraft,
-  mergeLeadContactDraft,
   nowIso,
   OPENING_HOURS_DAY_LABELS,
   pinServiceId,
@@ -58,6 +57,14 @@ import {
   type ServiceDraft,
   type SocialLinkDraft,
 } from "@/lib/site-factory/brief-draft";
+import {
+  ConfirmableField,
+  INPUT_CLASS,
+  InternalNotes,
+  LeadSuggestionMark,
+  Suggestion,
+  TextField,
+} from "@/components/projetos/wizard-fields";
 import { categoryMatchesNiche, findNicheByLabel, searchNiches, type Niche } from "@/lib/niches";
 import { displayBusinessName } from "@/lib/site-factory/display-name";
 import { normalizePhoneE164 } from "@/lib/phone";
@@ -382,33 +389,21 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
   /**
    * Picking a lead seeds the fields the lead can actually answer.
    *
-   * The project name (internal), the business name when the lead shouts it,
-   * and every contact channel — as *candidates*, unconfirmed, each still
-   * needing its own "confirmado". Nothing already typed is overwritten. This
-   * exists because the contact step started empty: operators walked past it
-   * and shipped sites with no phone and no address while the lead card in
-   * front of them had both.
+   * The project name (internal), the business name and every contact channel —
+   * all as *candidates*: `source: "LEAD"`, unconfirmed, each marked "sugerido
+   * pelo lead — confirme" until someone acts on it. This exists because the
+   * contact step started empty: operators walked past it and shipped sites
+   * with no phone and no address while the lead card in front of them had
+   * both. The decision itself is `applyLeadToDraft`, a pure function, so
+   * re-picking a lead is tested rather than trusted.
    */
   function chooseLead(lead: Lead) {
     setLeadId(lead.id);
     setProjectName((current) => (current.trim() ? current : `Site ${lead.name}`));
-
-    const suggestedContact = leadContactDraft(lead, () => nextKey());
-    const suggestedName = displayBusinessName(lead.name);
-
-    setDraft((current) => ({
-      ...current,
-      // A shouted import ("ZEN COMIDA JAPONESA") is offered already re-set, so
-      // the operator confirms a name a customer can read instead of retyping
-      // it. Clicking this lead's card is the act of reading the name, which is
-      // the same confirmation the "Usar" button records — hence `acceptedFact`,
-      // and hence only when the field is still empty.
-      businessName:
-        current.businessName.value.trim() || suggestedName === lead.name
-          ? current.businessName
-          : acceptedFact(suggestedName),
-      contact: mergeLeadContactDraft(current.contact, suggestedContact),
-    }));
+    // The key prefix is minted here, outside the updater: `nextKey` moves a
+    // ref, and React may call an updater twice.
+    const prefix = nextKey();
+    setDraft((current) => applyLeadToDraft(current, lead, (index) => `${prefix}-${index}`));
   }
 
   // --- envio --------------------------------------------------------------
@@ -791,6 +786,11 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
                   source={draft.businessName.source}
                   invalid={isInvalid("businessName")}
                   describedBy={showIssues ? issuesId : undefined}
+                  // The one publishable field on this step. It arrives from the
+                  // lead as a candidate like any contact channel, so it carries
+                  // the same mark until the operator confirms it — clicking
+                  // "Usar", or rewriting it, which confirms it as OPERADOR.
+                  pendingLeadSuggestion={isLeadSuggestion(draft.businessName)}
                   suggestion={
                     selectedLead
                       ? {
@@ -988,17 +988,23 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
             title="Confirme o briefing"
             description="Cada serviço vira uma página. Cada canal de contato só é publicado depois de confirmado individualmente."
           >
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextField
-                id="secoes"
-                label="Seções desejadas"
-                multiline
-                value={draft.desiredSections}
-                onChange={(value) => setDraft((current) => ({ ...current, desiredSections: value }))}
-                placeholder="Separe por vírgula ou quebra de linha"
-                invalid={isInvalid("desiredSections")}
-                describedBy={showIssues ? issuesId : undefined}
-              />
+            <TextField
+              id="secoes"
+              label="Seções desejadas"
+              className="md:max-w-lg"
+              multiline
+              value={draft.desiredSections}
+              onChange={(value) => setDraft((current) => ({ ...current, desiredSections: value }))}
+              placeholder="Separe por vírgula ou quebra de linha"
+              invalid={isInvalid("desiredSections")}
+              describedBy={showIssues ? issuesId : undefined}
+            />
+
+            {/* "Observações confirmadas" read as publishable copy sitting next
+                to the sections list. It never was: no export, renderer or
+                prompt reads `notes`. It belongs with the other internal
+                fields, under the same heading that says so. */}
+            <InternalNotes invalid={isInvalid("notes")} className="mt-5">
               <TextField
                 id="observacoes"
                 label="Observações confirmadas"
@@ -1008,7 +1014,7 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
                 placeholder="Opcional"
                 invalid={isInvalid("notes")}
               />
-            </div>
+            </InternalNotes>
 
             <fieldset className="mt-8">
               <legend className="text-sm font-semibold text-white">Serviços publicáveis</legend>
@@ -1223,43 +1229,6 @@ function Section({
   );
 }
 
-/**
- * The fields the operator answers for the operation, not for the visitor.
- *
- * Collapsed and labelled, because "Objetivo principal" and "Público" used to
- * sit next to the published copy and read as though they were part of it —
- * which is exactly how "nicho voltado a restaurante japonês" reached a client's
- * "Sobre" section. They are still required and still validated; they simply no
- * longer look like something a customer will read.
- */
-function InternalNotes({
-  invalid,
-  children,
-}: {
-  invalid: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <details
-      // Open when one of its fields is the reason the step will not advance:
-      // an error pointing inside a closed group is an error nobody can find.
-      open={invalid}
-      className={cn(
-        "rounded-2xl border bg-nox-bg/40 p-5",
-        invalid ? "border-red-400/50" : "border-nox-border",
-      )}
-    >
-      <summary className="cursor-pointer text-sm font-semibold text-white">
-        Notas internas (não aparecem no site)
-      </summary>
-      <p className="mt-1 mb-4 text-xs text-nox-muted">
-        Orientam a geração e ficam no briefing. Nenhuma delas é publicada.
-      </p>
-      {children}
-    </details>
-  );
-}
-
 function PresetChips({
   presets,
   current,
@@ -1398,178 +1367,6 @@ function ApproachScript({
         ) : null}
       </div>
     </aside>
-  );
-}
-
-const INPUT_CLASS = "nox-input mt-2";
-
-function SourceBadge({ source }: { source: string }) {
-  if (source !== "LEAD") return null;
-  return (
-    <span className="rounded-full border border-nox-cyan/40 bg-nox-cyan/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-nox-cyan">
-      do lead
-    </span>
-  );
-}
-
-/**
- * The mark a prefilled field carries until someone acts on it.
- *
- * A value that appeared on its own, from the lead, must never be mistaken for
- * one a person checked. It disappears the moment the field is confirmed or
- * edited — editing rewrites the source to `OPERADOR`, confirming stamps the
- * time — so it can only ever be read as "nobody has looked at this yet".
- */
-function LeadSuggestionMark() {
-  return (
-    <p className="mt-1.5 text-xs text-amber-300">sugerido pelo lead — confirme</p>
-  );
-}
-
-function Suggestion({ label, onUse }: { label: string; onUse: () => void }) {
-  return (
-    <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-nox-muted">
-      <span className="truncate">
-        Do lead: <span className="text-white">{label}</span> — confirme para usar
-      </span>
-      <button
-        type="button"
-        onClick={onUse}
-        className="rounded-full border border-nox-cyan/40 px-3 py-1 text-[11px] font-semibold text-nox-cyan hover:bg-nox-cyan/10"
-      >
-        Usar
-      </button>
-    </p>
-  );
-}
-
-function TextField({
-  id,
-  label,
-  value,
-  onChange,
-  onBlur,
-  multiline = false,
-  placeholder,
-  hint,
-  className = "",
-  invalid = false,
-  describedBy,
-  source,
-  suggestion,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onBlur?: () => void;
-  multiline?: boolean;
-  placeholder?: string;
-  hint?: string;
-  className?: string;
-  invalid?: boolean;
-  describedBy?: string;
-  source?: string;
-  suggestion?: { label: string; onUse: () => void };
-}) {
-  const hintId = hint ? `${id}-hint` : undefined;
-  const described = [describedBy, hintId].filter(Boolean).join(" ") || undefined;
-  const border = invalid ? "border-red-400/60" : "";
-  return (
-    <div className={className}>
-      <div className="flex items-center gap-2">
-        <label htmlFor={id} className="text-sm text-nox-muted">
-          {label}
-        </label>
-        {source ? <SourceBadge source={source} /> : null}
-      </div>
-      {multiline ? (
-        <textarea
-          id={id}
-          rows={3}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onBlur={onBlur}
-          className={`${INPUT_CLASS} ${border}`}
-          placeholder={placeholder}
-          aria-invalid={invalid || undefined}
-          aria-describedby={described}
-        />
-      ) : (
-        <input
-          id={id}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onBlur={onBlur}
-          className={`${INPUT_CLASS} ${border}`}
-          placeholder={placeholder}
-          aria-invalid={invalid || undefined}
-          aria-describedby={described}
-        />
-      )}
-      {hint ? (
-        <p id={hintId} className="mt-1.5 text-xs text-nox-muted">
-          {hint}
-        </p>
-      ) : null}
-      {suggestion ? <Suggestion label={suggestion.label} onUse={suggestion.onUse} /> : null}
-    </div>
-  );
-}
-
-/** A field that reaches the payload only after an explicit confirmation. */
-function ConfirmableField({
-  id,
-  label,
-  fact,
-  onValue,
-  onConfirm,
-  placeholder,
-  hint,
-  invalid = false,
-  suggestion,
-}: {
-  id: string;
-  label: string;
-  fact: DraftFact;
-  onValue: (value: string) => void;
-  onConfirm: (confirmed: boolean) => void;
-  placeholder?: string;
-  hint?: string;
-  invalid?: boolean;
-  suggestion?: { label: string; onUse: () => void };
-}) {
-  const confirmed = isFactConfirmed(fact);
-  const filled = fact.value.trim().length > 0;
-  return (
-    <div>
-      <TextField
-        id={id}
-        label={label}
-        value={fact.value}
-        onChange={onValue}
-        placeholder={placeholder}
-        hint={hint}
-        invalid={invalid}
-        source={fact.source}
-        suggestion={suggestion}
-      />
-      {isLeadSuggestion(fact) ? <LeadSuggestionMark /> : null}
-      <label
-        htmlFor={`${id}-confirmado`}
-        className={`mt-2 inline-flex items-center gap-2 text-xs ${confirmed ? "text-emerald-300" : "text-nox-muted"}`}
-      >
-        <input
-          id={`${id}-confirmado`}
-          type="checkbox"
-          checked={confirmed}
-          disabled={!filled}
-          onChange={(event) => onConfirm(event.target.checked)}
-          className="size-4 accent-emerald-400 disabled:opacity-40"
-        />
-        {confirmed ? "Confirmado — será publicado" : "Confirmado (sem isto, não é enviado)"}
-      </label>
-    </div>
   );
 }
 
@@ -1727,10 +1524,7 @@ function ContactSection({
   const phonePreview = normalizePhoneE164(contact.phone.value);
   const whatsappPreview = normalizePhoneE164(contact.whatsapp.value);
   const addressConfirmed = Boolean(contact.address.confirmedAt) && addressHasContent(contact.address);
-  const addressSuggested =
-    contact.address.source === "LEAD" &&
-    !contact.address.confirmedAt &&
-    addressHasContent(contact.address);
+  const addressSuggested = isLeadAddressSuggestion(contact.address);
 
   const takenSocialUrls = new Set(contact.socialLinks.map((link) => link.url.trim()));
   const untakenLeadSocialLinks = (lead?.socialLinks ?? []).filter(

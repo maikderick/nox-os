@@ -11,7 +11,7 @@ import {
   type BriefService,
   type SiteBrief,
 } from "@/lib/site-factory/brief-schema";
-import { displayBusinessName } from "@/lib/site-factory/display-name";
+import { publicBusinessName } from "@/lib/site-factory/display-name";
 
 type PostalAddress = {
   street: string;
@@ -257,13 +257,14 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
   const { blocks } = resolveComposition(brief);
   const contact = briefPublicContact(brief);
   const services: BriefService[] = isSiteBriefV2(brief) ? brief.services : [];
-  const about = isSiteBriefV2(brief) ? brief.about : null;
+  const about = (isSiteBriefV2(brief) ? brief.about : null) ?? null;
   const has = (block: BlockId) => blocks.includes(block);
 
-  // The name as the site sets it. The fact itself is untouched — this only
-  // decides how the confirmed string is typeset, so an imported "ZEN COMIDA
-  // JAPONESA" stops shouting at the visitor from four places at once.
-  const name = displayBusinessName(brief.businessName.value);
+  // The name as every publishing surface sets it. The fact itself is untouched
+  // — this only decides how the confirmed string is typeset, so an imported
+  // "ZEN COMIDA JAPONESA" stops shouting at the visitor, and the page, its
+  // `<title>`, the snapshot and the agent's prompt all print the same thing.
+  const name = publicBusinessName(brief);
 
   // Instrument Serif ships a single real weight (400); any heavier value on
   // it forces the browser to synthesize ("fake") bold, which the type system

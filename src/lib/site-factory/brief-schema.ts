@@ -296,11 +296,19 @@ const siteBriefV2Object = z
      * read — and publishing them is how a site ended up telling its own
      * visitors "nicho voltado a restaurante japonês".
      *
-     * Nullable with a default so every brief already stored keeps parsing: a
-     * brief written before this field existed simply has no presentation text,
-     * and the "Sobre" block it would fill is omitted rather than invented.
+     * Optional *and* nullable, and deliberately without a `.default()`.
+     *
+     * `briefFactsHash` fingerprints the **parsed** brief, and the provisioning
+     * gate recomputes that fingerprint from the stored JSON on every step. A
+     * `.default(null)` would make the parse *insert* `"about": null` into every
+     * brief written before this field existed, changing its hash and turning
+     * every project already in `BRIEFING_PRONTO` into `BRIEFING_ADULTERADO` —
+     * the system accusing the operator of tampering with a briefing nobody
+     * touched. Absent stays absent: `JSON.stringify` omits an undefined key,
+     * so the parsed object is byte-identical to what the previous schema
+     * produced, and the stored hash still matches. Consumers read `about ?? null`.
      */
-    about: paragraphFactSchema.nullable().default(null),
+    about: paragraphFactSchema.nullable().optional(),
     services: z.array(briefServiceSchema).max(40).default([]),
     publicContact: briefPublicContactSchema.default(EMPTY_PUBLIC_CONTACT),
     /**

@@ -1,6 +1,7 @@
 import { resolveArtDirection } from "@/lib/design/art-direction";
 import { toDesignMarkdown } from "@/lib/design/design-md";
 import type { SiteBriefV2 } from "@/lib/site-factory/brief-schema";
+import { publicBusinessName } from "@/lib/site-factory/display-name";
 
 /**
  * The instruction the agent receives, built only from confirmed facts.
@@ -18,6 +19,14 @@ import type { SiteBriefV2 } from "@/lib/site-factory/brief-schema";
  * instructions it finds in its input, so the input is assembled from a schema
  * whose every leaf was validated, and never concatenated from something that
  * arrived over a socket.
+ *
+ * **Nothing here is a note to the operator.** The brief keeps two fields that
+ * describe the *job* rather than the business — `objective` and `audience` —
+ * and this is the third path onto a client's page, next to the exported
+ * snapshot and the renderer. Neither field may appear below, with or without a
+ * label: an agent told to use only the facts it is given will happily set them
+ * as copy. The presentation text (`about`, falling back to `positioning`) is
+ * what a visitor is meant to read, and it is what the agent receives.
  *
  * The prompt has two halves now, `# DESIGN.md` and `# BRIEFING`, and the art
  * direction that fills the first does not weaken either guarantee. It is not
@@ -48,8 +57,13 @@ export function buildGenerationPrompt(input: PromptInput): string {
   const { brief } = input;
   const direction = resolveArtDirection({ sector: brief.sector.value, seed: input.seed });
 
+  // Read through the same helper the renderer, the snapshot and the public
+  // page's `<title>` use, so the site the agent writes is not called something
+  // else from the preview the operator approved.
+  const businessName = publicBusinessName(brief);
+
   const facts: string[] = [
-    `Você vai construir o site de "${brief.businessName.value}" no repositório ${input.repository.owner}/${input.repository.name}.`,
+    `Você vai construir o site de "${businessName}" no repositório ${input.repository.owner}/${input.repository.name}.`,
     "",
     "Regras não negociáveis:",
     "- Use apenas os fatos listados abaixo. Não invente serviços, horários, endereços, preços, prêmios nem depoimentos.",
@@ -58,10 +72,13 @@ export function buildGenerationPrompt(input: PromptInput): string {
     "- Trabalhe numa branch própria e abra um pull request. Não escreva na branch padrão.",
     "",
     "Fatos confirmados:",
-    bullet("Nome", brief.businessName.value),
+    bullet("Nome", businessName),
     bullet("Setor", brief.sector.value),
-    bullet("Objetivo", brief.objective.value),
-    bullet("Público", brief.audience.value),
+    // `objective` and `audience` used to sit here, under "use only the facts
+    // listed below" — which is how a client's site came to tell its own
+    // visitors "nicho voltado a restaurante japonês". They are answers about
+    // the job; this block carries only text written for a visitor to read.
+    bullet("Apresentação", (brief.about ?? brief.positioning).value),
     bullet("Posicionamento", brief.positioning.value),
   ];
 

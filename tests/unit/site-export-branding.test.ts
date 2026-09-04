@@ -69,3 +69,41 @@ describe("branding do snapshot", () => {
     }
   });
 });
+
+describe("nome do negócio no snapshot", () => {
+  const privacy = { controllerName: "Aurora", updatedAt: "2026-09-03T12:00:00.000Z", sections: [] };
+
+  function snapshotFor(name: string) {
+    return buildSiteContentSnapshot({
+      brief: siteBriefV2Schema.parse({ ...briefFor("Restaurante"), businessName: fact(name) }),
+      siteUrl: "https://exemplo.com.br",
+      seed: "cmtm2yp9u0004zpc3r7jgufvr",
+      privacy,
+    }) as {
+      business: { name: { value: string; source: string; confirmedAt: string } };
+      seo: { defaultTitle: string };
+    };
+  }
+
+  it("sai composto como a página o compõe, no corpo e no título", () => {
+    // O snapshot alimenta o site gerado; o renderizador alimenta a prévia que
+    // o operador aprova. Se só um deles re-caixasse o nome, os dois mostrariam
+    // negócios com nomes diferentes.
+    const snapshot = snapshotFor("ZEN COMIDA JAPONESA");
+
+    expect(snapshot.business.name.value).toBe("Zen Comida Japonesa");
+    expect(snapshot.seo.defaultTitle).toBe("Zen Comida Japonesa");
+  });
+
+  it("carrega a confirmação original, que a caixa não altera", () => {
+    // Como um nome é composto não diz nada sobre quem o conferiu.
+    const snapshot = snapshotFor("ZEN COMIDA JAPONESA");
+
+    expect(snapshot.business.name.source).toBe("OPERADOR");
+    expect(snapshot.business.name.confirmedAt).toBe("2026-09-03T12:00:00.000Z");
+  });
+
+  it("não mexe no nome que o dono escreveu com minúsculas", () => {
+    expect(snapshotFor("Forno da Esquina").business.name.value).toBe("Forno da Esquina");
+  });
+});

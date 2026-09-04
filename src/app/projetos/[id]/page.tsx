@@ -310,9 +310,15 @@ export default async function ProjectPage({ params }: PageProps) {
               <Item label="Negócio" value={brief.businessName.value} />
               <Item label="Setor" value={brief.sector.value} />
               {brief.city?.value ? <Item label="Cidade" value={brief.city.value} /> : null}
-              <Item label="Objetivo" value={brief.objective.value} />
+              {/* The one narrative field the site publishes comes first, and is
+                  said to be published — the operator could not review it here
+                  at all while the panel listed only the internal answers. */}
+              {brief.schemaVersion === 2 && brief.about ? (
+                <Item label="Apresentação (aparece no site)" value={brief.about.value} />
+              ) : null}
               <Item label="Posicionamento" value={brief.positioning.value} />
-              <Item label="Público" value={brief.audience.value} />
+              <Item label="Objetivo (interno)" value={brief.objective.value} />
+              <Item label="Público (interno)" value={brief.audience.value} />
               <Item label="Direção visual" value={brief.visualDirection.value} />
               {brief.differentiators.length ? (
                 <div>

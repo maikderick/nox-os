@@ -5,6 +5,7 @@ import { cache } from "react";
 import { ProjectSite } from "@/components/sites/project-site";
 import { prisma } from "@/lib/db";
 import { parseSiteBrief } from "@/lib/site-factory/brief-schema";
+import { publicBusinessName } from "@/lib/site-factory/display-name";
 import { hasInternalPreview, isSiteProjectState } from "@/lib/site-factory/states";
 
 const loadPublicSite = cache(async (id: string) => {
@@ -38,7 +39,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   if (!result) return { title: "Site indisponível", robots: { index: false, follow: false } };
 
   return {
-    title: result.brief.businessName.value,
+    // Same helper the body uses: a tab that says "ZEN COMIDA JAPONESA" over a
+    // page that says "Zen Comida Japonesa" is one page with two names.
+    title: publicBusinessName(result.brief),
     description:
       result.brief.schemaVersion === 2 && result.brief.metaDescription
         ? result.brief.metaDescription.value

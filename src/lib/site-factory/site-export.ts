@@ -8,6 +8,7 @@ import {
   type BriefPublicContact,
   type SiteBrief,
 } from "./brief-schema";
+import { publicBusinessName } from "./display-name";
 
 /**
  * Projects an approved brief onto the publishable snapshot the generated site
@@ -164,6 +165,21 @@ export function buildSiteContentSnapshot(input: SiteExportInput): Record<string,
    */
   const aboutBody = (isSiteBriefV2(brief) ? brief.about : null) ?? brief.positioning;
 
+  /*
+   * The name as it is set, carried on the confirmed fact.
+   *
+   * The value is re-cased, the confirmation is not: `source` and `confirmedAt`
+   * stay the ones the operator produced, because how a name is typeset says
+   * nothing about who checked it. Every surface reads it through the same
+   * helper — the snapshot, the page, the `<title>` and the agent's prompt —
+   * so a generated site cannot end up with a different name from the preview
+   * the operator approved.
+   */
+  const businessName = {
+    ...brief.businessName,
+    value: publicBusinessName(brief),
+  };
+
   const confirmedMetaDescription = isSiteBriefV2(brief) ? brief.metaDescription : null;
   const seoDescription = limit(
     "seo.description",
@@ -222,7 +238,7 @@ export function buildSiteContentSnapshot(input: SiteExportInput): Record<string,
   return {
     schemaVersion: SITE_CONTENT_SCHEMA_VERSION,
     business: {
-      name: carryText("business.name", brief.businessName, 120),
+      name: carryText("business.name", businessName, 120),
       legalName: null,
       description: carryText("business.description", brief.positioning, 600),
       sector: carryText("business.sector", brief.sector, 120),
@@ -264,7 +280,7 @@ export function buildSiteContentSnapshot(input: SiteExportInput): Record<string,
     },
     seo: {
       siteUrl: input.siteUrl,
-      defaultTitle: limit("seo.defaultTitle", brief.businessName.value, 70),
+      defaultTitle: limit("seo.defaultTitle", businessName.value, 70),
       titleTemplate: null,
       description: seoDescription,
       ogImage: null,

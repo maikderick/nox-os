@@ -7,10 +7,15 @@
  * are in caps — the loudest possible reading of a name nobody chose to shout.
  *
  * This is presentation only. The confirmed fact is never rewritten: the brief
- * keeps the string somebody read and confirmed, and the renderer asks this
- * function how to set it. Anything the operator typed with even one lowercase
- * letter is left exactly as written, because then the casing *is* the name.
+ * keeps the string somebody read and confirmed, and every publishing surface
+ * asks this module how to set it — through {@link publicBusinessName}, so the
+ * page, the `<title>`, the exported snapshot and the agent's prompt cannot
+ * disagree about what the business is called. Anything the operator typed with
+ * even one lowercase letter is left exactly as written, because then the
+ * casing *is* the name.
  */
+
+import type { SiteBrief } from "./brief-schema";
 
 const PT = "pt-BR";
 
@@ -22,7 +27,22 @@ const LETTERS = /\p{L}/gu;
 const LOWERCASE = /\p{Ll}/u;
 const NON_LETTER = /[^\p{L}]/gu;
 
-const VOWEL_CLASS = "aeiouáàâãéêíóôõúüy";
+/**
+ * Everything that starts a new word inside a name.
+ *
+ * Whitespace is not the only joiner a business name uses: "LAVA-RÁPIDO",
+ * "CAFÉ&CIA", "D'ITÁLIA" and "S/A" all carry a second word that has to be
+ * capitalised in its own right. Splitting on whitespace alone left them as
+ * "Lava-rápido", "Café&cia", "D'itália" and "S/a". The group is captured so
+ * the separators — and the original spacing — survive the round trip.
+ */
+const WORD_SEPARATORS = /([\s\-–—/&'’]+)/;
+
+// `y` is deliberately absent. It is a vowel in "Yara" but a consonant in every
+// initialism that uses it, and including it made "XYZ" parse as a pronounceable
+// syllable (→ "Xyz") while "SKY" did not (→ "SKY"). Leaving it out makes both
+// read as acronyms, which is what a shouted three-letter token nearly always is.
+const VOWEL_CLASS = "aeiouáàâãéêíóôõúü";
 
 /**
  * A short token that reads as one syllable.
@@ -78,10 +98,8 @@ export function displayBusinessName(name: string): string {
   if (LOWERCASE.test(name)) return name;
 
   let seenWord = false;
-  // Splitting on the separator keeps it in the array, so the original spacing
-  // survives the round trip.
   return name
-    .split(/(\s+)/)
+    .split(WORD_SEPARATORS)
     .map((token) => {
       if (!LETTER.test(token)) return token;
       const cased = titleCaseToken(token, !seenWord);
@@ -89,6 +107,18 @@ export function displayBusinessName(name: string): string {
       return cased;
     })
     .join("");
+}
+
+/**
+ * The one name every publishing surface prints.
+ *
+ * The renderer, the exported snapshot, the agent's prompt and the public
+ * page's `<title>` all read the business name through here. Applying the
+ * re-casing in only one of them is how a page ended up showing
+ * "Zen Comida Japonesa" in its body and "ZEN COMIDA JAPONESA" in its tab.
+ */
+export function publicBusinessName(brief: SiteBrief): string {
+  return displayBusinessName(brief.businessName.value);
 }
 
 /** True when a name would be re-set by {@link displayBusinessName}. */
