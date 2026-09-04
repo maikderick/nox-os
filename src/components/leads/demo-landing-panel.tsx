@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   DEMO_CTA_LABELS,
   demoLandingContentSchema,
@@ -609,9 +610,9 @@ export function DemoLandingPanel({
             O gerador de demonstrações entrou em modo de compatibilidade. Novos trabalhos começam
             na fábrica de sites, com briefing versionado e aprovação separada.
           </p>
-          <a href="/projetos/novo" className="mt-4 inline-flex rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white hover:bg-violet-500">
+          <Link href="/projetos/novo" className="mt-4 inline-flex rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white hover:bg-violet-500">
             Abrir novo projeto
-          </a>
+          </Link>
         </div>
       )}
 
