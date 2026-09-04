@@ -240,6 +240,81 @@ describe("a exceção do hero é uma allowlist, não uma tesoura", () => {
     expect(ids(html)).toContain("gradient-ground");
   });
 
+  it("um motivo aninhado no spotlight reprova, e não apaga o resto da seção", () => {
+    // O payload do revisor. Dois fragmentos marcados que se sobrepõem não podem
+    // ser recortados do mesmo documento: qualquer ordem de corte mede o segundo
+    // contra um texto que o primeiro já encurtou, e a diferença — do tamanho do
+    // fragmento interno, que quem escreve o markup controla — sumia sem ser
+    // medida em lugar nenhum. Com 400 bytes de enchimento no motivo, uma seção
+    // cheia de slop voltava CLEAN.
+    const padding = `<!-- ${"-".repeat(400)} -->`;
+    const html =
+      '<section data-hero="">' +
+      '<div data-hero-spotlight="" style="background:radial-gradient(circle,#fff,transparent)">' +
+      `<svg data-category-motif=""><g></g>${padding}</svg>` +
+      "</div>" +
+      '<p style="text-transform: uppercase; letter-spacing: 0.2em">NOSSOS SERVICOS</p>' +
+      '<div class="rounded-[2rem]" style="color:#111">🚀 <a>Saiba mais →</a></div>' +
+      "</section>";
+
+    expect(ids(html)).toEqual(
+      expect.arrayContaining([
+        "emoji-icon",
+        "radius-soup",
+        "eyebrow-caps",
+        "arrow-suffix",
+        "tinted-black",
+        "nested-exception",
+      ]),
+    );
+    // E a concessão cai junto: sem saber quais são os fragmentos, o gradiente do
+    // spotlight volta a ser medido como qualquer outro.
+    expect(ids(html)).toContain("gradient-ground");
+  });
+
+  it("o aninhamento reprova mesmo sem enchimento nenhum", () => {
+    const html = page(
+      '<div data-hero-spotlight=""><svg data-category-motif=""></svg></div>' +
+        '<p style="color:#111">x</p>',
+    );
+    expect(ids(html)).toContain("nested-exception");
+    expect(ids(html)).toContain("tinted-black");
+  });
+
+  it("o aninhamento reprova na ordem inversa: spotlight dentro do motivo", () => {
+    const html = page(
+      '<svg data-category-motif=""><div data-hero-spotlight=""></div></svg>' +
+        '<p style="color:#111">x</p>',
+    );
+    expect(ids(html)).toContain("nested-exception");
+    expect(ids(html)).toContain("tinted-black");
+  });
+
+  it("pega movimento em hover escondido no <style> global do motivo", () => {
+    // O quinto bypass, literal. Um `<style>` dentro de um SVG inline não é
+    // escopado ao SVG: vale para o documento inteiro. `motion-budget` não está
+    // entre as regras concedidas justamente por isso.
+    const hover = '<svg data-category-motif=""><style>a:hover{transition:all .3s}</style></svg>';
+    expect(ids(hover)).toContain("motion-budget");
+    // E também dentro de um hero legítimo, onde o motivo *tem* concessão.
+    expect(ids(page(`${SPOTLIGHT}${hover}`))).toContain("motion-budget");
+  });
+
+  it("não confunde a animação legítima do motivo com movimento em hover", () => {
+    // O que os catorze motivos declaram é uma `animation:` dentro de um bloco
+    // de reduced-motion, nunca um `:hover`. A regra nova não pode pegá-los.
+    expect(ids(page())).toEqual([]);
+  });
+
+  it("o glow é concedido dentro do spotlight e reprovado fora dele", () => {
+    // O par que define a fronteira. Um blur dentro do spotlight é a luz que a
+    // reversão liberou; o mesmo blur uma seção abaixo continua sendo glow.
+    expect(ids(page('<div data-hero-spotlight="" class="blur-3xl"></div>'))).toEqual([]);
+    expect(
+      ids(page(SPOTLIGHT, '<section id="servicos" class="blur-3xl">x</section>')),
+    ).toContain("glow");
+  });
+
   it("markup desbalanceado reprova, nunca silencia", () => {
     // O pior dos bypasses: uma div marcada sem fechar levava o resto do
     // documento junto e o linter devolvia "limpo" para uma página inteira.

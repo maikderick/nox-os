@@ -14,11 +14,16 @@
  *
  * Rules 1, 2, 8 and 15 were rewritten on 2026-09-04, when the owner reversed
  * them for the hero and only for the hero (spec §13, errata 6). The grant is
- * scoped by markup, not by prose: `findSlop` removes the one element marked
- * `data-hero-spotlight` and the one `<svg data-category-motif>` before it
- * measures anything, so the gradient, the blur and the slow loop those two
- * carry are invisible to the rules — and a second gradient one section down
- * still fails, which is the only reason the exception is safe to grant.
+ * scoped by markup, not by prose, and it is an allowlist rather than a cut:
+ * `findSlop` measures the one `data-hero-spotlight` and the one
+ * `<svg data-category-motif>` by all fifteen rules and then drops only the
+ * handful each is granted in `FRAGMENT_GRANTS`. Everything about that grant is
+ * checked before it is given — it is anchored inside `<section data-hero>`,
+ * counted, and required to be disjoint — and the carve-out that separates the
+ * fragments from the rest of the document is built forward from the original
+ * string, so no cut is ever measured against a document a previous cut already
+ * changed. A second gradient one section down still fails, which is the only
+ * reason the exception is safe to grant.
  *
  * `markup` regexes cover both the Tailwind-class form and the React inline
  * `style` attribute form, because the site renderer emits inline styles: a
@@ -130,6 +135,13 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
   {
     id: "motion-budget",
     text: "Um momento no hero (entrada) + a animação lenta do motivo e do spotlight. Nada anima fora do hero; nada anima ao scroll; nada anima em hover.",
+    // Most of this rule is a judgement — a linter cannot count "moments". One
+    // clause of it is not: a `:hover` block that moves something is motion on
+    // hover, wherever it is written. It is worth a regex because a `<style>`
+    // inside an inline SVG is *global* CSS, so hiding a hover transition in
+    // the motif's stylesheet would style the whole page from inside the one
+    // element the hero's exception touches.
+    markup: /:hover\s*\{[^}]*(transition|transform|animation)/i,
   },
 ];
 
@@ -142,10 +154,18 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
  * else. So a fragment is not *hidden* from the rules: it is measured by all
  * fifteen, and only the rules named here are dropped from its result. A `#111`
  * or an ALL-CAPS eyebrow written inside the spotlight is still reported.
+ *
+ * `motion-budget` is deliberately *not* granted, even though the reversal does
+ * grant these two their slow loop. The mechanical half of that rule only sees
+ * hover-triggered motion, and neither of them has any: their animation is an
+ * `animation:` declaration inside a reduced-motion block. Granting it would
+ * have bought nothing and cost the one thing the clause exists to catch — a
+ * global `:hover{transition}` smuggled into the motif's `<style>`, which is
+ * page-wide CSS despite living inside the SVG.
  */
 const FRAGMENT_GRANTS = {
-  spotlight: ["gradient-ground", "glow", "motion-budget"],
-  motif: ["glow", "motion-budget"],
+  spotlight: ["gradient-ground", "glow"],
+  motif: ["glow"],
 } as const;
 
 /**
@@ -161,6 +181,8 @@ export const HERO_STRUCTURE_FINDINGS = {
   "motif-once": "O hero tem no máximo um motivo, marcado data-category-motif.",
   "unbalanced-exception":
     "Um elemento marcado como exceção do hero não fecha: o markup não pode ser medido.",
+  "nested-exception":
+    "Dois elementos marcados como exceção do hero se sobrepõem: cada um é um fragmento, e fragmentos não se aninham.",
 } as const;
 
 type StructureFinding = keyof typeof HERO_STRUCTURE_FINDINGS;
@@ -271,7 +293,10 @@ export function antiSlopMarkdown(): string {
  *    be handed to five of them.
  * 3. The grant is narrow. Each fragment is measured by all fifteen rules; only
  *    the ones named in `FRAGMENT_GRANTS` are dropped from its result.
- * 4. Malformed markup fails loudly. An element that never closes is reported
+ * 4. The grant is disjoint. Two marked elements never overlap: each is carved
+ *    out of the document as its own span, and a span nested inside another is
+ *    a shape this cannot measure. It is reported and revokes the grant.
+ * 5. Malformed markup fails loudly. An element that never closes is reported
  *    and the whole document is measured with no grant at all — a linter that
  *    returns "clean" for markup it could not parse is worse than no linter.
  */
@@ -310,8 +335,30 @@ export function findSlop(html: string): { id: string; text: string }[] {
     if (motifs.length > 1 || heroMotifs.length > 1) note("motif-once");
   }
 
+  // Fragments have to be disjoint, and nothing so far makes them so: a motif
+  // written *inside* the spotlight passes both counts and lands in `exempt`
+  // twice over. Carving overlapping spans out of one string cannot be done —
+  // whichever order you cut in, the second cut is measured against a document
+  // that no longer matches its own indices, and the difference is document
+  // text that silently disappears without being measured anywhere. The size of
+  // the hole is the size of the inner fragment, which is written by whoever
+  // wrote the markup: an erasure primitive of arbitrary length, inside the one
+  // element the exception was supposed to make safe. So overlap is a finding,
+  // and it revokes the grant exactly like malformed markup does.
+  const spans = [...spotlights, ...motifs]
+    .filter((fragment): fragment is { start: number; end: number } => fragment.end !== null)
+    .sort((a, b) => a.start - b.start);
+  const overlapping = spans.some((fragment, index) =>
+    index > 0 ? fragment.start < spans[index - 1]!.end : false,
+  );
+  if (overlapping) note("nested-exception");
+
   const granted =
-    !unbalanced && hero !== null && heroSpotlights.length === 1 && heroMotifs.length <= 1;
+    !unbalanced &&
+    !overlapping &&
+    hero !== null &&
+    heroSpotlights.length === 1 &&
+    heroMotifs.length <= 1;
 
   const exempt: { fragment: Fragment; grant: readonly string[] }[] = granted
     ? [
@@ -321,10 +368,34 @@ export function findSlop(html: string): { id: string; text: string }[] {
     : [];
 
   // The document with the granted fragments carved out, measured by every rule.
-  let rest = html;
-  for (const { fragment } of [...exempt].sort((a, b) => b.fragment.start - a.fragment.start)) {
-    rest = rest.slice(0, fragment.start) + rest.slice(fragment.end!);
+  // Built forward, in one pass, from the original string: every index below
+  // indexes `html` and nothing else, so no cut can be measured against a
+  // document a previous cut already changed.
+  const ordered = [...exempt].sort((a, b) => a.fragment.start - b.fragment.start);
+  let rest = "";
+  let cursor = 0;
+  for (const { fragment } of ordered) {
+    rest += html.slice(cursor, fragment.start);
+    cursor = fragment.end!;
   }
+  rest += html.slice(cursor);
+
+  // What came out is exactly the fragments, and nothing else. Unreachable once
+  // the spans are disjoint — which is the point of asserting it: if this ever
+  // throws, the carve-out has started eating document text again, and a loud
+  // failure is the only acceptable way for a linter to be wrong.
+  const carved = ordered.reduce(
+    (total, { fragment }) => total + (fragment.end! - fragment.start),
+    0,
+  );
+  if (rest.length !== html.length - carved) {
+    throw new Error(
+      `findSlop: o recorte dos fragmentos do hero perdeu ${
+        html.length - carved - rest.length
+      } caracteres do documento`,
+    );
+  }
+
   const found = matchRules(rest);
 
   // Then each fragment on its own, minus what it was granted.
