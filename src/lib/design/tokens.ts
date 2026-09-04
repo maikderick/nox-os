@@ -61,7 +61,8 @@ export function toCssVariables(direction: ArtDirection): Record<string, string> 
     "--space-inline": space.inline,
     "--font-display": `var(--font-${direction.type.display})`,
     "--font-body": `var(--font-${direction.type.body})`,
-    "--motion-max": `${direction.motion.maxMs}ms`,
+    "--motion-max":
+      direction.motion.moment === "none" ? "0ms" : `${direction.motion.maxMs}ms`,
   };
 
   for (const step of steps) {

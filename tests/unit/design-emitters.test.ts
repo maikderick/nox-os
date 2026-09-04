@@ -26,6 +26,13 @@ describe("emissor de custom properties", () => {
   it("é determinístico", () => {
     expect(toCssVariables(direction)).toEqual(toCssVariables(direction));
   });
+
+  it("zera --motion-max quando a direção não tem movimento de entrada", () => {
+    const noMotion = resolveArtDirection({ sector: "Advocacia", seed: "semente-fixa" });
+    expect(noMotion.motion.moment).toBe("none");
+    expect(toCssVariables(noMotion)["--motion-max"]).toBe("0ms");
+    expect(toDesignMarkdown(noMotion)).toContain("--motion-max: 0ms;");
+  });
 });
 
 describe("emissor de DESIGN.md", () => {
@@ -73,5 +80,25 @@ describe("emissor de DESIGN.md", () => {
 
   it("não vaza marca da fábrica para o site do cliente", () => {
     expect(markdown).not.toMatch(/NOX|nox-os|Claude|Anthropic|Cursor/i);
+  });
+
+  it("resolve --font-display e --font-body do :root para uma pilha de fontes real, não para o token de preview do next/font", () => {
+    expect(markdown).not.toContain("var(--font-");
+
+    const displayFamily = markdown.match(/### Display — `--font-display`\n- \*\*Family:\*\* (.+)/)?.[1];
+    const bodyFamily = markdown.match(/### Body — `--font-body`\n- \*\*Family:\*\* (.+)/)?.[1];
+    expect(displayFamily).toBeTruthy();
+    expect(bodyFamily).toBeTruthy();
+
+    expect(markdown).toContain(`--font-display: ${displayFamily};`);
+    expect(markdown).toContain(`--font-body: ${bodyFamily};`);
+  });
+
+  it("o :root do DESIGN.md é o mesmo mapa que toCssVariables emite, chave a chave", () => {
+    const vars = toCssVariables(direction);
+    for (const [key, value] of Object.entries(vars)) {
+      if (key === "--font-display" || key === "--font-body") continue;
+      expect(markdown, key).toContain(`${key}: ${value};`);
+    }
   });
 });

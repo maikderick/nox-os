@@ -36,6 +36,23 @@ export function toDesignMarkdown(direction: ArtDirection): string {
   const steps = SCALE_STEPS[type.scale];
   const vars = toCssVariables(direction);
 
+  /**
+   * The `:root` block below has a different reader than `toCssVariables`'s
+   * caller. The preview renders inside NOX OS, where `next/font` has already
+   * declared `--font-inter-tight` and friends — so `vars["--font-display"]`
+   * pointing at `var(--font-inter-tight)` resolves there. This Markdown ships
+   * to a coding agent building the client's own site, where no such variable
+   * exists: it would have to guess a typeface from a reference to nothing. So
+   * this is the one deliberate substitution — the two font properties resolve
+   * through the same `FONT_STACK` the `## Tokens — Typography` section above
+   * already uses, everything else still comes straight from `toCssVariables`.
+   */
+  const rootVars: Record<string, string> = {
+    ...vars,
+    "--font-display": FONT_STACK[type.display],
+    "--font-body": FONT_STACK[type.body],
+  };
+
   const lines: string[] = [
     `# Style Reference`,
     `> ${direction.anchor}`,
@@ -127,7 +144,7 @@ export function toDesignMarkdown(direction: ArtDirection): string {
     ``,
     "```css",
     `:root {`,
-    ...Object.entries(vars).map(([key, value]) => `  ${key}: ${value};`),
+    ...Object.entries(rootVars).map(([key, value]) => `  ${key}: ${value};`),
     `}`,
     "```",
     ``,
