@@ -92,6 +92,15 @@ describe("catálogo de direções de arte", () => {
     }
   });
 
+  it("todo acento alcança 3:1 sobre as duas superfícies, porque o site-kit o usa como preenchimento primário", () => {
+    for (const id of categoryIds) {
+      for (const palette of DIRECTION_CATALOG[id].palettes) {
+        expect(contrast(palette.accent, palette.surface), `${id} accent/surface`).toBeGreaterThanOrEqual(3);
+        expect(contrast(palette.accent, palette.surfaceAlt), `${id} accent/surfaceAlt`).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
   it("dá a health contraste AAA no corpo, porque o público é mais velho", () => {
     for (const palette of DIRECTION_CATALOG.health.palettes) {
       expect(contrast(palette.ink, palette.surface)).toBeGreaterThanOrEqual(7);

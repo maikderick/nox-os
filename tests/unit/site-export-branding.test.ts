@@ -37,8 +37,11 @@ describe("branding do snapshot", () => {
     expect(snapshot.branding.surfaceColor).toBe(direction.palette.surface);
     expect(snapshot.branding.textColor).toBe(direction.palette.ink);
     expect(snapshot.branding.accentColor).toBe(direction.palette.accent);
-    expect(snapshot.branding.primaryColor).toBe(direction.palette.ink);
+    expect(snapshot.branding.primaryColor).toBe(direction.palette.accent);
     expect(snapshot.branding.primaryColor).not.toBe("#1d4ed8");
+    // Barbearia (beauty) is a category where accent differs from ink, so this
+    // also pins that primaryColor no longer collapses onto textColor.
+    expect(snapshot.branding.primaryColor).not.toBe(snapshot.branding.textColor);
   });
 
   it("respeita o enum do contrato", () => {

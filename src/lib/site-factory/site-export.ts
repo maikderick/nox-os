@@ -242,8 +242,12 @@ export function buildSiteContentSnapshot(input: SiteExportInput): Record<string,
     // The contract carries six fields and no more; they are the load-bearing
     // half of the direction — the rest (anchor, rhythm, motion, device, …)
     // reaches the generated site through the agent's prompt, not this snapshot.
+    // `primaryColor` is the accent — the contract's primary affordance colour —
+    // and `textColor` is the ink; the catalogue guarantees every accent reaches
+    // 3:1 against both surfaces as a fill (it was `ink` here until the fitness
+    // accent was fixed to actually clear that bar).
     branding: {
-      primaryColor: direction.palette.ink,
+      primaryColor: direction.palette.accent,
       accentColor: direction.palette.accent,
       surfaceColor: direction.palette.surface,
       textColor: direction.palette.ink,

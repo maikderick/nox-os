@@ -67,8 +67,12 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["placar", "apito"],
     palettes: [
-      { surface: "#E4E4E1", surfaceAlt: "#D6D6D2", ink: "#000000", inkMuted: "#4A4A47", line: "#C2C2BD", accent: "#F2C200" },
-      { surface: "#E9E9E6", surfaceAlt: "#DBDBD7", ink: "#000000", inkMuted: "#48453F", line: "#C7C7C1", accent: "#E0A800" },
+      // `accent` darkened from `#F2C200` (contrast ~1.32:1 / ~1.15:1 against
+      // surface/surfaceAlt — unusable as a UI fill) to a deep amber/ochre that
+      // still reads as scoreboard amber but clears 3:1 on both surfaces.
+      { surface: "#E4E4E1", surfaceAlt: "#D6D6D2", ink: "#000000", inkMuted: "#4A4A47", line: "#C2C2BD", accent: "#8F6E00" },
+      // `accent` darkened from `#E0A800` (~1.77:1 / ~1.55:1) for the same reason.
+      { surface: "#E9E9E6", surfaceAlt: "#DBDBD7", ink: "#000000", inkMuted: "#48453F", line: "#C7C7C1", accent: "#7C6100" },
     ],
     types: [
       { display: "inter-tight", body: "inter", scale: "compact", displayCase: "upper" },
@@ -105,7 +109,10 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["manual", "oficina"],
     palettes: [
-      { surface: "#F0F0EE", surfaceAlt: "#E3E3E0", ink: "#15171A", inkMuted: "#565A60", line: "#CFD0CC", accent: "#E2571E" },
+      // `accent` darkened from `#E2571E` (~3.28:1 against surface, but only
+      // ~2.91:1 against surfaceAlt — below the 3:1 non-text floor the site-kit
+      // now relies on for `primaryColor`) to the same orange one step deeper.
+      { surface: "#F0F0EE", surfaceAlt: "#E3E3E0", ink: "#15171A", inkMuted: "#565A60", line: "#CFD0CC", accent: "#D2511C" },
       { surface: "#EAEAE7", surfaceAlt: "#DDDDD9", ink: "#141619", inkMuted: "#54585D", line: "#C8C9C4", accent: "#C94A18" },
     ],
     types: [
