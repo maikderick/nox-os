@@ -98,6 +98,12 @@ reprodutível, gastaria crédito e não poderia ser fixado por teste de contrato
 
 ### 2.4 Orçamento de movimento apertado
 
+> **Revisto em 2026-09-04.** O dono abriu o orçamento dentro do hero: cabem
+> agora, além do momento de entrada, a entrada única do spotlight (2s) e a
+> animação lenta do motivo (8 a 14s, em loop). Fora do hero, o que está
+> escrito abaixo continua valendo palavra por palavra — inclusive a proibição
+> de cena 3D. Veja a errata §13, item 6.
+
 Um único momento orquestrado por site, no hero, até 200ms. Fora isso, movimento
 só responde a ação da pessoa — abrir, expandir, confirmar.
 
@@ -255,6 +261,11 @@ operador em vez de ignorada em silêncio.
 Exportadas em dois formatos a partir de uma fonte só: string para a seção
 `## Don't` do DESIGN.md, e asserções para o teste do markup da prévia.
 
+> **Revisto em 2026-09-04.** As regras 1, 2, 8 e 15 abaixo foram reescritas
+> pelo dono para abrir o hero — e só o hero. O texto que vale é o de
+> `ANTI_SLOP_RULES`; a lista abaixo ficou como estava para que a errata §13,
+> item 6, mostre o antes e o depois.
+
 1. Sem gradiente radial ou cônico como fundo de seção.
 2. Sem glow — nenhum elemento borrado atrás do conteúdo.
 3. Sem glassmorphism como estilo de card (`bg-white/[0.0x]` + `backdrop-blur`).
@@ -411,3 +422,147 @@ Divergências deliberadas entre a branch e o texto acima, cada uma com o motivo:
 5. **`contact` exige canal de mensagem.** Endereço sozinho abre só
    `location`; sem telefone, WhatsApp, e-mail ou rede social, `contact` não
    abre.
+6. **Hero imersivo: o dono reverteu as regras 1, 2, 8 e 15, só no hero
+   (2026-09-04).** Pedido do dono do produto, com a referência na mão — o hero
+   "splite" do 21st.dev: tela cheia, título display gigante à esquerda, um
+   objeto visual marcante à direita e uma luz de spotlight. O que ele quis foi
+   o *impacto*; o que ele recusou continua recusado: nada inventado, sem foto
+   de banco, sem cena 3D genérica (um robô Spline não tem relação com uma
+   pizzaria), um acento por site, sem cards genéricos, sem depoimento.
+
+   O que mudou:
+
+   - **§2.4 e regra 15 — o orçamento de movimento.** Além do momento único de
+     entrada, o hero passa a ter a entrada de 2s do spotlight (uma vez) e a
+     animação lenta do motivo (8 a 14s, em loop). Fora do hero nada anima:
+     nada ao scroll, nada em hover. Tudo atrás de
+     `prefers-reduced-motion: no-preference`.
+   - **Regra 1 — gradiente.** Passa a ser "sem gradiente radial ou cônico fora
+     do hero; o spotlight do hero é permitido uma vez".
+   - **Regra 2 — glow.** Passa a ser "sem glow fora do hero e do motivo".
+   - **Regra 8 — chão.** Passa a ser "no máximo dois chãos: o hero e o corpo".
+     `hero: { ground }` no catálogo: `dark` em food, fitness, auto, retail e
+     events; `inherit` nas outras nove — `beauty` e `tourism` já abrem no
+     escuro porque a página inteira é escura.
+   - **A isenção é de markup, não de prosa.** `findSlop` recorta o elemento
+     `data-hero-spotlight` e o `<svg data-category-motif>` antes de medir. Um
+     segundo gradiente uma seção abaixo continua reprovando, e é isso que
+     torna a exceção segura de conceder. Os desenhos, medidos crus, também não
+     cometem nada: o borrão do `luz-difusa` é um `feGaussianBlur` dentro do
+     SVG, não um `filter: blur()` de CSS atrás do conteúdo.
+   - **O objeto é gerado, não comprado.** `CategoryMotif`
+     (`src/components/sites/category-motif.tsx`) desenha catorze motivos, um
+     por categoria, tirados do mundo do próprio ofício — azulejo para a
+     cozinha, poste e navalha para a barbearia, placar para a academia. SVG
+     inline, sem raster, sem `<foreignObject>`, no máximo sessenta elementos,
+     sem texto publicado (numerais decorativos são permitidos, porque não
+     afirmam nada).
+   - **Cinco tokens novos**, derivados em `tokens.ts`, nunca autorados uma
+     segunda vez: `--hero-surface`, `--hero-ink`, `--hero-ink-muted`,
+     `--hero-accent` e `--hero-spotlight`. Num hero que herda o chão, os três
+     primeiros são idênticos aos do site, e é isso que deixa o renderizador
+     endereçar o hero sem um segundo caminho de código. Num hero `dark`, a
+     superfície é `#000000` (regra 5 continua valendo: preto é preto) e a
+     paleta inverte — a `surface` clara do corpo vira a tinta do hero, e o
+     tom secundário é ela a 70%.
+   - **`--hero-accent` é o quinto token, e não estava no pedido.** Foi preciso:
+     `retail` e `events` definem o acento igual à tinta (`#000000` e
+     `#17171A`), o que sobre um hero preto é um objeto invisível. Abaixo de
+     2:1 contra a superfície do hero, o acento cai para `--hero-ink` — o mesmo
+     que essas duas direções já fazem no corpo, onde o acento lê como uma
+     régua de tinta.
+   - **`facade-symmetry` mantém o hero centrado.** As outras treze direções
+     usam a grade de duas colunas; a de `beauty` empilha o motivo sob o texto,
+     no eixo, porque um título empurrado para um lado é o contrário do
+     dispositivo que a direção declara.
+   - **`--text-display` perdeu o consumidor no renderizador.** O `<h1>` do hero
+     era o único, e agora é `clamp(3rem, 8vw, 7rem)`. O passo continua sendo
+     emitido: o agente que constrói o site do cliente ainda precisa de um
+     tamanho display.
+   - **`scripts/render-sites.ts`** entrou no repositório como ferramenta de
+     revisão: renderiza uma página por categoria em HTML estático para
+     captura. O linter prova o que está *ausente* do markup e nada sobre se a
+     página parece feita por um designer, e o hero é o bloco onde essa é a
+     pergunta inteira.
+
+   Fora de escopo, de novo: foto do próprio negócio no lugar do motivo (quando
+   confirmada) fica para a próxima iteração; cena 3D, não.
+
+7. **Revisão do hero imersivo (2026-09-04, segunda passada).** Dois revisores e
+   o dono olharam as catorze capturas. As correções, e as decisões que o
+   controlador formalizou junto com elas:
+
+   - **A isenção do linter virou allowlist por fragmento.** A primeira versão
+     recortava qualquer elemento marcado antes de medir, e o marcador virou uma
+     chave-mestra: slop arbitrário dentro do spotlight passava, cinco
+     spotlights passavam, uma `div` marcada no rodapé isentava o rodapé,
+     `class="x-data-hero-spotlight"` e `data-x="data-hero-spotlight "` contavam
+     como marcador, e um elemento sem fechar silenciava o linter na página
+     inteira. Agora `findSlop` (a) ancora: só ganha a concessão o fragmento que
+     estiver dentro de `<section data-hero>`; (b) conta: exatamente um
+     spotlight e no máximo um motivo, senão a concessão é revogada e sai um
+     achado próprio (`spotlight-once`, `motif-once`); (c) concede pouco: cada
+     fragmento é medido pelas quinze regras e só as concedidas a ele são
+     descartadas — um `#111` ou um eyebrow em caixa alta escritos dentro do
+     spotlight continuam reprovando; (d) reprova markup malformado
+     (`unbalanced-exception`) em vez de devolver "limpo". O casamento do
+     marcador passou a percorrer os nomes de atributo da tag, porque nenhuma
+     fronteira de regex distingue um atributo de um pedaço de `class`.
+   - **O cabeçalho fica no chão do hero.** Sobre as cinco direções invertidas,
+     uma faixa clara no topo fazia três chãos na página e lia como banner
+     colado. O `<header>` passa a usar `--hero-surface`/`--hero-ink`/
+     `--hero-ink-muted`; nas nove que herdam o chão nada muda, porque os
+     tokens são os mesmos. A régua inferior sai junto quando o hero é
+     invertido: não há costura a esconder, e uma linha de `--line` clara seria
+     um risco atravessando o topo.
+   - **No chão claro o spotlight virou um foco neutro.** O acento a 18% num
+     feixe de 86%×150% era uma mancha, não uma luz — o dono viu "borrão rosa
+     atravessado" e reduzir a opacidade não resolveu, porque o problema era a
+     geometria. No chão claro o feixe passa a 44%×90%, atrás do objeto, e
+     `--hero-spotlight` resolve para a tinta da direção a 6% em vez do acento a
+     18%. É a única divergência de valor em relação ao brief, e é medida: um
+     matiz sobre off-white pesa muito mais do que um neutro sobre preto.
+   - **A dobra do celular.** A 390×844 o hero empilhado estourava em nove
+     categorias e cortava o motivo em duas. Agora o padding vertical do hero é
+     `clamp(2rem, 8vw, 3.5rem)` em vez de `--space-section` (que chega a 9rem),
+     o `<h1>` usa `clamp(2.6rem, 12vw, 4rem)` abaixo de 900px (e a escala do
+     brief acima), e o objeto é limitado por `min(15rem, 34vh)` — sendo
+     quadrado, limitar a largura limita a altura. As catorze medidas ficaram
+     entre 604px e 702px, todas dentro da dobra.
+   - **O objeto tem coluna garantida.** `1.1fr` é `minmax(auto, 1.1fr)`, então
+     a palavra mais longa do nome do negócio virava o mínimo da coluna
+     esquerda: "Consultório" empurrava o motivo para 261px, onde ele lê como
+     ícone. A grade passou a `minmax(0, 1.1fr) minmax(24rem, 0.9fr)` com o
+     título hifenizando quando precisa, e o `gap` do hero deixou de ser
+     `--space-section` (9rem nas direções `airy` comiam a coluna) para ser
+     fixo em 4rem. Os catorze motivos medem 410px no desktop; o hero centrado
+     de `facade-symmetry`, 384px.
+   - **Três motivos redesenhados.** `passe-partout`: a elipse de luz era larga
+     o bastante para encostar no clip retangular sob um blur de 34, e uma forma
+     borrada cortada em linha reta não é luz — era um bloco cinza que lia como
+     imagem quebrada. A luz agora morre dentro da janela e tem um núcleo
+     nítido. `luz-difusa`: seis anéis largos e sobrepostos com rampa de
+     opacidade do aro ao centro, sem o ponto central — difusão é gradiente, e
+     quatro anéis finos em volta de um ponto era um glifo de radar.
+     `patas`: a trilha atravessa a área inteira e os círculos cresceram.
+   - **Estado de repouso fora da media query.** Em `azulejo` e `patas` a
+     declaração base vivia dentro de `prefers-reduced-motion: no-preference`,
+     então quem pedia quietude via um desenho que ninguém desenhou (as seis
+     fileiras acesas ao mesmo tempo). Só a `animation:` ficou lá dentro.
+   - **Decisão do controlador, aceita e registrada:** `HeroGround` não tem o
+     membro `"light"` que o brief lista. Nenhuma direção precisa dele —
+     `beauty` e `tourism` já abrem no escuro porque a página inteira é escura,
+     e um hero claro sobre um corpo escuro exigiria uma paleta invertida que
+     ninguém confirmou. Um membro sem uso seria um ramo de código sem teste.
+   - **Decisão do controlador, aceita e registrada:** `--hero-accent` é um
+     quinto token, além dos quatro que o brief pede. `retail` e `events`
+     definem o acento igual à tinta (`#000000` e `#17171A`), o que sobre um
+     hero preto é um objeto invisível; abaixo de 2:1 contra a superfície do
+     hero o acento cai para a tinta do hero. O `DESIGN.md` documenta o token e
+     o CTA do hero, para que o agente não use `--accent` ali e reproduza
+     justamente o defeito que o token existe para evitar.
+   - **Fechado sem ação:** a franja colorida nos links da nav é antialiasing
+     subpixel do Chromium no Windows, não cor de acento — as três âncoras
+     herdam um único `color` e foram medidas iguais nas catorze capturas.
+     `prefers-reduced-motion` foi verificado em navegador: `animationName` é
+     `none` no feixe, na deriva e em todos os elementos do motivo.

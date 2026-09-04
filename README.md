@@ -203,6 +203,18 @@ A direção é configuração, não fato: quem resolve é uma função pura de s
 Um único objeto alimenta as duas pontas — as variáveis CSS da prévia em `/sites/[id]` e
 o `DESIGN.md` que o agente de geração lê.
 
+O hero é o único bloco com contrato próprio. Ocupa a dobra (`88vh` no desktop), com o
+nome do negócio em display fluido à esquerda, uma luz de spotlight que entra uma vez, e
+à direita um objeto desenhado a partir do mundo da própria categoria — azulejo para a
+cozinha, poste e navalha para a barbearia, placar para a academia: catorze motivos em
+SVG inline, sem foto de banco e sem cena 3D. Cinco categorias (comida, academia,
+oficina, loja e eventos) abrem em preto puro sobre um corpo claro; as outras nove seguem
+o chão da direção. O cabeçalho acompanha o hero, não o corpo, para que a abertura seja uma peça só. São os dois únicos chãos da página. Essa abertura reverte, só dentro
+do hero, três das regras anti-slop e o orçamento de movimento — e a isenção é de markup,
+recortada elemento a elemento, de modo que um segundo gradiente uma seção abaixo continua
+reprovando. O pedido do dono e o que exatamente mudou estão na errata §13 da
+especificação.
+
 Quinze regras anti-slop (um acento por site, um raio por site, preto é `#000000`, sem
 glow, sem gradiente radial, sem emoji como ícone) vão para o `DESIGN.md` do agente; dez
 delas têm forma mecânica e são verificadas por um linter sobre o markup renderizado, e as

@@ -1,6 +1,6 @@
 import type { ArtDirection } from "./art-direction";
 import { antiSlopMarkdown } from "./anti-slop";
-import { RADIUS_PX, RHYTHM_SPACE, SCALE_STEPS, toCssVariables } from "./tokens";
+import { RADIUS_PX, RHYTHM_SPACE, SCALE_STEPS, resolveHeroPalette, toCssVariables } from "./tokens";
 
 const FONT_STACK: Record<string, string> = {
   fraunces: "Fraunces, Georgia, serif",
@@ -35,6 +35,10 @@ export function toDesignMarkdown(direction: ArtDirection): string {
   const space = RHYTHM_SPACE[direction.rhythm];
   const steps = SCALE_STEPS[type.scale];
   const vars = toCssVariables(direction);
+  const hero = resolveHeroPalette(direction);
+  // Instrument Serif ships one real weight; asking it for 700 gets a
+  // synthesized bold, so the headline of a direction on that face stays at 400.
+  const heroWeight = type.display === "instrument-serif" ? 400 : 700;
 
   /**
    * The `:root` block below has a different reader than `toCssVariables`'s
@@ -108,10 +112,29 @@ export function toDesignMarkdown(direction: ArtDirection): string {
     `## Components`,
     ``,
     `- **Navbar** — nome do negócio à esquerda, âncoras à direita, um CTA. Sem blur, sem transparência.`,
-    `- **Hero** — o dispositivo \`${direction.device}\` manda aqui. Um CTA primário, um só.`,
+    `- **Hero** — contrato próprio, na seção abaixo. Um CTA primário, um só.`,
     `- **Services** — cada serviço tem nome, resumo e corpo confirmados. Sem ícone decorativo.`,
     `- **Contact** — só os canais confirmados. Um canal ausente não vira placeholder.`,
     `- **Footer** — nome, contato, e nada mais.`,
+    ``,
+    `### Hero`,
+    ``,
+    `A abertura ocupa a dobra: \`min-height: 88vh\` no desktop, altura natural no`,
+    `celular. Duas colunas (\`1.1fr 0.9fr\`) a partir de 900px, uma só abaixo disso.`,
+    ``,
+    hero.ground === direction.ground
+      ? `- **Chão** — \`--hero-surface\`, o mesmo do corpo. Um chão só nesta direção.`
+      : `- **Chão** — \`--hero-surface\` é preto puro sob um corpo claro. São os dois chãos permitidos, e não existe um terceiro.`,
+    `- **Título** — \`<h1>\` em \`--font-display\`, \`clamp(2.6rem, 6.5vw, 6rem)\` no desktop e \`clamp(2.6rem, 12vw, 4rem)\` no celular, \`line-height: 0.95\`, peso ${heroWeight}, cor \`--hero-ink\`. O impacto vem do tamanho: nada de gradiente nas letras.`,
+    `- **O nome não se parte** — \`hyphens: manual\`, \`overflow-wrap: normal\`, \`word-break: normal\`: um nome de negócio quebra no espaço ou não quebra. Se o termo mais longo não couber na coluna, quem cede é o tamanho, nunca a palavra.`,
+    `- **Frase** — uma só, a de posicionamento, em \`--hero-ink-muted\`, \`max-width: 34ch\`.`,
+    `- **Spotlight** — uma única elipse borrada em \`--hero-spotlight\`, no elemento marcado \`data-hero-spotlight\`, com entrada de 2s uma vez. É a única luz da página; não repita em outra seção.`,
+    `- **Objeto** — à direita, um SVG inline desenhado do mundo da categoria (motivo \`${direction.hero.motif}\`), \`aria-hidden\`, marcado \`data-category-motif\`, com uma animação lenta de 8 a 14s. Sem foto de banco, sem cena 3D, sem ilustração genérica.`,
+    `- **CTA** — um só, no hero: borda \`1px solid var(--hero-accent)\`, texto \`--hero-ink\`, sem preenchimento.`,
+    `- **\`--hero-accent\`** — o acento da direção, ou a tinta do hero quando o acento não alcança 2:1 contra \`--hero-surface\`. Dentro do hero use este token, nunca \`--accent\`: em duas categorias o acento é igual à tinta e sumiria no chão preto.`,
+    `- **Cabeçalho** — fica no chão do hero (\`--hero-surface\`, texto \`--hero-ink\`), não no do corpo: uma faixa clara sobre um hero preto vira um terceiro chão.`,
+    `- **Depois do hero** — a página volta para \`--surface\` e não anima mais nada.`,
+    `- **No celular** — uma coluna, o objeto por último e menor: a abertura inteira cabe na dobra.`,
     ``,
     `## Do's and Don'ts`,
     ``,
@@ -129,7 +152,8 @@ export function toDesignMarkdown(direction: ArtDirection): string {
     direction.motion.moment === "none"
       ? `Nenhum movimento de entrada. Só estados de foco e de formulário.`
       : `Um único momento: \`${direction.motion.moment}\`, no carregamento, até ${direction.motion.maxMs}ms, opacidade e no máximo 2px de deslocamento.`,
-    `Fora isso, movimento só responde a uma ação da pessoa. Respeite \`prefers-reduced-motion\`.`,
+    `No hero, além disso: a entrada única do spotlight (2s) e a animação lenta do motivo (8 a 14s).`,
+    `Fora do hero nada anima — nem ao scroll, nem em hover. Respeite \`prefers-reduced-motion\`.`,
     ``,
     `## Agent Prompt Guide`,
     ``,

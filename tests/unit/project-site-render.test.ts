@@ -70,6 +70,41 @@ function styleDeclarations(html: string): string[] {
   );
 }
 
+/** The content of every `<style>` element in the markup. */
+function styleSheets(html: string): string[] {
+  return Array.from(html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)).map((match) => match[1]);
+}
+
+/**
+ * The at-rule blocks of a stylesheet, by name, with braces actually balanced.
+ *
+ * Splitting on the at-rule string and calling the tail "inside the block" is
+ * what the first version of this test did, and it proved nothing: a rule
+ * written *after* the block closed counted as guarded. Counting braces is the
+ * difference between asserting containment and asserting order.
+ */
+function atRuleBlocks(css: string, atRule: string): string[] {
+  const blocks: string[] = [];
+  let from = 0;
+  for (;;) {
+    const start = css.indexOf(atRule, from);
+    if (start === -1) return blocks;
+    const open = css.indexOf("{", start);
+    if (open === -1) return blocks;
+    let depth = 0;
+    let index = open;
+    for (; index < css.length; index += 1) {
+      if (css[index] === "{") depth += 1;
+      else if (css[index] === "}") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    blocks.push(css.slice(open + 1, index));
+    from = index + 1;
+  }
+}
+
 /** The contact section only: from its `id` to the end of the document. */
 function contactBlock(html: string): string {
   const start = html.indexOf('id="contato"');
@@ -114,6 +149,37 @@ describe("renderizador do site", () => {
           `${sector}: ${declaration}`,
         ).toBe(true);
       }
+    }
+  });
+
+  it("nunca usa nenhum dos dois acentos para colorir texto, nem no <style> do hero", () => {
+    // O mesmo princípio do teste acima, estendido ao token do hero e às regras
+    // da folha de estilo — que o teste anterior não olhava. `--hero-accent`
+    // desenha a borda do CTA e o traço dos motivos; nunca uma letra.
+    const full = richFixture();
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      for (const token of ["var(--accent)", "var(--hero-accent)"]) {
+        expect(html, `${id}: ${token}`).not.toContain(`color:${token}`);
+        expect(html, `${id}: ${token}`).not.toContain(`color: ${token}`);
+      }
+      // Nas folhas de estilo emitidas, toda declaração que cita o acento do
+      // hero desenha: uma borda no CSS do hero, um `fill`/`stroke` no do
+      // motivo. `color` é a propriedade da tipografia nos dois mundos, e é
+      // dela que o acento fica fora — um numeral decorativo dentro de um SVG
+      // `aria-hidden` é uma forma, não uma palavra publicada.
+      for (const sheet of styleSheets(html)) {
+        for (const declaration of sheet.split(/[;{}]/)) {
+          if (!declaration.includes("var(--hero-accent)")) continue;
+          const property = declaration.slice(0, declaration.indexOf(":")).trim();
+          expect(
+            property.startsWith("border") || property === "fill" || property === "stroke",
+            `${id}: ${declaration}`,
+          ).toBe(true);
+        }
+      }
+      // E o CTA do hero é onde ela está.
+      expect(html, id).toContain("border:1px solid var(--hero-accent)");
     }
   });
 
@@ -279,6 +345,185 @@ describe("renderizador do site", () => {
 
 /** One sector per device family: leader, index, spine and the plain fallback. */
 const DEVICE_FAMILY_SECTORS = ["Pizzaria", "Academia", "Advocacia", "Pet shop"];
+
+/** One sector per category, with the motif its direction has to draw. */
+const CATEGORY_CASES: [string, string, string][] = [
+  ["food", "Pizzaria", "azulejo"],
+  ["beauty", "Barbearia", "navalha"],
+  ["fitness", "Academia", "placar"],
+  ["pet", "Pet shop", "patas"],
+  ["auto", "Oficina mecânica", "manual"],
+  ["education", "Escola de idiomas", "grade-horaria"],
+  ["retail", "Loja de roupas", "vitrine"],
+  ["events", "Fotógrafo", "passe-partout"],
+  ["realestate", "Imobiliária", "planta"],
+  ["professional", "Advocacia", "encadernacao"],
+  ["health", "Consultório odontológico", "luz-difusa"],
+  ["services", "Chaveiro", "ficha"],
+  ["tourism", "Pousada", "entardecer"],
+  ["catalog", "Catálogo", "indice"],
+];
+
+function occurrences(html: string, needle: string): number {
+  return html.split(needle).length - 1;
+}
+
+describe("hero imersivo", () => {
+  // A reversão de 2026-09-04 (spec §13, errata 6): o dono pediu o impacto de
+  // um hero de tela cheia, e o preço foram três regras anti-slop e o
+  // orçamento de movimento abertos — só no hero. Estes testes são o cerco: o
+  // que foi liberado aparece uma vez, dentro do hero, e não escapa para o
+  // corpo da página.
+  const full = richFixture();
+
+  it("desenha o motivo da categoria, e um diferente para cada uma", () => {
+    const drawn = new Set<string>();
+    for (const [id, sector, motif] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(html, `${id}: sem motivo`).toContain('data-category-motif=""');
+      expect(html, `${id}: motivo errado`).toContain(`data-motif="${motif}"`);
+      drawn.add(motif);
+    }
+    expect(drawn.size).toBe(14);
+  });
+
+  it("acende exatamente um spotlight, e nenhuma regra anti-slop cai", () => {
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(occurrences(html, "data-hero-spotlight"), id).toBe(1);
+      expect(findSlop(html).map((rule) => rule.id), id).toEqual([]);
+    }
+  });
+
+  it("dá ao título o tamanho fluido do hero, não o passo --text-display", () => {
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(html, id).toContain('<h1 class="site-hero-title"');
+      expect(html, id).toContain("font-size:clamp(2.6rem,12vw,4rem)");
+      expect(html, id).toContain("font-size:clamp(2.6rem,6.5vw,6rem)");
+    }
+  });
+
+  it("nunca hifeniza o nome do negócio: um nome quebra no espaco ou nao quebra", () => {
+    // "Associa-dos", "Consul-torio": um nome de negocio partido no meio le
+    // como marca quebrada, nao como tipografia. O tamanho responde a coluna;
+    // a palavra nao se parte, e nunca por `overflow-wrap: anywhere`.
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(html, id).toContain("hyphens:manual");
+      expect(html, id).not.toContain("hyphens:auto");
+      expect(html, id).not.toContain("overflow-wrap:break-word");
+      expect(html, id).not.toContain("overflow-wrap:anywhere");
+      expect(html, id).toContain("word-break:normal");
+    }
+  });
+
+  it("nunca corta o nome do negocio no cabecalho", () => {
+    // O wordmark saia com reticencias ("Pousada da...") quando a nav nao
+    // deixava espaco. A linha do cabecalho passa a quebrar: o nome fica
+    // inteiro e a nav desce.
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      const header = html.slice(html.indexOf("<header"), html.indexOf("</header"));
+      expect(header, id).not.toContain("truncate");
+      expect(html, id).toContain("flex-wrap:wrap");
+    }
+  });
+
+  it("põe o hero em preto puro sobre um corpo claro nas cinco categorias escolhidas", () => {
+    // `beauty` e `tourism` já abrem no escuro porque a página inteira é
+    // escura: o marcador diz o chão resolvido, não o campo do catálogo, e é
+    // por isso que a inversão só é asseverada nas cinco.
+    const inverted = ["food", "fitness", "auto", "retail", "events"];
+    const darkHero = [...inverted, "beauty", "tourism"];
+
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(html, id).toContain(
+        `data-hero-ground="${darkHero.includes(id) ? "dark" : "light"}"`,
+      );
+      if (!inverted.includes(id)) continue;
+      expect(html, id).toContain("--hero-surface:#000000");
+      // O corpo não segue o hero: dois chãos no total, nunca um terceiro.
+      expect(html, id).toContain('data-ground="light"');
+      expect(html, id).not.toContain("--surface:#000000;");
+    }
+  });
+
+  it("guarda todo movimento atrás de prefers-reduced-motion, sem hover e sem transition", () => {
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      const sheets = styleSheets(html);
+      expect(sheets.length, `${id}: folhas de estilo`).toBeGreaterThan(0);
+
+      for (const sheet of sheets) {
+        // O que fica fora dos blocos de reduced-motion, medido de verdade:
+        // recortando cada bloco balanceado, o que sobra não pode conter nem
+        // uma `@keyframes` nem uma `animation:`.
+        let outside = sheet;
+        for (const block of atRuleBlocks(sheet, "@media (prefers-reduced-motion")) {
+          outside = outside.replace(block, "");
+        }
+        expect(outside, `${id}: @keyframes fora do bloco`).not.toContain("@keyframes");
+        expect(outside, `${id}: animation fora do bloco`).not.toContain("animation:");
+        expect(sheet, `${id}: transition`).not.toContain("transition");
+        expect(sheet, `${id}: hover`).not.toContain("hover");
+      }
+
+      // E toda `animation:` do documento está numa folha de estilo — nenhuma
+      // veio num `style` inline, onde nenhuma media query poderia guardá-la.
+      const inSheets = sheets.join("").split("animation:").length - 1;
+      expect(occurrences(html, "animation:"), `${id}: animação inline`).toBe(inSheets);
+      expect(html, id).not.toContain("transition");
+      expect(html, id).not.toContain("hover");
+    }
+  });
+
+  it("põe o cabeçalho no chão do hero, e o corpo no seu", () => {
+    // Uma faixa clara colada sobre um hero preto é um terceiro chão, e lê como
+    // banner, não como abertura. O cabeçalho segue o hero; o corpo, não.
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      const header = html.slice(html.indexOf("<header"), html.indexOf("</header"));
+      expect(header, id).toContain("background:var(--hero-surface)");
+      expect(header, id).toContain("color:var(--hero-ink)");
+      expect(header, id).toContain("color:var(--hero-ink-muted)");
+      expect(header, id).not.toContain("background:var(--surface)");
+
+      const inverted = ["food", "fitness", "auto", "retail", "events"].includes(id);
+      // Sem costura a esconder, a régua inferior sai: sobre preto ela seria um
+      // risco claro atravessando o topo da página.
+      expect(header.includes("border-bottom:1px solid var(--line)"), id).toBe(!inverted);
+      // O corpo continua no chão da direção.
+      const body = html.slice(html.indexOf('id="sobre"'));
+      expect(body, id).toContain("background:var(--surface-alt)");
+    }
+  });
+
+  it("ancora a exceção do linter num hero de verdade", () => {
+    // `findSlop` só concede o gradiente e o blur a um fragmento que esteja
+    // dentro de `<section data-hero>`; sem o marcador, o hero real reprovaria.
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(occurrences(html, 'data-hero=""'), id).toBe(1);
+      expect(findSlop(html.replace('data-hero=""', "")).map((rule) => rule.id), id).toContain(
+        "gradient-ground",
+      );
+    }
+  });
+
+  it("não publica no hero o que o operador respondeu sobre a encomenda", () => {
+    const html = render("Pizzaria", "s", {
+      ...full,
+      objective: fact("criar um site focado em vendas"),
+      audience: fact("publico voltado a comida"),
+    });
+    const hero = html.slice(html.indexOf('id="inicio"'), html.indexOf('id="sobre"'));
+    expect(hero).toContain("Informações claras e verificadas sobre o negócio.");
+    expect(hero).not.toContain("criar um site focado em vendas");
+    expect(hero).not.toContain("publico voltado a comida");
+  });
+});
 
 describe("o site nunca publica o que o operador respondeu sobre a encomenda", () => {
   it("não imprime o objetivo nem o público em nenhuma das quatro famílias", () => {

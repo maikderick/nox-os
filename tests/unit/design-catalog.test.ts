@@ -6,6 +6,7 @@ import { CATEGORY_GROUPS } from "@/lib/categories";
 import { resolveArtDirection } from "@/lib/design/art-direction";
 import { DIRECTION_CATALOG } from "@/lib/design/catalog";
 import type { CategoryId } from "@/lib/design/category";
+import { resolveHeroPalette } from "@/lib/design/tokens";
 
 // Reads the loaded roster straight out of site-fonts.tsx, rather than
 // hardcoding a third copy of the list here, so that removing a family from
@@ -34,6 +35,11 @@ function contrast(a: string, b: string): number {
 }
 
 const categoryIds = CATEGORY_GROUPS.map((group) => group.id as CategoryId);
+
+/** The sector text that resolves to each category, for a round trip. */
+const CATEGORY_LABELS = Object.fromEntries(
+  CATEGORY_GROUPS.map((group) => [group.id, group.label]),
+) as Record<CategoryId, string>;
 
 describe("catálogo de direções de arte", () => {
   it("cobre exatamente as categorias existentes", () => {
@@ -124,6 +130,84 @@ describe("catálogo de direções de arte", () => {
           const isForbiddenNearBlack = r === g && g === b && r > 0 && r < 0x13;
           expect(isForbiddenNearBlack, `${id} ${value}`).toBe(false);
         }
+      }
+    }
+  });
+
+  // A reversão de 2026-09-04 (spec §13, errata 6). O hero passou a poder ter
+  // chão próprio, e o preço disso é que a inversão precisa continuar legível:
+  // um `--hero-ink` derivado que não alcança AA sobre `--hero-surface` é um
+  // título ilegível em produção, não um detalhe de tema.
+  const DARK_HERO: CategoryId[] = ["food", "fitness", "auto", "retail", "events"];
+
+  const MOTIF_BY_CATEGORY: Record<CategoryId, string> = {
+    food: "azulejo", beauty: "navalha", fitness: "placar", pet: "patas",
+    auto: "manual", education: "grade-horaria", retail: "vitrine",
+    events: "passe-partout", realestate: "planta", professional: "encadernacao",
+    health: "luz-difusa", services: "ficha", tourism: "entardecer", catalog: "indice",
+  };
+
+  it("dá a cada categoria o motivo da sua própria tabela, e nenhum repetido", () => {
+    for (const id of categoryIds) {
+      expect(DIRECTION_CATALOG[id].hero.motif, `${id}.hero.motif`).toBe(MOTIF_BY_CATEGORY[id]);
+    }
+    expect(new Set(categoryIds.map((id) => DIRECTION_CATALOG[id].hero.motif)).size).toBe(14);
+  });
+
+  it("abre no escuro só nas cinco categorias que o dono escolheu", () => {
+    for (const id of categoryIds) {
+      const expected = DARK_HERO.includes(id) ? "dark" : "inherit";
+      expect(DIRECTION_CATALOG[id].hero.ground, `${id}.hero.ground`).toBe(expected);
+    }
+  });
+
+  it("nunca inverte um chão que já é escuro: seria preto sobre preto", () => {
+    for (const id of DARK_HERO) {
+      expect(DIRECTION_CATALOG[id].ground, `${id}.ground`).toBe("light");
+    }
+  });
+
+  it("passa AA de contraste entre a tinta do hero e a superfície do hero", () => {
+    for (const id of categoryIds) {
+      for (const seed of ["semente-a", "semente-b", "semente-c", "semente-d"]) {
+        const direction = resolveArtDirection({ sector: CATEGORY_LABELS[id], seed });
+        const hero = resolveHeroPalette(direction);
+        expect(contrast(hero.ink, hero.surface), `${id} hero ink/surface`)
+          .toBeGreaterThanOrEqual(4.5);
+        expect(contrast(hero.inkMuted, hero.surface), `${id} hero inkMuted/surface`)
+          .toBeGreaterThanOrEqual(4.5);
+        // O acento é a única cor que o motivo tem; um objeto que some no chão
+        // não é um objeto.
+        expect(contrast(hero.accent, hero.surface), `${id} hero accent/surface`)
+          .toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it("o hero escuro é preto puro, e o herdado é o chão do próprio site", () => {
+    for (const id of categoryIds) {
+      const direction = resolveArtDirection({ sector: CATEGORY_LABELS[id], seed: "semente" });
+      const hero = resolveHeroPalette(direction);
+      if (DIRECTION_CATALOG[id].hero.ground === "dark") {
+        expect(hero.surface, `${id}`).toBe("#000000");
+        expect(hero.ground, `${id}`).toBe("dark");
+      } else {
+        expect(hero.surface, `${id}`).toBe(direction.palette.surface);
+        expect(hero.ink, `${id}`).toBe(direction.palette.ink);
+        expect(hero.inkMuted, `${id}`).toBe(direction.palette.inkMuted);
+      }
+    }
+  });
+
+  it("nunca deriva um quase-preto para o hero", () => {
+    for (const id of categoryIds) {
+      const direction = resolveArtDirection({ sector: CATEGORY_LABELS[id], seed: "semente" });
+      const hero = resolveHeroPalette(direction);
+      for (const value of [hero.surface, hero.ink, hero.inkMuted, hero.accent]) {
+        const r = parseInt(value.slice(1, 3), 16);
+        const g = parseInt(value.slice(3, 5), 16);
+        const b = parseInt(value.slice(5, 7), 16);
+        expect(r === g && g === b && r > 0 && r < 0x13, `${id} ${value}`).toBe(false);
       }
     }
   });

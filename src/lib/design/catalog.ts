@@ -3,7 +3,7 @@
 // erased at compile time; a value import here would create a
 // temporal-dead-zone failure at module init instead.
 import type {
-  ArtDirection, MotionMoment, Palette, Radius, Rhythm, TypeSpec,
+  ArtDirection, HeroSpec, MotionMoment, Palette, Radius, Rhythm, TypeSpec,
 } from "./art-direction";
 import type { CategoryId } from "./category";
 
@@ -12,6 +12,12 @@ export type CategoryDirection = {
   anchor: string;
   ground: ArtDirection["ground"];
   device: string;
+  /**
+   * The opening. Fixed per category alongside the anchor and the device: the
+   * ground the hero stands on and the object it draws are the category's
+   * identity, not a seeded variant.
+   */
+  hero: HeroSpec;
   radius: Radius;
   motion: { moment: MotionMoment; maxMs: number };
   /** The variant space. A seed picks one of each. */
@@ -27,6 +33,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Azulejo e cardápio do dia",
     ground: "light",
     device: "menu-leader",
+    hero: { ground: "dark", motif: "azulejo" },
     radius: "none",
     motion: { moment: "hero-image", maxMs: 200 },
     paletteNames: ["azulejo", "cal"],
@@ -45,6 +52,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Espelho e latão sob luz baixa",
     ground: "dark",
     device: "facade-symmetry",
+    hero: { ground: "inherit", motif: "navalha" },
     radius: "none",
     motion: { moment: "hero-wordmark", maxMs: 200 },
     paletteNames: ["latao", "niquel"],
@@ -63,6 +71,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Placar de ginásio",
     ground: "light",
     device: "tabular-numeral",
+    hero: { ground: "dark", motif: "placar" },
     radius: "none",
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["placar", "apito"],
@@ -87,6 +96,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Sala de espera clara",
     ground: "light",
     device: "soft-radius",
+    hero: { ground: "inherit", motif: "patas" },
     radius: "lg",
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["sala", "consultorio"],
@@ -105,6 +115,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Manual de serviço",
     ground: "light",
     device: "spec-table",
+    hero: { ground: "dark", motif: "manual" },
     radius: "sm",
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["manual", "oficina"],
@@ -126,6 +137,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Grade horária",
     ground: "light",
     device: "timetable-grid",
+    hero: { ground: "inherit", motif: "grade-horaria" },
     radius: "sm",
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["grade", "quadro"],
@@ -144,6 +156,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Vitrine e etiqueta",
     ground: "light",
     device: "asymmetric-grid",
+    hero: { ground: "dark", motif: "vitrine" },
     radius: "none",
     motion: { moment: "hero-image", maxMs: 200 },
     paletteNames: ["vitrine", "etiqueta"],
@@ -162,6 +175,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Passe-partout",
     ground: "light",
     device: "wide-mount",
+    hero: { ground: "dark", motif: "passe-partout" },
     radius: "none",
     motion: { moment: "hero-image", maxMs: 200 },
     paletteNames: ["passe-partout", "moldura"],
@@ -180,6 +194,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Planta e cota",
     ground: "light",
     device: "dimension-line",
+    hero: { ground: "inherit", motif: "planta" },
     radius: "none",
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["planta", "cota"],
@@ -198,6 +213,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Encadernação e coluna",
     ground: "light",
     device: "bound-spine",
+    hero: { ground: "inherit", motif: "encadernacao" },
     radius: "none",
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["encadernacao", "coluna"],
@@ -216,6 +232,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Luz difusa",
     ground: "light",
     device: "large-body",
+    hero: { ground: "inherit", motif: "luz-difusa" },
     radius: "md",
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["luz", "bruma"],
@@ -234,6 +251,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Ficha de serviço",
     ground: "light",
     device: "plain-list",
+    hero: { ground: "inherit", motif: "ficha" },
     radius: "sm",
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["ficha", "ordem"],
@@ -252,6 +270,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Pedra e âmbar ao entardecer",
     ground: "dark",
     device: "full-bleed",
+    hero: { ground: "inherit", motif: "entardecer" },
     radius: "sm",
     motion: { moment: "hero-image", maxMs: 200 },
     paletteNames: ["pedra", "ambar"],
@@ -270,6 +289,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     anchor: "Índice",
     ground: "light",
     device: "tabular-index",
+    hero: { ground: "inherit", motif: "indice" },
     radius: "sm",
     motion: { moment: "none", maxMs: 200 },
     paletteNames: ["indice", "sumario"],

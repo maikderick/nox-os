@@ -34,6 +34,38 @@ describe("emissor de custom properties", () => {
     expect(vars["--font-display"]).toBe("var(--font-inter-tight)");
   });
 
+  it("emite os cinco tokens do hero", () => {
+    // Barbearia herda o chão: os tokens do hero são os do site, e é isso que
+    // deixa o renderizador endereçar o hero sem um segundo caminho de código.
+    const vars = toCssVariables(direction);
+    expect(vars["--hero-surface"]).toBe(direction.palette.surface);
+    expect(vars["--hero-ink"]).toBe(direction.palette.ink);
+    expect(vars["--hero-ink-muted"]).toBe(direction.palette.inkMuted);
+    expect(vars["--hero-accent"]).toBe(direction.palette.accent);
+    expect(vars["--hero-spotlight"]).toBe("#FFFFFF33");
+  });
+
+  it("inverte os tokens do hero quando a direção abre no escuro sobre um corpo claro", () => {
+    const food = resolveArtDirection({ sector: "Pizzaria", seed: "semente-fixa" });
+    const vars = toCssVariables(food);
+    expect(food.hero.ground).toBe("dark");
+    expect(vars["--hero-surface"]).toBe("#000000");
+    expect(vars["--hero-ink"]).toBe(food.palette.surface);
+    expect(vars["--hero-ink-muted"]).not.toBe(food.palette.inkMuted);
+    // O corpo continua no chão da direção: dois chãos, nunca três.
+    expect(vars["--surface"]).toBe(food.palette.surface);
+  });
+
+  it("acende o hero claro com um neutro, não com o acento", () => {
+    // Um matiz a 18% sobre off-white lê como mancha, não como luz. No chão
+    // claro o spotlight é a própria tinta da direção a 6% — o lado de sombra,
+    // que é o que a luz sobre uma superfície pálida realmente parece.
+    const light = resolveArtDirection({ sector: "Advocacia", seed: "semente-fixa" });
+    expect(light.hero.ground).toBe("inherit");
+    expect(light.ground).toBe("light");
+    expect(toCssVariables(light)["--hero-spotlight"]).toBe(`${light.palette.ink}0F`);
+  });
+
   it("zera --motion-max quando a direção não tem movimento de entrada", () => {
     const noMotion = resolveArtDirection({ sector: "Advocacia", seed: "semente-fixa" });
     expect(noMotion.motion.moment).toBe("none");
@@ -74,6 +106,37 @@ describe("emissor de DESIGN.md", () => {
   it("traz as quinze regras na seção Don't", () => {
     expect(markdown).toContain("### Don't");
     expect(markdown.split("### Don't")[1]).toContain("Sem gradiente radial");
+  });
+
+  it("descreve o contrato do hero, para o agente construir o mesmo que a prévia", () => {
+    expect(markdown).toContain("### Hero");
+    const hero = markdown.split("### Hero")[1].split("## Do's and Don'ts")[0];
+    expect(hero).toContain("88vh");
+    // O contrato do título é o que o renderizador realmente aplica, escala a
+    // escala: um agente que lesse o teto antigo entregaria um hero diferente
+    // do que o cliente aprovou na prévia.
+    expect(hero).toContain("clamp(2.6rem, 6.5vw, 6rem)");
+    expect(hero).toContain("clamp(2.6rem, 12vw, 4rem)");
+    expect(hero).toContain("hyphens: manual");
+    expect(hero).not.toContain("clamp(3rem, 8vw, 7rem)");
+    expect(hero).toContain("data-hero-spotlight");
+    expect(hero).toContain("data-category-motif");
+    expect(hero).toContain(direction.hero.motif);
+    expect(hero).toContain("--hero-ink-muted");
+    // O agente precisa do CTA e do papel do quinto token: lendo só o
+    // documento, ele usaria `--accent` e reproduziria o objeto invisível que
+    // `--hero-accent` existe para evitar.
+    expect(hero).toContain("**CTA**");
+    expect(hero).toContain("--hero-accent");
+    expect(hero).toContain("2:1");
+    expect(hero).toContain("**Cabeçalho**");
+  });
+
+  it("conta ao agente que o gradiente e o glow valem uma vez, no hero", () => {
+    const dont = markdown.split("### Don't")[1];
+    expect(dont).toContain("fora do hero");
+    expect(dont).toContain("O spotlight do hero é permitido uma vez.");
+    expect(dont).toContain("No máximo dois chãos");
   });
 
   it("declara o orçamento de movimento com o teto em milissegundos", () => {
