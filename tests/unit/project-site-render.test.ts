@@ -280,6 +280,112 @@ describe("renderizador do site", () => {
 /** One sector per device family: leader, index, spine and the plain fallback. */
 const DEVICE_FAMILY_SECTORS = ["Pizzaria", "Academia", "Advocacia", "Pet shop"];
 
+/** One sector per category, with the motif its direction has to draw. */
+const CATEGORY_CASES: [string, string, string][] = [
+  ["food", "Pizzaria", "azulejo"],
+  ["beauty", "Barbearia", "navalha"],
+  ["fitness", "Academia", "placar"],
+  ["pet", "Pet shop", "patas"],
+  ["auto", "Oficina mecânica", "manual"],
+  ["education", "Escola de idiomas", "grade-horaria"],
+  ["retail", "Loja de roupas", "vitrine"],
+  ["events", "Fotógrafo", "passe-partout"],
+  ["realestate", "Imobiliária", "planta"],
+  ["professional", "Advocacia", "encadernacao"],
+  ["health", "Consultório odontológico", "luz-difusa"],
+  ["services", "Chaveiro", "ficha"],
+  ["tourism", "Pousada", "entardecer"],
+  ["catalog", "Catálogo", "indice"],
+];
+
+function occurrences(html: string, needle: string): number {
+  return html.split(needle).length - 1;
+}
+
+describe("hero imersivo", () => {
+  // A reversão de 2026-09-04 (spec §13, errata 6): o dono pediu o impacto de
+  // um hero de tela cheia, e o preço foram três regras anti-slop e o
+  // orçamento de movimento abertos — só no hero. Estes testes são o cerco: o
+  // que foi liberado aparece uma vez, dentro do hero, e não escapa para o
+  // corpo da página.
+  const full = richFixture();
+
+  it("desenha o motivo da categoria, e um diferente para cada uma", () => {
+    const drawn = new Set<string>();
+    for (const [id, sector, motif] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(html, `${id}: sem motivo`).toContain('data-category-motif=""');
+      expect(html, `${id}: motivo errado`).toContain(`data-motif="${motif}"`);
+      drawn.add(motif);
+    }
+    expect(drawn.size).toBe(14);
+  });
+
+  it("acende exatamente um spotlight, e nenhuma regra anti-slop cai", () => {
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(occurrences(html, "data-hero-spotlight"), id).toBe(1);
+      expect(findSlop(html).map((rule) => rule.id), id).toEqual([]);
+    }
+  });
+
+  it("dá ao título o tamanho fluido do hero, não o passo --text-display", () => {
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(html, id).toContain('<h1 class="site-hero-title"');
+      expect(html, id).toContain("font-size:clamp(3rem,8vw,7rem)");
+    }
+  });
+
+  it("põe o hero em preto puro sobre um corpo claro nas cinco categorias escolhidas", () => {
+    // `beauty` e `tourism` já abrem no escuro porque a página inteira é
+    // escura: o marcador diz o chão resolvido, não o campo do catálogo, e é
+    // por isso que a inversão só é asseverada nas cinco.
+    const inverted = ["food", "fitness", "auto", "retail", "events"];
+    const darkHero = [...inverted, "beauty", "tourism"];
+
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(html, id).toContain(
+        `data-hero-ground="${darkHero.includes(id) ? "dark" : "light"}"`,
+      );
+      if (!inverted.includes(id)) continue;
+      expect(html, id).toContain("--hero-surface:#000000");
+      // O corpo não segue o hero: dois chãos no total, nunca um terceiro.
+      expect(html, id).toContain('data-ground="light"');
+      expect(html, id).not.toContain("--surface:#000000;");
+    }
+  });
+
+  it("guarda todo movimento atrás de prefers-reduced-motion, sem hover e sem transition", () => {
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(html, id).toContain("@media (prefers-reduced-motion");
+      // Toda `animation:` declarada tem de cair dentro de um bloco de
+      // reduced-motion. Contá-las prova isso sem parsear CSS: fora desses
+      // blocos o renderizador não escreve nenhuma.
+      const guarded =
+        html.split("@media (prefers-reduced-motion").slice(1).join("").split("animation:").length -
+        1;
+      expect(occurrences(html, "animation:"), `${id}: animação fora do bloco`).toBe(guarded);
+      expect(html, id).not.toContain("transition");
+      expect(html, id).not.toContain("hover");
+    }
+  });
+
+  it("não publica no hero o que o operador respondeu sobre a encomenda", () => {
+    const html = render("Pizzaria", "s", {
+      ...full,
+      objective: fact("criar um site focado em vendas"),
+      audience: fact("publico voltado a comida"),
+    });
+    const hero = html.slice(html.indexOf('id="inicio"'), html.indexOf('id="sobre"'));
+    expect(hero).toContain("Informações claras e verificadas sobre o negócio.");
+    expect(hero).not.toContain("criar um site focado em vendas");
+    expect(hero).not.toContain("publico voltado a comida");
+  });
+});
+
 describe("o site nunca publica o que o operador respondeu sobre a encomenda", () => {
   it("não imprime o objetivo nem o público em nenhuma das quatro famílias", () => {
     // O defeito real: um site que dizia ao visitante "criar um site
