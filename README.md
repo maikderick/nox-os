@@ -171,6 +171,28 @@ permissão nomeada — inclusive as rotas de prospecção, importação e demons
 > global com atribuição. Veja o gate em
 > [a arquitetura da fábrica](docs/arquitetura-fabrica-de-sites.md).
 
+### Direção de arte por categoria
+
+O texto livre do setor no briefing resolve para uma de quatorze categorias. Cada
+categoria tem uma direção de arte autoral — âncora sensorial, paleta, par tipográfico,
+raio, ritmo de espaçamento e um dispositivo estrutural — e um espaço de variantes
+(paletas, tipos e ritmos alternativos) sorteado por semente, para que dois clientes da
+mesma categoria não recebam a mesma página.
+
+A direção é configuração, não fato: quem resolve é uma função pura de setor +
+`SiteProject.id`, nunca um modelo, então a mesma entrada rende sempre a mesma saída.
+Um único objeto alimenta as duas pontas — as variáveis CSS da prévia em `/sites/[id]` e
+o `DESIGN.md` que o agente de geração lê.
+
+Quinze regras anti-slop (um acento por site, um raio por site, preto é `#000000`, sem
+glow, sem gradiente radial, sem emoji como ícone) são verificadas por um linter sobre o
+markup renderizado, não apenas descritas em prosa. Os blocos da página só aparecem
+quando o fato por trás deles está confirmado no briefing: sem telefone confirmado, sem
+bloco de contato. A página do projeto em `/projetos/[id]` mostra a direção resolvida
+antes de qualquer geração.
+
+Especificação: [direção de arte por categoria](docs/superpowers/specs/2026-09-03-direcao-de-arte-por-categoria-design.md).
+
 ## Provisionamento
 
 Com um briefing pronto, `/projetos/[id]/provisionamento` leva o projeto por quatro

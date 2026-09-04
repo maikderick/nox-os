@@ -59,6 +59,20 @@ function richFixture() {
 
 const RICH_FIXTURE_SECTORS = ["Barbearia", "Advocacia", "Pizzaria", "Clínica odontológica", "Pousada"];
 
+/** Every CSS declaration of every inline `style` attribute in the markup. */
+function styleDeclarations(html: string): string[] {
+  return Array.from(html.matchAll(/style="([^"]*)"/g)).flatMap((match) =>
+    match[1].split(";").filter((declaration) => declaration.includes(":")),
+  );
+}
+
+/** The contact section only: from its `id` to the end of the document. */
+function contactBlock(html: string): string {
+  const start = html.indexOf('id="contato"');
+  expect(start).toBeGreaterThan(-1);
+  return html.slice(start);
+}
+
 describe("renderizador do site", () => {
   it("não comete nenhuma das regras anti-slop", () => {
     for (const sector of ["Barbearia", "Advocacia", "Pizzaria", "Clínica odontológica", "Pousada"]) {
@@ -78,18 +92,50 @@ describe("renderizador do site", () => {
   });
 
   it("nunca usa o accent para colorir texto", () => {
-    // The accent may draw an edge (border) or a background, but coloring
-    // words with it risks contrast failures the palette was not built to
-    // guarantee. It must also appear at most once: today that is the hero's
-    // CTA border, so a second occurrence would flag a new, unreviewed use.
+    // The accent may draw an edge (border) or a fill (background), but never
+    // a letterform: colouring words with it risks contrast failures the
+    // palette was not built to guarantee. Counting occurrences would only
+    // freeze today's total; what matters is the *property* every occurrence
+    // lands on, so each declaration is checked by name.
     const full = richFixture();
     for (const sector of RICH_FIXTURE_SECTORS) {
       const html = render(sector, "semente-fixa", full);
       expect(html, sector).not.toContain("color:var(--accent)");
       expect(html, sector).not.toContain("color: var(--accent)");
-      const occurrences = html.match(/var\(--accent\)/g) ?? [];
-      expect(occurrences.length, sector).toBeLessThanOrEqual(1);
+      for (const declaration of styleDeclarations(html)) {
+        if (!declaration.includes("var(--accent)")) continue;
+        const property = declaration.slice(0, declaration.indexOf(":")).trim();
+        expect(
+          property.startsWith("background") || property.startsWith("border"),
+          `${sector}: ${declaration}`,
+        ).toBe(true);
+      }
     }
+  });
+
+  it("põe uma régua de accent sob cada título de seção", () => {
+    // The accent's structural work: a short rule under every `<h2>`. Every
+    // direction emits it, including the two whose accent equals the ink.
+    const full = richFixture();
+    for (const sector of RICH_FIXTURE_SECTORS) {
+      expect(render(sector, "semente-fixa", full), sector).toContain("background:var(--accent)");
+    }
+  });
+
+  it("dá trabalho estrutural ao raio, nas caixas de contato", () => {
+    // React serialises the custom property literally, so the rendered row
+    // reads `border-radius:var(--radius)` whatever the direction; the value
+    // it resolves to is asserted on `<main>`, where `--radius` is defined.
+    const full = richFixture();
+
+    const pet = render("Pet shop", "semente-fixa", full);
+    expect(pet).toContain("--radius:20px");
+    expect(contactBlock(pet)).toContain("border-radius:var(--radius)");
+    expect(contactBlock(pet)).toContain("border:1px solid var(--line)");
+
+    const law = render("Advocacia", "semente-fixa", full);
+    expect(law).toContain("--radius:0px");
+    expect(contactBlock(law)).toContain("border-radius:var(--radius)");
   });
 
   it("aplica a paleta da direção resolvida", () => {

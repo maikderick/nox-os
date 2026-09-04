@@ -156,6 +156,22 @@ const ROW: CSSProperties = {
 
 const ICON: CSSProperties = { color: "var(--ink-muted)", flexShrink: 0 };
 
+/**
+ * A contact channel, as a box.
+ *
+ * The only place on the page where `--radius` shapes a container. Contact is
+ * the block where a shape is legible — a short list of separate destinations,
+ * each of which is one thing you can do — and it is the one block every site
+ * with a confirmed channel has. Directions whose radius is `none` get square
+ * boxes; `pet` (`lg`) and `health` (`md`) round, which is the whole point of
+ * a direction declaring a radius. No shadow: the border is the edge.
+ */
+const CONTACT_BOX: CSSProperties = {
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius)",
+  padding: "var(--space-inline)",
+};
+
 /** A section: one ground, one measure, and the spine when the device asks. */
 function SiteSection({
   id,
@@ -189,8 +205,34 @@ function SiteSection({
   );
 }
 
+/**
+ * A section heading, with the accent as a rule beneath it.
+ *
+ * The accent as *régua*: a 40x2px mark under every `<h2>`, in all four
+ * families, which is a few hundred pixels across a whole page — well inside
+ * the 5% of rule `accent-flood` — and never a letterform, so it can never
+ * fail contrast the way accent-coloured text would. On `retail` and `events`
+ * the accent equals the ink, so the mark reads as an ink rule; that is the
+ * direction speaking, not a defect.
+ */
 function SectionHeading({ weight, children }: { weight: number; children: ReactNode }) {
-  return <h2 style={headingText(weight)}>{children}</h2>;
+  return (
+    <>
+      <h2 style={headingText(weight)}>{children}</h2>
+      <div
+        aria-hidden="true"
+        style={{
+          display: "block",
+          width: "2.5rem",
+          height: "2px",
+          // Half the inline step: the heading and its rule are one unit, and
+          // a full step would read as a separator between two things.
+          marginTop: "calc(var(--space-inline) / 2)",
+          background: "var(--accent)",
+        }}
+      />
+    </>
+  );
 }
 
 /** A dimension line: a rule with a tick at each end, as on a floor plan. */
@@ -253,7 +295,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
   const contactRows: ReactNode[] = [];
   if (contact.phone) {
     contactRows.push(
-      <li key="phone" style={ROW}>
+      <li key="phone" style={CONTACT_BOX}>
         <a
           href={`tel:${contact.phone.value}`}
           className="flex items-center gap-3"
@@ -267,7 +309,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
   }
   if (contact.whatsapp) {
     contactRows.push(
-      <li key="whatsapp" style={ROW}>
+      <li key="whatsapp" style={CONTACT_BOX}>
         <a
           href={`https://wa.me/${contact.whatsapp.value.replace(/\D/g, "")}`}
           target="_blank"
@@ -283,7 +325,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
   }
   if (contact.email) {
     contactRows.push(
-      <li key="email" style={ROW}>
+      <li key="email" style={CONTACT_BOX}>
         <a
           href={`mailto:${contact.email.value}`}
           className="flex items-center gap-3"
@@ -297,7 +339,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
   }
   for (const social of contact.socialLinks) {
     contactRows.push(
-      <li key={social.value.url} style={ROW}>
+      <li key={social.value.url} style={CONTACT_BOX}>
         <a
           href={social.value.url}
           target="_blank"
@@ -613,7 +655,18 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
       {has("contact") ? (
         <SiteSection id="contato" ground={groundOf("contact")} spine={spine}>
           <SectionHeading weight={headingWeight}>Contato</SectionHeading>
-          <ul style={{ marginTop: "var(--space-block)", maxWidth: "48ch", listStyle: "none" }}>
+          <ul
+            style={{
+              marginTop: "var(--space-block)",
+              maxWidth: "48ch",
+              listStyle: "none",
+              display: "grid",
+              // The boxes are parted by space, not by a shared border: two
+              // adjacent 1px borders would read as a 2px rule and undo the
+              // separation the box is there to make.
+              gap: "calc(var(--space-inline) / 2)",
+            }}
+          >
             {contactRows}
           </ul>
         </SiteSection>
