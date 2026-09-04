@@ -21,9 +21,11 @@ import {
   BRIEF_DAYS,
   BRIEF_FACT_SOURCES,
   BRIEF_SOCIAL_PLATFORMS,
+  isSiteBriefV2,
   type BriefPublicContact,
   type BriefService,
   type ConfirmedFact,
+  type SiteBrief,
   type SiteBriefV2,
 } from "./brief-schema";
 
@@ -398,6 +400,26 @@ export type ContactDraft = {
   address: AddressDraft;
   openingHours: OpeningHoursDraft[];
   socialLinks: SocialLinkDraft[];
+  /**
+   * The confirmation the loaded week already carried.
+   *
+   * The wizard has no per-day "confirmado" control — the whole week is one
+   * fact — so a brand new week is stamped at build time. A week that came from
+   * a stored brief keeps the stamp and the source it was confirmed with, and
+   * loses them the moment a row is edited ({@link editOpeningHours}). Without
+   * this, opening an existing briefing and saving it would re-date a schedule
+   * nobody looked at, and rewrite a `CLIENTE` confirmation as the operator's.
+   */
+  openingHoursFact?: { source: BriefFactSource; confirmedAt: string } | null;
+  /**
+   * Coordinates carried through untouched.
+   *
+   * Nothing in the wizard edits a latitude, but the brief may hold one and the
+   * export publishes it. Rebuilding a stored brief without this dropped the
+   * map pin of every project that had one. Editing the address clears it: a
+   * pin for an address that changed is worse than no pin.
+   */
+  coordinates?: BriefPublicContact["coordinates"];
 };
 
 export function emptyAddressDraft(): AddressDraft {
@@ -423,6 +445,48 @@ export function emptyContactDraft(): ContactDraft {
     address: emptyAddressDraft(),
     openingHours: emptyOpeningHoursDraft(),
     socialLinks: [],
+    openingHoursFact: null,
+    coordinates: null,
+  };
+}
+
+/**
+ * Applies an edit to one weekly row.
+ *
+ * Editing any row drops the week's carried confirmation, so the schedule that
+ * reaches the payload is stamped now, by whoever changed it, instead of
+ * inheriting a confirmation that was given for different hours.
+ */
+export function editOpeningHours(
+  contact: ContactDraft,
+  index: number,
+  update: Partial<OpeningHoursDraft>,
+): ContactDraft {
+  return {
+    ...contact,
+    openingHours: contact.openingHours.map((day, position) =>
+      position === index ? { ...day, ...update } : day,
+    ),
+    openingHoursFact: null,
+  };
+}
+
+/**
+ * Applies an edit to the address.
+ *
+ * Editing drops the confirmation and, unless the change came from a lead
+ * suggestion, the lead attribution: what was checked is no longer what would
+ * be published. It also drops the coordinates, which described the old
+ * address and would otherwise put the map pin somewhere nobody chose.
+ */
+export function editAddressDraft(
+  contact: ContactDraft,
+  update: Partial<AddressDraft>,
+): ContactDraft {
+  return {
+    ...contact,
+    address: { ...contact.address, source: "OPERADOR", ...update, confirmedAt: null },
+    coordinates: null,
   };
 }
 
@@ -804,21 +868,25 @@ function buildPublicContact(contact: ContactDraft): BriefPublicContact {
             confirmedAt: address.confirmedAt,
           }
         : null,
-    coordinates: null,
+    // Never edited here, only carried: see `ContactDraft.coordinates`.
+    coordinates: contact.coordinates ?? null,
     // The weekly editor has no per-day "confirmado" control of its own — the
     // whole week is one fact, confirmed the moment the brief is built, the same
-    // way `differentiators` turns a single authored field into one fact.
+    // way `differentiators` turns a single authored field into one fact. A week
+    // loaded from a stored brief and left alone keeps the confirmation it
+    // arrived with, so re-saving does not re-date what nobody touched.
     openingHours: (() => {
       const openDays = contact.openingHours.filter((day) => day.isOpen);
       if (openDays.length === 0) return null;
+      const carried = contact.openingHoursFact;
       return {
         value: openDays.map((day) => ({
           dayOfWeek: day.dayOfWeek,
           opens: day.opens,
           closes: day.closes,
         })),
-        source: "OPERADOR",
-        confirmedAt: nowIso(),
+        source: carried?.source ?? "OPERADOR",
+        confirmedAt: carried?.confirmedAt ?? nowIso(),
       };
     })(),
     socialLinks: contact.socialLinks.flatMap((link) =>
@@ -1065,4 +1133,226 @@ export function buildBriefV2(draft: BriefDraft): BriefDraftBuild {
       metaDescription: toConfirmedFact(draft.metaDescription),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Um briefing gravado, de volta ao rascunho
+// ---------------------------------------------------------------------------
+
+/**
+ * A stored fact as the editor holds it.
+ *
+ * Copied field by field, never re-stamped. `confirmedAt` records when a person
+ * said a value was right; reopening the briefing is not saying it again, so an
+ * editor that re-dated what it loaded would turn every visit into a fresh
+ * confirmation nobody gave.
+ */
+function storedFact(fact: ConfirmedFact | null | undefined): DraftFact {
+  if (!fact) return emptyFact();
+  return { value: fact.value, source: fact.source, confirmedAt: fact.confirmedAt };
+}
+
+/**
+ * A list of facts as one editable field.
+ *
+ * The wizard edits `differentiators` as a single text area, so the whole list
+ * shares one source and one confirmation — which is how {@link buildBriefV2}
+ * writes it back. One per line, which is the readable half of the field's
+ * contract; the other half is that a comma also separates
+ * ({@link splitList}), so an item that contains one cannot survive the trip
+ * and is reported by {@link briefDraftLosses} before anything is saved.
+ */
+function storedList(facts: ConfirmedFact[]): DraftFact {
+  const first = facts[0];
+  if (!first) return emptyFact();
+  return {
+    value: facts.map((fact) => fact.value).join("\n"),
+    source: first.source,
+    confirmedAt: first.confirmedAt,
+  };
+}
+
+function storedServiceDraft(service: BriefService, index: number): ServiceDraft {
+  return {
+    key: `brief-service-${index}`,
+    id: service.id,
+    // The id is what the service is published at. It arrived fixed and stays
+    // fixed: renaming a service in the editor must not move a live URL.
+    idPinned: true,
+    name: service.name.value,
+    summary: service.summary.value,
+    body: service.body.map((paragraph) => paragraph.value).join("\n"),
+    price: service.price?.value ?? "",
+    featured: service.featured,
+    relatedIds: [...service.relatedIds],
+    confirmedAt: service.name.confirmedAt,
+  };
+}
+
+/**
+ * A v1 service, which is a name and nothing else.
+ *
+ * It is carried over rather than dropped, with an empty summary and body —
+ * which the draft validation then refuses to send. That refusal is the point:
+ * the operator sees the names the old briefing had and is asked to describe
+ * them, instead of finding the list silently emptied.
+ */
+function legacyServiceDraft(fact: ConfirmedFact, index: number): ServiceDraft {
+  return {
+    key: `brief-service-${index}`,
+    id: slugifyServiceId(fact.value),
+    idPinned: true,
+    name: fact.value,
+    summary: "",
+    body: "",
+    price: "",
+    featured: false,
+    relatedIds: [],
+    confirmedAt: fact.confirmedAt,
+  };
+}
+
+function storedContactDraft(contact: BriefPublicContact): ContactDraft {
+  const empty = emptyContactDraft();
+  const address = contact.address;
+  const openingHours = contact.openingHours;
+
+  return {
+    phone: storedFact(contact.phone),
+    whatsapp: storedFact(contact.whatsapp),
+    email: storedFact(contact.email),
+    address: address
+      ? {
+          street: address.value.street,
+          number: address.value.number ?? "",
+          complement: address.value.complement ?? "",
+          neighborhood: address.value.neighborhood ?? "",
+          city: address.value.city,
+          state: address.value.state,
+          postalCode: address.value.postalCode ?? "",
+          country: address.value.country,
+          source: address.source,
+          confirmedAt: address.confirmedAt,
+        }
+      : empty.address,
+    // Seven rows always exist; a stored day fills its own. A brief that names
+    // the same day twice — a split shift, which the schema allows and this
+    // editor cannot express — keeps the first range and reports the rest
+    // through `briefDraftLosses`, rather than dropping one in silence.
+    openingHours: empty.openingHours.map((day) => {
+      const stored = openingHours?.value.find((entry) => entry.dayOfWeek === day.dayOfWeek);
+      return stored
+        ? { dayOfWeek: day.dayOfWeek, isOpen: true, opens: stored.opens, closes: stored.closes }
+        : day;
+    }),
+    openingHoursFact: openingHours
+      ? { source: openingHours.source, confirmedAt: openingHours.confirmedAt }
+      : null,
+    coordinates: contact.coordinates,
+    socialLinks: contact.socialLinks.map((link, index) => ({
+      key: `brief-social-${index}`,
+      platform: link.value.platform,
+      url: link.value.url,
+      label: link.value.label ?? "",
+      source: link.source,
+      confirmedAt: link.confirmedAt,
+    })),
+  };
+}
+
+/**
+ * A stored briefing, back in the form that produced it.
+ *
+ * The exact inverse of {@link buildBriefV2} for everything the wizard can
+ * express, so an operator opens an existing project, changes one sentence and
+ * saves without any other fact silently changing underneath them. Two rules
+ * hold it together: nothing is re-stamped, and nothing the editor cannot show
+ * is invented — a missing field becomes an empty draft the operator has to
+ * fill, not a plausible default.
+ *
+ * A v1 briefing loads too. It has no presentation text, no public contact and
+ * no describable services, so those arrive empty and the draft validation asks
+ * for them; saving writes a v2, which is the only migration path there is.
+ */
+export function briefToDraft(brief: SiteBrief): BriefDraft {
+  const v2 = isSiteBriefV2(brief) ? brief : null;
+
+  return {
+    businessName: storedFact(brief.businessName),
+    sector: storedFact(brief.sector),
+    city: storedFact(brief.city),
+    about: storedFact(v2?.about),
+    objective: storedFact(brief.objective),
+    audience: storedFact(brief.audience),
+    positioning: storedFact(brief.positioning),
+    visualDirection: storedFact(brief.visualDirection),
+    notes: storedFact(brief.notes),
+    metaDescription: storedFact(v2?.metaDescription),
+    differentiators: storedList(brief.differentiators),
+    // One per line: a section name is free text up to 80 characters and may
+    // hold a comma, which the comma-separated form would split in two.
+    desiredSections: brief.desiredSections.join("\n"),
+    // Narrowed on `brief` rather than on `v2`: a v1 service is a bare fact and
+    // a v2 service is a whole record, and only the predicate tells them apart.
+    services: isSiteBriefV2(brief)
+      ? brief.services.map(storedServiceDraft)
+      : brief.services.map(legacyServiceDraft),
+    contact: isSiteBriefV2(brief) ? storedContactDraft(brief.publicContact) : emptyContactDraft(),
+  };
+}
+
+/**
+ * What this editor cannot carry back out of a stored briefing.
+ *
+ * The draft model is the wizard's, and the schema is wider than the wizard: a
+ * day may hold two ranges, a list item may contain the character that
+ * separates the list, and each service fact may carry its own source. Loading
+ * such a briefing and saving it would quietly normalise the parts the form
+ * cannot show, so they are reported instead — the operator decides whether to
+ * save, knowing what saving costs.
+ */
+export function briefDraftLosses(brief: SiteBrief): string[] {
+  const losses: string[] = [];
+
+  // Both lists are edited as one text box each, where a comma and a line break
+  // both mean "next item". An item that already contains a comma comes back as
+  // two, so the operator is told before saving rather than after.
+  for (const fact of brief.differentiators) {
+    if (!fact.value.includes(",")) continue;
+    losses.push(
+      `O diferencial “${fact.value}” tem vírgula, e o campo separa os diferenciais por vírgula. Salvar vai dividi-lo em dois: reescreva-o sem vírgula para mantê-lo inteiro.`,
+    );
+  }
+  for (const section of brief.desiredSections) {
+    if (!section.includes(",")) continue;
+    losses.push(
+      `A seção “${section}” tem vírgula, e o campo separa as seções por vírgula. Salvar vai dividi-la em duas.`,
+    );
+  }
+
+  if (!isSiteBriefV2(brief)) return losses;
+
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  for (const day of brief.publicContact.openingHours?.value ?? []) {
+    if (seen.has(day.dayOfWeek)) repeated.add(day.dayOfWeek);
+    seen.add(day.dayOfWeek);
+  }
+  for (const day of BRIEF_DAYS) {
+    if (!repeated.has(day)) continue;
+    losses.push(
+      `${OPENING_HOURS_DAY_LABELS[day]}: o briefing guarda mais de um intervalo neste dia. O editor mostra apenas o primeiro, e salvar descarta os demais.`,
+    );
+  }
+
+  const attributed = brief.services.filter((service) => service.name.source !== "OPERADOR");
+  if (attributed.length > 0) {
+    losses.push(
+      attributed.length === 1
+        ? "Um serviço foi confirmado por outra origem que não o operador. Salvar passa a atribuí-lo ao operador."
+        : `${attributed.length} serviços foram confirmados por outra origem que não o operador. Salvar passa a atribuí-los ao operador.`,
+    );
+  }
+
+  return losses;
 }
