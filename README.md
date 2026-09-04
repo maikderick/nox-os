@@ -156,6 +156,13 @@ o cliente. O painel também preserva a prévia interna autenticada. O estado
 `PUBLICADO` continua reservado para a publicação definitiva; a passagem para
 `PUBLICANDO` exige `publish:approve`.
 
+Com o renderizador determinístico, o site é calculado a partir do briefing confirmado e
+não espera nenhum agente: **"Gerar site"** (`project:write`) move `BRIEFING_PRONTO` para
+`PREVIA_PRONTA` e é isso que abre o link público de apresentação em `/sites/[id]`. A
+prévia interna autenticada depende apenas de existir briefing confirmado. A geração por
+agente (`GERANDO`) continua sendo o caminho que constrói o repositório real — etapa
+seguinte e opcional.
+
 `GERANDO` é conduzido pela fila e pelos observadores de checks e prévia. `PUBLICANDO`
 continua fechado: publicação real exige a etapa de aprovação e operação em provedores
 `LIVE`, que não está habilitada neste release.

@@ -214,6 +214,49 @@ describe("renderizador do site", () => {
     expect(new Set([food, auto, law]).size).toBe(3);
   });
 
+  it("publica o preço confirmado, como o operador digitou, nas quatro famílias", () => {
+    // One sector per device family: Pizzaria is `menu-leader`, Academia an
+    // index device, Advocacia the spine, Pet shop the plain fallback. The
+    // price is a confirmed fact like any other — `content-integrity`'s `preco`
+    // rule reads narrative prose at parse time, and a structured `price` is
+    // not prose — so it is published verbatim, with no currency formatting.
+    const priced = {
+      services: [
+        {
+          id: "corte",
+          name: fact("Corte"),
+          summary: fact("Corte na tesoura ou na máquina."),
+          body: [fact("Acabamento na navalha.")],
+          price: fact("R$ 45"),
+          relatedIds: [],
+          featured: false,
+        },
+      ],
+    };
+
+    for (const sector of ["Pizzaria", "Academia", "Advocacia", "Pet shop"]) {
+      const html = render(sector, "semente-fixa", priced);
+      expect(html, sector).toContain("R$ 45");
+      expect(findSlop(html).map((rule) => rule.id), sector).toEqual([]);
+    }
+  });
+
+  it("não inventa preço: sem o fato, nada aparece", () => {
+    const html = render("Pizzaria", "semente-fixa", {
+      services: [
+        {
+          id: "corte",
+          name: fact("Corte"),
+          summary: fact("Corte na tesoura ou na máquina."),
+          body: [fact("Acabamento na navalha.")],
+          relatedIds: [],
+          featured: false,
+        },
+      ],
+    });
+    expect(html).not.toContain("R$");
+  });
+
   it("nunca sintetiza negrito sobre Instrument Serif", () => {
     // events (Fotógrafo) is the only category whose display face is
     // instrument-serif, and that family ships a single real weight, 400.

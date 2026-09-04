@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { GenerateSiteButton } from "@/components/projetos/generate-site-button";
 import { GenerationControls } from "@/components/projetos/generation-controls";
 import { requirePermission } from "@/lib/authz/dal";
 import { getEffectiveMode } from "@/lib/integrations/settings-service";
@@ -8,6 +9,7 @@ import { getSiteProject } from "@/lib/site-factory/project-service";
 import {
   hasInternalPreview,
   isSiteProjectState,
+  SITE_PROJECT_STATE_LABELS,
   statesWithTransitionTo,
 } from "@/lib/site-factory/states";
 import { requireUser } from "@/lib/session";
@@ -45,17 +47,60 @@ export default async function GenerationPage({ params }: { params: Promise<{ id:
     githubMode !== "DESLIGADO" &&
     vercelMode !== "DESLIGADO";
   const previewReady = isSiteProjectState(project.status) && hasInternalPreview(project.status);
+  const stateLabel = isSiteProjectState(project.status)
+    ? SITE_PROJECT_STATE_LABELS[project.status]
+    : project.status;
+  // The deterministic release does not touch a provider, so it is offered on
+  // its own terms: the agent pipeline below can be off, or unconfigured, and
+  // the operator still gets a site out of the confirmed brief.
+  const canGenerateSite =
+    project.status === "BRIEFING_PRONTO" &&
+    Boolean(project.currentBriefVersionId) &&
+    actor.permissions.includes("project:write");
 
   return (
     <div className="space-y-8">
       <section>
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-nox-cyan">Geração</p>
+        <p className="nox-eyebrow">Geração</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">{project.name}</h1>
-        <p className="mt-3 text-sm text-nox-muted">
-          Cursor: {INTEGRATION_MODE_LABELS[cursorMode]} · GitHub: {INTEGRATION_MODE_LABELS[githubMode]}
-          {" · "}Vercel: {INTEGRATION_MODE_LABELS[vercelMode]} · projeto: {project.status}
+        <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-nox-muted">
+          <span>Cursor: {INTEGRATION_MODE_LABELS[cursorMode]}</span>
+          <span>GitHub: {INTEGRATION_MODE_LABELS[githubMode]}</span>
+          <span>Vercel: {INTEGRATION_MODE_LABELS[vercelMode]}</span>
+          <span>Projeto: {stateLabel}</span>
         </p>
       </section>
+
+      {canGenerateSite ? (
+        <section className="rounded-2xl border border-nox-cyan/30 bg-nox-cyan/5 p-6">
+          <h2 className="text-xl font-semibold text-white">Gerar o site</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+            Gera o site a partir do briefing confirmado e libera a prévia. A construção do
+            repositório por agente é a etapa seguinte e opcional.
+          </p>
+          <div className="mt-5">
+            <GenerateSiteButton projectId={project.id} />
+          </div>
+        </section>
+      ) : null}
+
+      {previewReady ? (
+        <section className="rounded-2xl border border-nox-border bg-nox-surface p-6">
+          <h2 className="text-xl font-semibold text-white">Site gerado</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+            O site já existe e mostra a versão atual do briefing confirmado. O que resta aqui é a
+            construção do repositório real, opcional.
+          </p>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <Link href={`/sites/${project.id}`} className="nox-btn-primary px-6 py-3 text-base">
+              Ver site
+            </Link>
+            <Link href={`/projetos/${project.id}/preview`} className="nox-btn-secondary">
+              Prévia interna
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       {!provisioned ? (
         <section className="rounded-2xl border border-amber-400/30 bg-amber-400/5 p-5 text-sm text-amber-100/80">
@@ -79,7 +124,7 @@ export default async function GenerationPage({ params }: { params: Promise<{ id:
       ) : null}
 
       <section className="rounded-2xl border border-nox-border bg-nox-surface p-5">
-        <h2 className="text-lg font-semibold text-white">Controle</h2>
+        <h2 className="text-lg font-semibold text-white">Construção do repositório por agente</h2>
         <p className="mt-2 mb-4 text-sm leading-6 text-nox-muted">
           O pedido é idempotente, entra na fila durável e segue pelo consumidor agendado. O botão de processamento antecipa o próximo ciclo.
         </p>
@@ -114,8 +159,9 @@ export default async function GenerationPage({ params }: { params: Promise<{ id:
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="font-medium text-white">{STATUS_LABELS[run.status] ?? run.status}</p>
-                    <p className="mt-1 text-xs text-nox-muted">
-                      {run.createdAt.toLocaleString("pt-BR")} · disposição {run.startDisposition}
+                    <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-nox-muted">
+                      <span>{run.createdAt.toLocaleString("pt-BR")}</span>
+                      <span>disposição {run.startDisposition}</span>
                     </p>
                   </div>
                   <span className="rounded-full border border-nox-border px-3 py-1 text-xs text-nox-muted">

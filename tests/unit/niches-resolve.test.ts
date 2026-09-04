@@ -22,10 +22,13 @@ const ALLOWED_FALLBACK = new Set<string>([
   "assistencia",
   // The trades below have no world of their own in the catalogue — a builder,
   // an HVAC installer and a pool technician are local service providers, and
-  // `services` is where they belong. Each matches a `services` keyword by
-  // rule, so the resolution is a decision and not a miss.
+  // `services` is where they belong, whether they match a `services` keyword
+  // or arrive there as the documented fallback.
   "construcao",
   "arcondicionado",
+  // "piscina" is deliberately not a `services` keyword: it is a hotel feature
+  // far more often than a business, so this niche label lands on the fallback,
+  // which is the same category either way.
   "piscina",
 ]);
 

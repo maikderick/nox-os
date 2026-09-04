@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { permissionsForRole } from "../../src/lib/authz/permissions";
 import { siteBriefSchema } from "../../src/lib/site-factory/brief-schema";
+import { SITE_PROJECT_STATE_LABELS } from "../../src/lib/site-factory/states";
 import { sharedFakeWorld } from "../../src/lib/providers/fake/fake-world";
 import {
   BRIEF_V1_INPUT,
@@ -61,8 +62,10 @@ describe("the eligibility gate", () => {
   });
 
   it("refuses a draft", () => {
+    // The refusal names the stage with the label the panel shows, read from
+    // the state machine, so the operator can find it on screen.
     expect(() => assertProvisioningEligible(projectRow({ status: "RASCUNHO" }))).toThrow(
-      /Briefing pronto/,
+      new RegExp(SITE_PROJECT_STATE_LABELS.BRIEFING_PRONTO),
     );
 
     try {

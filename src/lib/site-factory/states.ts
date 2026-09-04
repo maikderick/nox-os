@@ -6,6 +6,20 @@ import type { Permission } from "@/lib/authz/permissions";
  * Two rules are encoded here rather than in the routes: nothing reaches
  * `PUBLICANDO` without someone holding `publish:approve`, and no state before
  * `PUBLICADO` is public.
+ *
+ * `PREVIA_PRONTA` is reachable two ways, and the difference is what "generating
+ * the site" means. The deterministic renderer computes the whole site from the
+ * confirmed brief — same brief, same seed, same page — so generating it is
+ * arithmetic, not an agent run: a person holding `project:write` asks for it
+ * (`BRIEFING_PRONTO → PREVIA_PRONTA`) and the presentation link at `/sites/:id`
+ * opens. Nothing external is called, so nothing can be pending, and the way
+ * back (`PREVIA_PRONTA → BRIEFING_PRONTO`) is just as cheap: reopen the brief,
+ * fix a fact, ask again.
+ *
+ * `GERANDO` is the other, later and optional step — the agent building the real
+ * repository, behind a queue, a credit reservation and a system transition that
+ * reports the outcome. It keeps `generation:run` and its own request route; the
+ * two paths never collapse into one.
  */
 export const SITE_PROJECT_STATES = [
   "RASCUNHO",
@@ -21,11 +35,21 @@ export const SITE_PROJECT_STATES = [
 
 export type SiteProjectState = (typeof SITE_PROJECT_STATES)[number];
 
+/**
+ * What each state is called on screen.
+ *
+ * The enum values are the domain's; these strings are the operator's, and they
+ * answer "what do I do now" rather than naming an internal artefact. "Briefing
+ * pronto" told nobody that the next click generates a site, and "Prévia pronta"
+ * hid the fact that the site already exists — so a state is named for the thing
+ * the operator can see or do, and the labels are read from here, never retyped
+ * in a page.
+ */
 export const SITE_PROJECT_STATE_LABELS: Record<SiteProjectState, string> = {
   RASCUNHO: "Rascunho",
-  BRIEFING_PRONTO: "Briefing pronto",
-  GERANDO: "Gerando",
-  PREVIA_PRONTA: "Prévia pronta",
+  BRIEFING_PRONTO: "Pronto para gerar",
+  GERANDO: "Construindo repositório",
+  PREVIA_PRONTA: "Site gerado",
   EM_REVISAO: "Em revisão",
   APROVADO: "Aprovado",
   PUBLICANDO: "Publicando",
@@ -48,12 +72,16 @@ export type SiteProjectTransition = {
 export const SITE_PROJECT_TRANSITIONS: SiteProjectTransition[] = [
   { from: "RASCUNHO", to: "BRIEFING_PRONTO", permission: "brief:write", label: "Concluir briefing" },
   { from: "BRIEFING_PRONTO", to: "RASCUNHO", permission: "brief:write", label: "Reabrir briefing" },
-  { from: "BRIEFING_PRONTO", to: "GERANDO", permission: "generation:run", label: "Gerar site" },
+  // The deterministic path: the renderer computes the site from the confirmed
+  // brief, so a person releases it. No agent, no queue, no credit.
+  { from: "BRIEFING_PRONTO", to: "PREVIA_PRONTA", permission: "project:write", label: "Gerar site" },
+  { from: "BRIEFING_PRONTO", to: "GERANDO", permission: "generation:run", label: "Gerar com agente" },
 
   { from: "GERANDO", to: "PREVIA_PRONTA", permission: null, label: "Geração concluída" },
   { from: "GERANDO", to: "FALHOU", permission: null, label: "Geração falhou" },
 
   { from: "PREVIA_PRONTA", to: "EM_REVISAO", permission: "project:write", label: "Enviar para revisão" },
+  { from: "PREVIA_PRONTA", to: "BRIEFING_PRONTO", permission: "brief:write", label: "Reabrir briefing" },
   { from: "PREVIA_PRONTA", to: "GERANDO", permission: "generation:run", label: "Gerar novamente" },
 
   { from: "EM_REVISAO", to: "APROVADO", permission: "publish:approve", label: "Aprovar" },

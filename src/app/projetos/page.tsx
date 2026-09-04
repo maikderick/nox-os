@@ -71,19 +71,18 @@ export default async function ProjectsPage() {
             {projects.map((project) => {
               const state = isSiteProjectState(project.status) ? project.status : "RASCUNHO";
               const previewReady = hasInternalPreview(state);
-              const provisioned = Boolean(
-                project.repository?.protectedAt && project.hostingProject?.linkedAt,
-              );
+              // A generated site opens; anything else sends the operator to the
+              // project page, which is where the action for its state lives.
               const actionHref = previewReady
                 ? `/sites/${project.id}`
-                : `/projetos/${project.id}/geracao`;
+                : `/projetos/${project.id}`;
               const actionLabel = previewReady
                 ? "Ver site"
-                : state === "BRIEFING_PRONTO" && !provisioned
-                  ? "Preparar e gerar"
+                : state === "BRIEFING_PRONTO"
+                  ? "Gerar site"
                   : state === "GERANDO"
-                    ? "Acompanhar geração"
-                    : "Abrir geração";
+                    ? "Acompanhar construção"
+                    : "Abrir projeto";
               return (
                 <article key={project.id} className="nox-card p-5 transition hover:border-nox-border-strong">
                   <div className="flex items-start justify-between gap-4">

@@ -9,6 +9,8 @@
  * trace, never for a column.
  */
 
+import { SITE_PROJECT_STATE_LABELS } from "@/lib/site-factory/states";
+
 export const PROVISIONING_REASONS = [
   "SEM_AUTORIZACAO",
   "INTEGRACAO_DESLIGADA",
@@ -63,7 +65,9 @@ const BUILDERS: Record<ProvisioningReason, (details: SafeDetails) => string> = {
     `As credenciais de ${d.provider ?? "provedor"} não estão completas. Verifique as variáveis de ambiente em Organização → Integrações.`,
 
   PROJETO_NAO_ELEGIVEL: (d) =>
-    `O projeto precisa estar em "Briefing pronto" para ser provisionado.${
+    // The state's name belongs to the state machine. Retyping it here is how
+    // the two drift, and the operator reads a stage that no screen shows.
+    `O projeto precisa estar em "${SITE_PROJECT_STATE_LABELS.BRIEFING_PRONTO}" para ser provisionado.${
       d.state ? ` Estado atual: ${d.state}.` : ""
     }`,
 

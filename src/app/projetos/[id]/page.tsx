@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, Building2, FileText, MapPin, Phone, Server } from "lucide-react";
+import { ArrowLeft, Building2, FileText, MapPin, Phone } from "lucide-react";
 
 import { CATEGORY_GROUPS } from "@/lib/categories";
+import { GenerateSiteButton, SendToReviewButton } from "@/components/projetos/generate-site-button";
 import { requirePermission } from "@/lib/authz/dal";
 import { resolveArtDirection, type Palette } from "@/lib/design/art-direction";
 import { BLOCK_LABELS, resolveComposition } from "@/lib/design/blocks";
@@ -51,7 +52,7 @@ export default async function ProjectPage({ params }: PageProps) {
   const { id } = await params;
   const project = await getSiteProject(actor, id);
 
-  const canProvision = actor.permissions.includes("provisioning:read");
+  const canWrite = actor.permissions.includes("project:write");
   const businessId = project.client.businessId;
 
   const state = isSiteProjectState(project.status) ? project.status : "RASCUNHO";
@@ -100,19 +101,85 @@ export default async function ProjectPage({ params }: PageProps) {
             </span>
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {businessId ? (
-            <Link href={`/leads/${businessId}`} className="nox-btn-secondary">
-              Ficha do lead
-            </Link>
-          ) : null}
-          {canProvision ? (
-            <Link href={`/projetos/${project.id}/provisionamento`} className="nox-btn-secondary">
-              <Server size={15} aria-hidden="true" /> Provisionamento
-            </Link>
-          ) : null}
-        </div>
+        {businessId ? (
+          <Link href={`/leads/${businessId}`} className="nox-btn-secondary">
+            Ficha do lead
+          </Link>
+        ) : null}
       </div>
+
+      {/* The one thing to do next, before anything explanatory. Which action it
+          is comes from the state, so the page never offers a button the state
+          machine would refuse. */}
+      <section className="nox-card p-6" aria-label="Próximo passo">
+        {brief && state === "BRIEFING_PRONTO" ? (
+          <>
+            <h2 className="text-xl font-semibold text-white">Gerar o site</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+              Gera o site a partir das informações confirmadas. Leva alguns segundos.
+            </p>
+            {canWrite ? (
+              <div className="mt-5">
+                <GenerateSiteButton projectId={project.id} />
+              </div>
+            ) : (
+              <p className="mt-5 text-sm text-nox-muted">
+                Seu papel não permite gerar o site. Peça a um operador da organização.
+              </p>
+            )}
+          </>
+        ) : previewReady ? (
+          <>
+            <h2 className="text-xl font-semibold text-white">Site gerado</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+              O endereço de apresentação abre sem login e sempre mostra a versão atual do
+              briefing confirmado.
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <Link href={`/sites/${project.id}`} className="nox-btn-primary px-6 py-3 text-base">
+                Ver site
+              </Link>
+              <Link href={`/projetos/${project.id}/preview`} className="nox-btn-secondary">
+                Prévia interna
+              </Link>
+              {canWrite && state === "PREVIA_PRONTA" ? (
+                <SendToReviewButton projectId={project.id} />
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-xl font-semibold text-white">Confirmar o briefing</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+              O site é calculado a partir dos fatos confirmados. Sem briefing confirmado não há
+              o que gerar.
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <Link href="/projetos/novo" className="nox-btn-primary px-6 py-3 text-base">
+                Concluir briefing
+              </Link>
+              {brief ? (
+                <Link href={`/projetos/${project.id}/preview`} className="nox-btn-secondary">
+                  Prévia interna
+                </Link>
+              ) : null}
+            </div>
+          </>
+        )}
+
+        {!previewReady ? (
+          <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-nox-border pt-4 text-sm">
+            {brief && state === "BRIEFING_PRONTO" ? (
+              <Link href={`/projetos/${project.id}/preview`} className="text-nox-cyan hover:underline">
+                Prévia interna
+              </Link>
+            ) : null}
+            <span className="text-nox-muted">
+              Site público: disponível depois de gerar o site
+            </span>
+          </div>
+        ) : null}
+      </section>
 
       {direction && composition ? (
         <>
@@ -195,12 +262,6 @@ export default async function ProjectPage({ params }: PageProps) {
             Este projeto ainda não tem um briefing confirmado, então a direção de arte e a
             composição do site ainda não podem ser resolvidas.
           </p>
-          <Link
-            href={`/projetos/${project.id}/geracao`}
-            className="mt-3 inline-block text-sm text-nox-cyan hover:underline"
-          >
-            Ir para o briefing
-          </Link>
         </section>
       )}
 
@@ -252,6 +313,9 @@ export default async function ProjectPage({ params }: PageProps) {
                   <li key={service.id} className="rounded-xl border border-nox-border bg-nox-bg/40 px-3 py-2">
                     <p className="font-medium text-white">{service.name.value}</p>
                     <p className="mt-0.5 text-xs text-nox-muted">{service.summary.value}</p>
+                    {service.price ? (
+                      <p className="mt-0.5 text-xs text-white/90">{service.price.value}</p>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -286,8 +350,16 @@ export default async function ProjectPage({ params }: PageProps) {
         </div>
       </div>
 
-      <section className="nox-card p-6" aria-label="Etapas">
-        <h2 className="text-base font-semibold text-white">Etapas</h2>
+      {/* The agent pipeline, kept as what it is: a later step that builds the
+          real repository. The site the client sees does not wait for it. */}
+      <section className="nox-card p-6" aria-label="Construção do repositório">
+        <h2 className="text-base font-semibold text-white">
+          Construção do repositório (opcional)
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+          Etapa seguinte, conduzida por agente, que cria o repositório e a hospedagem reais. O
+          site de apresentação não depende dela.
+        </p>
         <div className="mt-4 flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap sm:gap-6">
           <Link href={`/projetos/${project.id}/geracao`} className="text-nox-cyan hover:underline">
             Geração
@@ -295,22 +367,6 @@ export default async function ProjectPage({ params }: PageProps) {
           <Link href={`/projetos/${project.id}/provisionamento`} className="text-nox-cyan hover:underline">
             Provisionamento
           </Link>
-          {previewReady ? (
-            <Link href={`/projetos/${project.id}/preview`} className="text-nox-cyan hover:underline">
-              Prévia interna
-            </Link>
-          ) : (
-            <span className="text-nox-muted">Prévia interna indisponível nesta etapa</span>
-          )}
-          {previewReady ? (
-            <Link href={`/sites/${project.id}`} className="text-nox-cyan hover:underline">
-              Ver site
-            </Link>
-          ) : (
-            <span className="text-nox-muted">
-              Site público: disponível quando a prévia estiver pronta
-            </span>
-          )}
         </div>
       </section>
     </div>

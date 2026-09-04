@@ -291,7 +291,12 @@ export const CATEGORY_GROUPS: CategoryGroup[] = [
       "ar condicionado",
       "ar-condicionado",
       "refrigeracao",
-      "piscina",
+      // Not the bare word: "piscina" is a feature of a hotel far more often
+      // than it is a business, and it was pulling "hotel com piscina" out of
+      // `tourism`. The trade names itself either as the service or as the
+      // person who does it.
+      "limpeza de piscina",
+      "piscineiro",
       "informatica",
       "costura",
     ],

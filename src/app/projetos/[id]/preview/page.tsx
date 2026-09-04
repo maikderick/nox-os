@@ -7,7 +7,6 @@ import { SiteFonts } from "@/components/sites/site-fonts";
 import { requirePermission } from "@/lib/authz/dal";
 import { parseSiteBrief } from "@/lib/site-factory/brief-schema";
 import { getSiteProject } from "@/lib/site-factory/project-service";
-import { hasInternalPreview, isSiteProjectState } from "@/lib/site-factory/states";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -21,16 +20,18 @@ export const metadata: Metadata = {
  * It used to be a second copy of the renderer, which meant every visual fix had
  * to be made twice and the two were free to disagree about what the client
  * would receive. The chrome is the only thing this page owns.
+ *
+ * The gate is the brief, not the status. The renderer is a pure function of the
+ * confirmed brief, so a brief is the whole of what this page needs; requiring
+ * `PREVIA_PRONTA` meant the team could not look at what it was about to release
+ * until after releasing it. The public page at `/sites/:id` keeps the status
+ * gate — that link is what the release actually opens.
  */
 export default async function ProjectPreviewPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
   const actor = await requirePermission("project:read");
   const { id } = await params;
   const project = await getSiteProject(actor, id);
-
-  if (!isSiteProjectState(project.status) || !hasInternalPreview(project.status)) {
-    redirect(`/projetos/${project.id}/geracao`);
-  }
 
   const currentBrief = project.briefVersions.find(
     (brief) => brief.id === project.currentBriefVersionId,

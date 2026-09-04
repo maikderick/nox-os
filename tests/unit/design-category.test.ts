@@ -35,6 +35,9 @@ describe("resolução de categoria a partir do setor", () => {
     expect(resolveCategoryId("clínica odontológica")).toBe("health");
     expect(resolveCategoryId("pousada")).toBe("tourism");
     expect(resolveCategoryId("hamburgueria")).toBe("food");
+    // A pool is a hotel feature far more often than it is a business, so the
+    // `services` catalogue names the trade, not the object.
+    expect(resolveCategoryId("hotel com piscina")).toBe("tourism");
   });
 
   it("cai no fallback documentado para setor desconhecido", () => {

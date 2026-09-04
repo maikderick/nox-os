@@ -370,6 +370,21 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
     </p>
   );
 
+  // The price is a confirmed fact, so it is set in ink, not in the muted tone
+  // the summary uses — and it is published exactly as the operator typed it
+  // ("R$ 28,00", "a partir de R$ 90", "sob consulta"). Formatting it would mean
+  // deciding a currency and a rounding nobody confirmed.
+  const servicePrice = (service: BriefService, extra?: CSSProperties) =>
+    service.price ? (
+      <p style={{ ...SMALL_TEXT, color: "var(--ink)", ...extra }}>{service.price.value}</p>
+    ) : null;
+
+  // The two ruled families give the price its own trailing column, so the
+  // figures line up down the page instead of ending wherever the summary does.
+  // The column exists for the whole list or not at all: a per-row grid would
+  // put each price at a different x.
+  const pricedColumn = services.some((service) => service.price !== null);
+
   // Every paragraph of `body` is a confirmed fact in its own right, and the
   // schema requires at least one. Publishing the summary and dropping these
   // would lose facts someone took the trouble to confirm, so all four families
@@ -404,6 +419,9 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
                   style={{ flex: "1 1 2rem", borderBottom: "1px dotted var(--line)" }}
                 />
                 {serviceSummary(service, { flex: "0 1 34ch", textAlign: "right" })}
+                {pricedColumn
+                  ? servicePrice(service, { flex: "0 0 auto", textAlign: "right" })
+                  : null}
               </div>
               {serviceBody(service)}
             </article>
@@ -421,12 +439,15 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "minmax(9rem, 18rem) 1fr",
+                  gridTemplateColumns: pricedColumn
+                    ? "minmax(9rem, 18rem) 1fr auto"
+                    : "minmax(9rem, 18rem) 1fr",
                   gap: "var(--space-inline)",
                 }}
               >
                 <h3 style={serviceNameText(serviceWeight)}>{service.name.value}</h3>
                 {serviceSummary(service, { maxWidth: "62ch" })}
+                {pricedColumn ? servicePrice(service, { textAlign: "right" }) : null}
               </div>
               {serviceBody(service)}
             </article>
@@ -444,6 +465,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
               <RuleDivider ticks={ticks} />
               <article style={{ paddingBlock: "var(--space-inline)" }}>
                 <h3 style={serviceNameText(serviceWeight)}>{service.name.value}</h3>
+                {servicePrice(service, { marginTop: "calc(var(--space-inline) / 2)" })}
                 {serviceSummary(service, { marginTop: "var(--space-inline)", maxWidth: "62ch" })}
                 {serviceBody(service)}
               </article>
@@ -458,6 +480,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
         {services.map((service) => (
           <article key={service.id} style={ROW}>
             <h3 style={serviceNameText(serviceWeight)}>{service.name.value}</h3>
+            {servicePrice(service, { marginTop: "calc(var(--space-inline) / 2)" })}
             {serviceSummary(service, { marginTop: "var(--space-inline)", maxWidth: "62ch" })}
             {serviceBody(service)}
           </article>

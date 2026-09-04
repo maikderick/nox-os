@@ -427,7 +427,9 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
 
       const capabilities = payload?.capabilities ?? null;
       const projectId = payload?.project?.id;
-      const destination = projectId ? `/projetos/${projectId}/geracao` : "/projetos";
+      // The project page carries the primary action now, so the wizard hands
+      // the operator straight to it instead of to the agent pipeline.
+      const destination = projectId ? `/projetos/${projectId}` : "/projetos";
       setCreatedPath(destination);
       if (!capabilities || capabilities.gaps.length === 0) {
         router.push(destination);

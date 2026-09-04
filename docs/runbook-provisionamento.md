@@ -120,7 +120,7 @@ log, que é enviado, indexado e lido por mais gente que o banco.
 | `SNAPSHOT_INVALIDO` | o snapshot viola um invariante do contrato | Corrija os campos citados no briefing; o site nunca é gerado com snapshot inválido |
 | `REPOSITORIO_INCOMPLETO` / `CONTEUDO_NAO_PUBLICADO` / `HOSPEDAGEM_INCOMPLETA` | etapa chamada fora de ordem, ou etapa anterior interrompida | Volte à etapa anterior e execute-a de novo |
 | Etapa 4 volta "ainda não terminou de construir" | a plataforma ainda está construindo | Reconcilie de novo em instantes; não é falha |
-| `PROJETO_NAO_ELEGIVEL` | o projeto não está em Briefing pronto | Conclua o briefing antes de provisionar |
+| `PROJETO_NAO_ELEGIVEL` | o projeto não está em Pronto para gerar | Conclua o briefing antes de provisionar |
 | `BRIEFING_VERSAO_ANTIGA` | o briefing é v1 | Crie uma versão v2 confirmando serviços e contato |
 | `BRIEFING_ADULTERADO` | o conteúdo gravado não bate com a impressão digital | Confirme o briefing de novo; algo o alterou fora do NOX OS |
 | `ERRO_INESPERADO` com código de correlação | erro que o NOX OS não reconhece | Procure o código no log do servidor; o detalhe não é gravado no banco |

@@ -8,6 +8,7 @@ import {
   SITE_PROJECT_ERROR_CODES,
   SiteProjectStageNotTransitionableError,
   SiteProjectStageUnavailableError,
+  SiteProjectTransitionError,
   STAGES_PENDING_ORCHESTRATOR,
   STAGES_REQUESTED_NOT_TRANSITIONED,
 } from "../../src/lib/site-factory/states";
@@ -107,6 +108,37 @@ describe("stages a person may not transition into", () => {
       code: SITE_PROJECT_ERROR_CODES.stageNotTransitionable,
       state: "GERANDO",
     });
+  });
+
+  it("offers the deterministic release from BRIEFING_PRONTO, never the agent stage", () => {
+    const targets = allowedTransitionsFor("BRIEFING_PRONTO", permissionsForRole("OPERADOR")).map(
+      (transition) => transition.to,
+    );
+    expect(targets).toContain("PREVIA_PRONTA");
+    // `GERANDO` is asked for through its own route, and stays out of the
+    // generic transition control however the table grows.
+    expect(targets).not.toContain("GERANDO");
+  });
+
+  it("moves BRIEFING_PRONTO to PREVIA_PRONTA and writes it", async () => {
+    mocks.findFirst.mockResolvedValue({ id: "project-1", status: "BRIEFING_PRONTO" });
+
+    await transitionSiteProject({ actor: owner, siteProjectId: "project-1", to: "PREVIA_PRONTA" });
+
+    expect(mocks.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "PREVIA_PRONTA", statusMessage: null },
+    });
+  });
+
+  it("continua recusando o salto de BRIEFING_PRONTO para APROVADO", async () => {
+    mocks.findFirst.mockResolvedValue({ id: "project-1", status: "BRIEFING_PRONTO" });
+
+    await expect(
+      transitionSiteProject({ actor: owner, siteProjectId: "project-1", to: "APROVADO" }),
+    ).rejects.toBeInstanceOf(SiteProjectTransitionError);
+
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it("lets an available transition through", async () => {
