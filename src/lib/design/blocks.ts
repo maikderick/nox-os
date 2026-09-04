@@ -57,7 +57,13 @@ export function resolveComposition(brief: SiteBrief): { blocks: BlockId[]; unmap
   const contact = briefPublicContact(brief);
 
   // A block is available only when the fact behind it was confirmed. This is
-  // the gate; `desiredSections` can narrow it but never open it.
+  // the gate, and it is the only thing that decides `blocks` below:
+  // `desiredSections` never narrows or opens it — it only feeds the
+  // `unmapped` report. Narrowing was deliberately not implemented: it would
+  // let a brief that lists fewer sections silently drop a fact-backed block
+  // (e.g. `hours`) that the operator never asked to remove. Whether a brief
+  // should be able to opt a confirmed block out is a product decision left
+  // to the owner.
   const available = new Set<BlockId>(["navbar", "hero", "about", "footer"]);
 
   if (brief.differentiators.length > 0) available.add("differentiators");
