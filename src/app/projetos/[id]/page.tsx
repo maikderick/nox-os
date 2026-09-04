@@ -190,10 +190,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           ) : (
             <span className="text-nox-muted">Prévia interna indisponível nesta etapa</span>
           )}
-          {previewReady && (
+          {previewReady ? (
             <Link href={`/sites/${project.id}`} className="text-nox-cyan hover:underline">
               Ver site
             </Link>
+          ) : (
+            <span className="text-nox-muted">
+              Site público: disponível quando a prévia estiver pronta
+            </span>
           )}
         </div>
       </section>

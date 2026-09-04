@@ -20,6 +20,9 @@ describe("raiz do projeto", () => {
     const source = readFileSync(PAGE, "utf8");
     expect(source).toContain("resolveArtDirection");
     expect(source).toContain("anchor");
+    // A regression that swapped or dropped the seed would still show *a*
+    // direction, just not the one the client actually receives.
+    expect(source).toContain("seed: project.id");
   });
 
   it("leva às três etapas existentes", () => {
