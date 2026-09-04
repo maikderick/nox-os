@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { resolveArtDirection } from "@/lib/design/art-direction";
 import { buildGenerationPrompt } from "@/lib/generation/prompt";
 import { siteBriefV2Schema, type SiteBriefV2 } from "@/lib/site-factory/brief-schema";
 
@@ -68,6 +69,12 @@ describe("prompt de geração", () => {
   it("passa a direção do operador como refinamento, nomeada como tal", () => {
     expect(prompt).toContain("Sóbrio, escuro e legível.");
     expect(prompt).toMatch(/refinamento|dentro da direção/i);
+    expect(prompt).toContain(
+      "Refinamento do operador, a ser aplicado dentro da direção acima, sem trocar nenhum token:",
+    );
+    // The operator's free text steers only the facts half; it must never leak
+    // into the taste half, or it could be read as a token override.
+    expect(prompt.split("# DESIGN.md")[1].split("# BRIEFING")[0]).not.toContain("Sóbrio, escuro e legível.");
   });
 
   it("é determinístico para a mesma semente", () => {
@@ -75,8 +82,21 @@ describe("prompt de geração", () => {
   });
 
   it("muda quando a semente muda, sem mudar os fatos", () => {
-    const other = buildGenerationPrompt({ ...input, seed: "outra-semente-diferente" });
+    const otherSeed = "outra-semente-diferente";
+    const other = buildGenerationPrompt({ ...input, seed: otherSeed });
+
+    // The two seeds must land on different variants, or this test proves nothing.
+    // Deterministic: "cmtm2yp9u0004zpc3r7jgufvr" -> beauty/niquel/v1 and
+    // "outra-semente-diferente" -> beauty/latao/v1 — they differ, verified by
+    // resolveArtDirection directly below. If this pair ever collided, the fix
+    // would be to pick another otherSeed and update this comment.
+    const a = resolveArtDirection({ sector: brief.sector.value, seed: input.seed });
+    const b = resolveArtDirection({ sector: brief.sector.value, seed: otherSeed });
+    expect(a.id).not.toBe(b.id);
+
+    expect(other).not.toBe(prompt);
     expect(other).toContain("Barbearia Aurora");
     expect(other).toContain("Espelho e latão sob luz baixa");
+    expect(other.split("# BRIEFING")[1]).toBe(prompt.split("# BRIEFING")[1]);
   });
 });
