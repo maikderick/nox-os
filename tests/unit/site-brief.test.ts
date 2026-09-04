@@ -42,6 +42,40 @@ describe("versioned site brief", () => {
     }
   });
 
+  it("keeps parsing a stored v2 brief written before the presentation text existed", () => {
+    // The field is nullable with a default precisely so no stored brief has to
+    // be rewritten: a brief that predates it simply has no presentation text.
+    const stored = {
+      ...validBrief(),
+      schemaVersion: 2 as const,
+      services: [],
+      publicContact: {},
+      metaDescription: null,
+    };
+    const parsed = siteBriefSchema.parse(stored);
+    expect(parsed.schemaVersion).toBe(2);
+    if (parsed.schemaVersion !== 2) return;
+    expect(parsed.about).toBeNull();
+  });
+
+  it("applies the claim rules to the presentation text, which is customer copy", () => {
+    // `about` is the one narrative field a visitor reads, so it is held to the
+    // same rules as everything else that reaches a page.
+    const brief = {
+      ...validBrief(),
+      schemaVersion: 2 as const,
+      services: [],
+      publicContact: {},
+      metaDescription: null,
+      about: fact("A melhor padaria da região, desde 1998."),
+    };
+    const result = siteBriefSchema.safeParse(brief);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path[0] === "about")).toBe(true);
+    }
+  });
+
   it("produces a stable integrity hash independent of object key order", () => {
     const parsed = siteBriefSchema.parse(validBrief());
     const reordered = Object.fromEntries(Object.entries(parsed).reverse());

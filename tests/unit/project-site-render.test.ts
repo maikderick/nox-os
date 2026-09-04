@@ -39,6 +39,10 @@ function render(sector: string, seed: string, overrides = {}) {
 function richFixture() {
   const stamp = "2026-09-03T12:00:00.000Z";
   return {
+    // `about` entrou aqui quando deixou de ser incondicional: sem o fato, a
+    // seção "Sobre" não existe, e este fixture existe justamente para abrir
+    // todos os blocos ao mesmo tempo.
+    about: fact("A Aurora atende no centro de Fortaleza, com hora marcada."),
     differentiators: [fact("Atendimento um de cada vez."), fact("Orçamento por escrito.")],
     desiredSections: ["Início", "Sobre", "Serviços", "Horários", "Localização", "Contato"],
     services: [
@@ -270,5 +274,84 @@ describe("renderizador do site", () => {
     // for a non-instrument-serif category still carries 500 somewhere.
     const law = render("Advocacia", "s");
     expect(law).toContain("font-weight:500");
+  });
+});
+
+/** One sector per device family: leader, index, spine and the plain fallback. */
+const DEVICE_FAMILY_SECTORS = ["Pizzaria", "Academia", "Advocacia", "Pet shop"];
+
+describe("o site nunca publica o que o operador respondeu sobre a encomenda", () => {
+  it("não imprime o objetivo nem o público em nenhuma das quatro famílias", () => {
+    // O defeito real: um site que dizia ao visitante "criar um site
+    // minimalista focado em vendas" e "publico voltado a comida" — as duas
+    // respostas que o operador deu sobre o trabalho, publicadas como se
+    // fossem a apresentação do negócio.
+    const internal = {
+      objective: fact("criar um site focado em vendas"),
+      audience: fact("publico voltado a comida"),
+      about: fact("A Aurora serve culinária japonesa no centro de Fortaleza."),
+      desiredSections: ["Início", "Sobre", "Contato"],
+    };
+
+    for (const sector of DEVICE_FAMILY_SECTORS) {
+      const html = render(sector, "semente-fixa", internal);
+      expect(html, sector).not.toContain("criar um site focado em vendas");
+      expect(html, sector).not.toContain("publico voltado a comida");
+    }
+  });
+
+  it("publica a apresentação confirmada sob o título Sobre", () => {
+    const presentation = "A Aurora serve culinária japonesa no centro de Fortaleza.";
+    for (const sector of DEVICE_FAMILY_SECTORS) {
+      const html = render(sector, "semente-fixa", {
+        about: fact(presentation),
+        desiredSections: ["Início", "Sobre", "Contato"],
+      });
+      const sobre = html.slice(html.indexOf('id="sobre"'));
+      expect(html, sector).toContain('id="sobre"');
+      expect(sobre, sector).toContain(presentation);
+      expect(findSlop(html).map((rule) => rule.id), sector).toEqual([]);
+    }
+  });
+
+  it("sem apresentação confirmada, não existe seção Sobre", () => {
+    // Nada de placeholder: um fato ausente apaga a seção.
+    const html = render("Barbearia", "s", { desiredSections: ["Início", "Sobre", "Contato"] });
+    expect(html).not.toContain('id="sobre"');
+    expect(html).not.toContain(">Sobre<");
+  });
+});
+
+describe("caixa do nome do negócio", () => {
+  it("desliga o caixa-alta de um nome importado aos gritos, sem tocar no fato", () => {
+    const shouted = { businessName: fact("ZEN COMIDA JAPONESA") };
+
+    for (const sector of DEVICE_FAMILY_SECTORS) {
+      const html = render(sector, "semente-fixa", shouted);
+      expect(html, sector).toContain("Zen Comida Japonesa");
+      // O `text-transform:uppercase` de algumas direções continua sendo
+      // decisão da direção de arte; o que não pode é o texto chegar gritado.
+      expect(html, sector).not.toContain("ZEN COMIDA JAPONESA");
+    }
+  });
+
+  it("usa o mesmo nome no wordmark, no título, no CTA e no rodapé", () => {
+    const html = render("Barbearia", "s", {
+      businessName: fact("PADARIA DO JOÃO"),
+      publicContact: {
+        phone: { value: "+5585999998888", source: "CLIENTE" as const, confirmedAt: "2026-09-03T12:00:00.000Z" },
+        whatsapp: null, email: null, address: null, coordinates: null,
+        openingHours: null, socialLinks: [],
+      },
+    });
+    // Wordmark, <h1>, "Falar com …" e rodapé — quatro ocorrências.
+    expect(html.split("Padaria do João").length - 1).toBe(4);
+    expect(html).not.toContain("PADARIA DO JOÃO");
+  });
+
+  it("deixa intacto o nome que o dono escreveu com minúsculas", () => {
+    expect(render("Barbearia", "s", { businessName: fact("Forno da Esquina") })).toContain(
+      "Forno da Esquina",
+    );
   });
 });

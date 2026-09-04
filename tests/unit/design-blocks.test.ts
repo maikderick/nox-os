@@ -13,6 +13,7 @@ function briefV2(overrides: Record<string, unknown> = {}): SiteBrief {
     businessName: fact("Barbearia Aurora"),
     sector: fact("Barbearia"),
     city: fact("Fortaleza"),
+    about: fact("A Barbearia Aurora atende corte e barba no centro de Fortaleza."),
     objective: fact("Apresentar o negócio e facilitar novos contatos."),
     audience: fact("Pessoas que procuram corte e barba na região."),
     positioning: fact("Informações claras e verificadas sobre o negócio."),
@@ -32,11 +33,39 @@ function briefV2(overrides: Record<string, unknown> = {}): SiteBrief {
 
 describe("composição de blocos", () => {
   it("sempre entrega o esqueleto mínimo", () => {
-    const { blocks } = resolveComposition(briefV2());
+    // O mínimo é navbar/hero/rodapé, e só. `about` saía daqui porque era
+    // preenchido com `objective` e `audience` — campos que descrevem a
+    // encomenda, não o negócio. Agora ele depende do seu próprio fato, então
+    // um briefing sem apresentação confirmada não tem seção "Sobre".
+    const { blocks } = resolveComposition(briefV2({ about: null }));
     expect(blocks).toContain("navbar");
     expect(blocks).toContain("hero");
-    expect(blocks).toContain("about");
     expect(blocks).toContain("footer");
+    expect(blocks).not.toContain("about");
+  });
+
+  it("emite Sobre quando a apresentação para o cliente foi confirmada", () => {
+    expect(resolveComposition(briefV2()).blocks).toContain("about");
+  });
+
+  it("reporta a seção Sobre pedida sem apresentação confirmada", () => {
+    const { blocks, unmapped } = resolveComposition(
+      briefV2({ about: null, desiredSections: ["Início", "Sobre"] }),
+    );
+    expect(blocks).not.toContain("about");
+    expect(unmapped).toContain("Sobre");
+  });
+
+  it("um briefing v1 não tem apresentação e portanto não tem Sobre", () => {
+    const v1 = siteBriefSchema.parse({
+      schemaVersion: 1,
+      businessName: fact("Padaria Aurora"), sector: fact("Padaria"), city: fact("Fortaleza"),
+      objective: fact("Apresentar o negócio."), audience: fact("Vizinhança."),
+      positioning: fact("Informação clara e verificada."),
+      services: [], differentiators: [],
+      desiredSections: ["Início", "Sobre"], visualDirection: fact("Sóbrio."), notes: null,
+    });
+    expect(resolveComposition(v1).blocks).not.toContain("about");
   });
 
   it("não emite serviços quando o briefing não confirmou nenhum", () => {

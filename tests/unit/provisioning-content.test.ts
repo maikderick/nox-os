@@ -168,8 +168,15 @@ describe("provisioning step 2 — content", () => {
       projectRow({
         repository: REPO,
         provisioning: { contentSha256: first.contentSha256, commitSha: first.commitSha },
+        // The changed field has to be one the snapshot publishes. `objective`
+        // was used here until it stopped reaching the site at all — it is an
+        // answer about the job, not copy — and a brief whose only change is
+        // internal *correctly* produces the same content and no new commit.
         currentBriefVersion: briefVersionRow(
-          { ...BRIEF_V2_INPUT, objective: fact("Outro objetivo confirmado para o site.") },
+          {
+            ...BRIEF_V2_INPUT,
+            about: fact("A oficina atende reparos hidráulicos e elétricos na região central."),
+          },
           { version: 3, createdAt: new Date("2026-08-25T16:00:00.000Z") },
         ),
       }),

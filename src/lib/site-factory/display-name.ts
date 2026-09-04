@@ -1,0 +1,97 @@
+/**
+ * How a business name is *set*, as opposed to what it is.
+ *
+ * Imported registries store what the owner typed into a map listing, and a
+ * great many of those are shouted: "ZEN COMIDA JAPONESA". Publishing that
+ * verbatim gives every such client a site whose wordmark, headline and footer
+ * are in caps — the loudest possible reading of a name nobody chose to shout.
+ *
+ * This is presentation only. The confirmed fact is never rewritten: the brief
+ * keeps the string somebody read and confirmed, and the renderer asks this
+ * function how to set it. Anything the operator typed with even one lowercase
+ * letter is left exactly as written, because then the casing *is* the name.
+ */
+
+const PT = "pt-BR";
+
+/** Words Portuguese leaves lowercase inside a name. */
+const CONNECTIVES = new Set(["de", "da", "do", "das", "dos", "e"]);
+
+const LETTER = /\p{L}/u;
+const LETTERS = /\p{L}/gu;
+const LOWERCASE = /\p{Ll}/u;
+const NON_LETTER = /[^\p{L}]/gu;
+
+const VOWEL_CLASS = "aeiouáàâãéêíóôõúüy";
+
+/**
+ * A short token that reads as one syllable.
+ *
+ * Length alone cannot separate an initialism from a word: "GM", "CTA" and
+ * "ZEN" are all at most three letters, and only the last is a word. What
+ * separates them is whether the letters can be *said* — an optional opening
+ * consonant, a vowel, an optional closing consonant. "ZEN" and "SÃO" fit;
+ * "CTA" (two consonants before the vowel) and "GM" (no vowel at all) do not,
+ * so they keep the caps the owner typed.
+ */
+const SYLLABLE = new RegExp(
+  `^[^${VOWEL_CLASS}]?[${VOWEL_CLASS}]+[^${VOWEL_CLASS}]?$`,
+  "i",
+);
+
+const ACRONYM_MAX_LETTERS = 3;
+
+/**
+ * The floor below which casing carries no signal.
+ *
+ * A two- or three-letter name in caps ("GM", "JJ") is far more likely an
+ * initialism than a shout, so nothing under four letters is touched at all.
+ */
+const SHOUT_MIN_LETTERS = 4;
+
+function titleCaseToken(token: string, isFirst: boolean): string {
+  const letters = token.replace(NON_LETTER, "");
+  if (letters.length === 0) return token;
+
+  const lower = token.toLocaleLowerCase(PT);
+
+  // The first word is capitalised even when it is a connective: "DA CASA" is
+  // read as a name beginning with "Da", not as a fragment.
+  if (!isFirst && CONNECTIVES.has(letters.toLocaleLowerCase(PT))) return lower;
+
+  if (letters.length <= ACRONYM_MAX_LETTERS && !SYLLABLE.test(letters)) return token;
+
+  // Replaces the first letter, not the first character, so a token that opens
+  // with punctuation ("(padaria") still capitalises the word.
+  return lower.replace(LETTER, (character) => character.toLocaleUpperCase(PT));
+}
+
+/**
+ * The name as the site should set it.
+ *
+ * Returns the input untouched unless the name is shouting: at least four
+ * letters and not one of them lowercase.
+ */
+export function displayBusinessName(name: string): string {
+  const letterCount = (name.match(LETTERS) ?? []).length;
+  if (letterCount < SHOUT_MIN_LETTERS) return name;
+  if (LOWERCASE.test(name)) return name;
+
+  let seenWord = false;
+  // Splitting on the separator keeps it in the array, so the original spacing
+  // survives the round trip.
+  return name
+    .split(/(\s+)/)
+    .map((token) => {
+      if (!LETTER.test(token)) return token;
+      const cased = titleCaseToken(token, !seenWord);
+      seenWord = true;
+      return cased;
+    })
+    .join("");
+}
+
+/** True when a name would be re-set by {@link displayBusinessName}. */
+export function isShoutingName(name: string): boolean {
+  return displayBusinessName(name) !== name;
+}

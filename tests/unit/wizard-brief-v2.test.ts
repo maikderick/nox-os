@@ -33,6 +33,8 @@ import {
   createSocialLinkDraft,
   emptyContactDraft,
   emptyBriefDraft,
+  leadContactDraft,
+  mergeLeadContactDraft,
   pinServiceId,
   renameServiceDraft,
   setServiceId,
@@ -76,6 +78,10 @@ function wizardDraft(): BriefDraft {
     businessName: { value: "Estúdio Aurora", source: "LEAD", confirmedAt: AT },
     sector: authoredFact("Estética", AT),
     city: { value: "Fortaleza", source: "LEAD", confirmedAt: AT },
+    about: authoredFact(
+      "O Estúdio Aurora atende estética facial e corporal em Fortaleza, com hora marcada e sala privativa.",
+      AT,
+    ),
     objective: authoredFact(
       "Criar um site completo para apresentar o negócio e facilitar novos contatos.",
       AT,
@@ -212,6 +218,115 @@ describe("um campo preenchido e não confirmado não entra no payload", () => {
     const built = buildBriefV2(draft);
     expect(built.ok).toBe(false);
     expect(built.issues.map((issue) => issue.field)).toContain("businessName");
+  });
+});
+
+describe("apresentação para o cliente", () => {
+  it("vira o fato que a seção Sobre publica", () => {
+    const brief = builtBrief();
+    expect(brief.about?.value).toContain("Estúdio Aurora atende estética");
+    expect(brief.about?.source).toBe("OPERADOR");
+  });
+
+  it("cobra o campo em palavras, não com um rótulo seguido de dois-pontos", () => {
+    // Um operador que lê "Apresentação para o cliente: confirme este campo"
+    // ainda não sabe o que escrever ali. A mensagem diz o que fazer.
+    const draft = { ...wizardDraft(), about: emptyBriefDraft().about };
+    const built = buildBriefV2(draft);
+
+    expect(built.ok).toBe(false);
+    expect(built.issues).toContainEqual({
+      field: "about",
+      message: "Preencha a apresentação para o cliente.",
+    });
+  });
+
+  it("é recusada quando carrega afirmação sem sustentação", () => {
+    const draft = { ...wizardDraft(), about: authoredFact("O melhor estúdio da região.", AT) };
+    const built = buildBriefV2(draft);
+
+    expect(built.ok).toBe(false);
+    expect(built.issues.map((issue) => issue.field)).toContain("about");
+  });
+});
+
+describe("o contato sugerido pelo lead escolhido", () => {
+  const lead = {
+    name: "ESTÚDIO AURORA",
+    phoneE164: "+5585999990000",
+    address: "Rua das Flores, 120",
+    neighborhood: "Aldeota",
+    city: "Fortaleza",
+    state: "CE",
+    postalCode: "60000000",
+    socialLinks: ["https://instagram.com/estudioaurora"],
+  };
+
+  it("oferece telefone, endereço e Instagram como candidatos do lead", () => {
+    const draft = leadContactDraft(lead);
+
+    expect(draft.phone).toEqual({ value: "+5585999990000", source: "LEAD", confirmedAt: null });
+    // Celular: o mesmo número serve de WhatsApp.
+    expect(draft.whatsapp).toEqual({ value: "+5585999990000", source: "LEAD", confirmedAt: null });
+    expect(draft.address.street).toBe("Rua das Flores, 120");
+    expect(draft.address.city).toBe("Fortaleza");
+    expect(draft.address.state).toBe("CE");
+    expect(draft.address.neighborhood).toBe("Aldeota");
+    expect(draft.address.postalCode).toBe("60000000");
+    expect(draft.address.source).toBe("LEAD");
+    expect(draft.socialLinks).toHaveLength(1);
+    expect(draft.socialLinks[0]).toMatchObject({
+      platform: "INSTAGRAM",
+      url: "https://instagram.com/estudioaurora",
+      label: "@estudioaurora",
+      source: "LEAD",
+    });
+
+    // Nada chega confirmado: o lead é fonte de candidato, não de fato.
+    expect(draft.address.confirmedAt).toBeNull();
+    expect(draft.socialLinks[0]!.confirmedAt).toBeNull();
+    // O lead não tem horário nenhum, então nada é inventado aqui.
+    expect(draft.openingHours.every((day) => !day.isOpen)).toBe(true);
+    expect(draft.email).toEqual(emptyContactDraft().email);
+  });
+
+  it("não sugere WhatsApp para um número fixo", () => {
+    const draft = leadContactDraft({ ...lead, phoneE164: "+558533334444" });
+
+    expect(draft.phone.value).toBe("+558533334444");
+    expect(draft.whatsapp).toEqual(emptyContactDraft().whatsapp);
+  });
+
+  it("devolve o rascunho vazio para um lead sem nada", () => {
+    expect(leadContactDraft({ name: "Sem dados" })).toEqual(emptyContactDraft());
+    expect(leadContactDraft(null)).toEqual(emptyContactDraft());
+  });
+
+  it("não sugere uma rede que o briefing não sabe nomear", () => {
+    expect(leadContactDraft({ socialLinks: ["https://exemplo.com.br/perfil"] }).socialLinks).toEqual(
+      [],
+    );
+  });
+
+  it("nunca sobrescreve o que o operador já digitou", () => {
+    const current = emptyContactDraft();
+    current.phone = typedFact("(85) 3333-4444");
+    current.address = { ...current.address, street: "Avenida Beira Mar", city: "Fortaleza" };
+    current.socialLinks = [
+      { ...createSocialLinkDraft("s1"), url: "https://instagram.com/outro", source: "OPERADOR" },
+    ];
+
+    const merged = mergeLeadContactDraft(current, leadContactDraft(lead));
+
+    expect(merged.phone).toEqual(current.phone);
+    expect(merged.address.street).toBe("Avenida Beira Mar");
+    expect(merged.socialLinks).toEqual(current.socialLinks);
+    // O que estava vazio recebe a sugestão.
+    expect(merged.whatsapp).toEqual({
+      value: "+5585999990000",
+      source: "LEAD",
+      confirmedAt: null,
+    });
   });
 });
 
@@ -366,6 +481,7 @@ describe("o rascunho inicial do assistente", () => {
       "businessName",
       "sector",
       "city",
+      "about",
       "objective",
       "audience",
       "positioning",

@@ -153,6 +153,17 @@ export function buildSiteContentSnapshot(input: SiteExportInput): Record<string,
    * and a positioning that does not fit raises rather than being cut — deciding
    * what to drop from a confirmed sentence is the operator's call, not ours.
    */
+  /*
+   * The "Sobre" paragraph is the presentation text when the brief has one, and
+   * the positioning otherwise.
+   *
+   * `objective` and `audience` used to be published here. They are the two
+   * operator-facing fields in the brief — what the site is for, who it targets
+   * — so the section read as an internal note to the client's own customers.
+   * Neither may reach a page again, which is why neither is named below.
+   */
+  const aboutBody = (isSiteBriefV2(brief) ? brief.about : null) ?? brief.positioning;
+
   const confirmedMetaDescription = isSiteBriefV2(brief) ? brief.metaDescription : null;
   const seoDescription = limit(
     "seo.description",
@@ -231,10 +242,7 @@ export function buildSiteContentSnapshot(input: SiteExportInput): Record<string,
       // schemaVersion 2 it is a plain string, so it no longer has to borrow
       // some other fact's source and timestamp to exist.
       heading: "Sobre",
-      body: [
-        carryText("about.body[0]", brief.objective, 1500),
-        carryText("about.body[1]", brief.audience, 1500),
-      ],
+      body: [carryText("about.body[0]", aboutBody, 1500)],
     },
     services,
     gallery: [],

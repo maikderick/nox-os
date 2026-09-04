@@ -217,8 +217,13 @@ function narrativeEntries(brief: {
   visualDirection: ConfirmedFact;
   notes: ConfirmedFact | null;
   differentiators: ConfirmedFact[];
+  /** v2 only — a v1 brief has no presentation text. */
+  about?: ConfirmedFact | null;
 }): NarrativeEntry[] {
   return [
+    // `about` is the one narrative field a visitor actually reads, so the claim
+    // rules matter here more than anywhere else in the brief.
+    ...(brief.about ? [{ field: "about", value: brief.about.value }] : []),
     { field: "objective", value: brief.objective.value },
     { field: "audience", value: brief.audience.value },
     { field: "positioning", value: brief.positioning.value },
@@ -282,6 +287,20 @@ const siteBriefV2Object = z
   .object({
     schemaVersion: z.literal(2),
     ...commonFields,
+    /**
+     * The business presented to its customers, in two to four sentences.
+     *
+     * The only narrative field written *for the visitor*. `objective` and
+     * `audience` describe what the site is for and who it targets — questions
+     * an operator answers about the job, not sentences a customer should ever
+     * read — and publishing them is how a site ended up telling its own
+     * visitors "nicho voltado a restaurante japonês".
+     *
+     * Nullable with a default so every brief already stored keeps parsing: a
+     * brief written before this field existed simply has no presentation text,
+     * and the "Sobre" block it would fill is omitted rather than invented.
+     */
+    about: paragraphFactSchema.nullable().default(null),
     services: z.array(briefServiceSchema).max(40).default([]),
     publicContact: briefPublicContactSchema.default(EMPTY_PUBLIC_CONTACT),
     /**

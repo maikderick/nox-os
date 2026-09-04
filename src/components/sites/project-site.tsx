@@ -11,6 +11,7 @@ import {
   type BriefService,
   type SiteBrief,
 } from "@/lib/site-factory/brief-schema";
+import { displayBusinessName } from "@/lib/site-factory/display-name";
 
 type PostalAddress = {
   street: string;
@@ -256,7 +257,13 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
   const { blocks } = resolveComposition(brief);
   const contact = briefPublicContact(brief);
   const services: BriefService[] = isSiteBriefV2(brief) ? brief.services : [];
+  const about = isSiteBriefV2(brief) ? brief.about : null;
   const has = (block: BlockId) => blocks.includes(block);
+
+  // The name as the site sets it. The fact itself is untouched — this only
+  // decides how the confirmed string is typeset, so an imported "ZEN COMIDA
+  // JAPONESA" stops shouting at the visitor from four places at once.
+  const name = displayBusinessName(brief.businessName.value);
 
   // Instrument Serif ships a single real weight (400); any heavier value on
   // it forces the browser to synthesize ("fake") bold, which the type system
@@ -524,7 +531,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
                 letterSpacing: upper ? "0.08em" : "0",
               }}
             >
-              {brief.businessName.value}
+              {name}
             </a>
             <nav
               aria-label="Seções"
@@ -553,7 +560,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
                 marginInline: centred ? "auto" : undefined,
               }}
             >
-              {brief.businessName.value}
+              {name}
             </h1>
             <p
               style={{
@@ -581,27 +588,22 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
                   color: "var(--ink)",
                 }}
               >
-                Falar com {brief.businessName.value}
+                Falar com {name}
               </a>
             ) : null}
           </div>
         </SiteSection>
       ) : null}
 
-      {has("about") ? (
+      {/* `about` is available only when the presentation text was confirmed,
+          so the conjunct narrows the type rather than gating a second time.
+          The brief's `objective` and `audience` are operator-facing notes and
+          are deliberately absent from this file. */}
+      {has("about") && about ? (
         <SiteSection id="sobre" ground={groundOf("about")} spine={spine}>
           <SectionHeading weight={headingWeight}>Sobre</SectionHeading>
           <div style={{ marginTop: "var(--space-block)", maxWidth: "62ch" }}>
-            <p style={{ ...BODY_TEXT, color: "var(--ink-muted)" }}>{brief.objective.value}</p>
-            <p
-              style={{
-                ...BODY_TEXT,
-                marginTop: "var(--space-inline)",
-                color: "var(--ink-muted)",
-              }}
-            >
-              {brief.audience.value}
-            </p>
+            <p style={{ ...BODY_TEXT, color: "var(--ink-muted)" }}>{about.value}</p>
           </div>
         </SiteSection>
       ) : null}
@@ -701,9 +703,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
             className="mx-auto max-w-5xl px-6"
             style={{ ...SMALL_TEXT, paddingBlock: "var(--space-block)", color: "var(--ink-muted)" }}
           >
-            {brief.city
-              ? `${brief.businessName.value}, ${brief.city.value}`
-              : brief.businessName.value}
+            {brief.city ? `${name}, ${brief.city.value}` : name}
           </div>
         </footer>
       ) : null}

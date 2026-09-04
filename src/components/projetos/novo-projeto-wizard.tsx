@@ -23,6 +23,7 @@ import {
 
 import type { BriefCapabilities } from "@/lib/site-factory/brief-schema";
 import {
+  acceptedFact,
   addressHasContent,
   authoredFact,
   buildBriefV2,
@@ -32,6 +33,9 @@ import {
   initialBriefDraft,
   guessSocialPlatform,
   isFactConfirmed,
+  isLeadSuggestion,
+  leadContactDraft,
+  mergeLeadContactDraft,
   nowIso,
   OPENING_HOURS_DAY_LABELS,
   pinServiceId,
@@ -55,6 +59,7 @@ import {
   type SocialLinkDraft,
 } from "@/lib/site-factory/brief-draft";
 import { categoryMatchesNiche, findNicheByLabel, searchNiches, type Niche } from "@/lib/niches";
+import { displayBusinessName } from "@/lib/site-factory/display-name";
 import { normalizePhoneE164 } from "@/lib/phone";
 import { OBJECTIVE_PRESETS, TONE_PRESETS, VISUAL_PRESETS } from "@/lib/site-factory/wizard-presets";
 import { cn, opportunityBand } from "@/lib/utils";
@@ -93,8 +98,19 @@ const STEPS = ["Setor", "Leads", "Negócio", "Abordagem", "Briefing"];
 const STEP_FIELDS: string[][] = [
   ["sector"],
   [],
-  ["businessName", "city", "objective"],
-  ["audience", "positioning", "visualDirection", "differentiators", "metaDescription"],
+  ["businessName", "city"],
+  // `objective` moved here with `audience`: both are internal notes about the
+  // job, and they now sit in one collapsed group next to the copy that is
+  // actually published.
+  [
+    "about",
+    "positioning",
+    "visualDirection",
+    "objective",
+    "audience",
+    "differentiators",
+    "metaDescription",
+  ],
   ["desiredSections", "services", "publicContact", "notes"],
 ];
 
@@ -363,10 +379,36 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
     }));
   }
 
-  /** Picking a lead pre-fills the project name when the operator has not typed one. */
+  /**
+   * Picking a lead seeds the fields the lead can actually answer.
+   *
+   * The project name (internal), the business name when the lead shouts it,
+   * and every contact channel — as *candidates*, unconfirmed, each still
+   * needing its own "confirmado". Nothing already typed is overwritten. This
+   * exists because the contact step started empty: operators walked past it
+   * and shipped sites with no phone and no address while the lead card in
+   * front of them had both.
+   */
   function chooseLead(lead: Lead) {
     setLeadId(lead.id);
     setProjectName((current) => (current.trim() ? current : `Site ${lead.name}`));
+
+    const suggestedContact = leadContactDraft(lead, () => nextKey());
+    const suggestedName = displayBusinessName(lead.name);
+
+    setDraft((current) => ({
+      ...current,
+      // A shouted import ("ZEN COMIDA JAPONESA") is offered already re-set, so
+      // the operator confirms a name a customer can read instead of retyping
+      // it. Clicking this lead's card is the act of reading the name, which is
+      // the same confirmation the "Usar" button records — hence `acceptedFact`,
+      // and hence only when the field is still empty.
+      businessName:
+        current.businessName.value.trim() || suggestedName === lead.name
+          ? current.businessName
+          : acceptedFact(suggestedName),
+      contact: mergeLeadContactDraft(current.contact, suggestedContact),
+    }));
   }
 
   // --- envio --------------------------------------------------------------
@@ -752,8 +794,15 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
                   suggestion={
                     selectedLead
                       ? {
-                          label: selectedLead.name,
-                          onUse: () => setFact("businessName", { value: selectedLead.name, source: "LEAD", confirmedAt: nowIso() }),
+                          // The lead's name as the site would set it: both
+                          // paths into this field agree, so accepting the
+                          // suggestion never puts the shouting back.
+                          label: displayBusinessName(selectedLead.name),
+                          onUse: () =>
+                            setFact(
+                              "businessName",
+                              acceptedFact(displayBusinessName(selectedLead.name)),
+                            ),
                         }
                       : undefined
                   }
@@ -806,25 +855,6 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
                 />
               </div>
             </Section>
-
-            <Section title="Objetivo do site" text="O que o cliente precisa conseguir fazer ao abrir a página." className="mt-5">
-              <PresetChips
-                presets={OBJECTIVE_PRESETS}
-                current={draft.objective.value}
-                onPick={(text) => setFact("objective", authoredFact(text))}
-              />
-              <TextField
-                id="objetivo"
-                label="Objetivo principal"
-                className="mt-4"
-                multiline
-                value={draft.objective.value}
-                onChange={(value) => setFact("objective", authoredFact(value))}
-                placeholder="Ex.: Receber pedidos pelo WhatsApp a partir do site."
-                invalid={isInvalid("objective")}
-                describedBy={showIssues ? issuesId : undefined}
-              />
-            </Section>
           </Step>
         )}
 
@@ -835,6 +865,23 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
           >
             <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
               <div className="space-y-5">
+                <Section
+                  title="O texto que o cliente vai ler"
+                  text="Escreva para quem vai visitar o site, não para a operação."
+                >
+                  <TextField
+                    id="apresentacao"
+                    label="Apresentação para o cliente"
+                    multiline
+                    value={draft.about.value}
+                    onChange={(value) => setFact("about", authoredFact(value))}
+                    placeholder="Ex.: A Zen serve culinária japonesa no centro de Fortaleza, com balcão de sushi e pratos quentes preparados na hora."
+                    hint="Como você apresentaria o negócio a quem vai visitar o site, em duas a quatro frases. Isto aparece na seção Sobre."
+                    invalid={isInvalid("about")}
+                    describedBy={showIssues ? issuesId : undefined}
+                  />
+                </Section>
+
                 <Section title="Tom de voz" text="Como o site fala com o cliente. Escolha um ponto de partida e ajuste.">
                   <PresetChips
                     presets={TONE_PRESETS}
@@ -843,11 +890,12 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
                   />
                   <TextField
                     id="posicionamento"
-                    label="Posicionamento"
+                    label="Frase de destaque"
                     className="mt-4"
                     multiline
                     value={draft.positioning.value}
                     onChange={(value) => setFact("positioning", authoredFact(value))}
+                    hint="Uma frase curta. Aparece no topo do site."
                     invalid={isInvalid("positioning")}
                     describedBy={showIssues ? issuesId : undefined}
                   />
@@ -871,10 +919,27 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
                   />
                 </Section>
 
-                <Section title="Público e diferenciais" text="Para quem o site fala e o que só este negócio pode afirmar.">
+                <InternalNotes invalid={isInvalid("objective") || isInvalid("audience")}>
+                  <PresetChips
+                    presets={OBJECTIVE_PRESETS}
+                    current={draft.objective.value}
+                    onPick={(text) => setFact("objective", authoredFact(text))}
+                  />
+                  <TextField
+                    id="objetivo"
+                    label="Objetivo principal"
+                    className="mt-4"
+                    multiline
+                    value={draft.objective.value}
+                    onChange={(value) => setFact("objective", authoredFact(value))}
+                    placeholder="Ex.: Receber pedidos pelo WhatsApp a partir do site."
+                    invalid={isInvalid("objective")}
+                    describedBy={showIssues ? issuesId : undefined}
+                  />
                   <TextField
                     id="publico"
                     label="Público"
+                    className="mt-4"
                     multiline
                     value={draft.audience.value}
                     onChange={(value) => setFact("audience", authoredFact(value))}
@@ -882,10 +947,12 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
                     invalid={isInvalid("audience")}
                     describedBy={showIssues ? issuesId : undefined}
                   />
+                </InternalNotes>
+
+                <Section title="Diferenciais e busca" text="O que só este negócio pode afirmar, e como ele aparece no resultado de busca.">
                   <TextField
                     id="diferenciais"
                     label="Diferenciais confirmados"
-                    className="mt-4"
                     multiline
                     value={draft.differentiators.value}
                     onChange={(value) => setFact("differentiators", authoredFact(value))}
@@ -1156,6 +1223,43 @@ function Section({
   );
 }
 
+/**
+ * The fields the operator answers for the operation, not for the visitor.
+ *
+ * Collapsed and labelled, because "Objetivo principal" and "Público" used to
+ * sit next to the published copy and read as though they were part of it —
+ * which is exactly how "nicho voltado a restaurante japonês" reached a client's
+ * "Sobre" section. They are still required and still validated; they simply no
+ * longer look like something a customer will read.
+ */
+function InternalNotes({
+  invalid,
+  children,
+}: {
+  invalid: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details
+      // Open when one of its fields is the reason the step will not advance:
+      // an error pointing inside a closed group is an error nobody can find.
+      open={invalid}
+      className={cn(
+        "rounded-2xl border bg-nox-bg/40 p-5",
+        invalid ? "border-red-400/50" : "border-nox-border",
+      )}
+    >
+      <summary className="cursor-pointer text-sm font-semibold text-white">
+        Notas internas (não aparecem no site)
+      </summary>
+      <p className="mt-1 mb-4 text-xs text-nox-muted">
+        Orientam a geração e ficam no briefing. Nenhuma delas é publicada.
+      </p>
+      {children}
+    </details>
+  );
+}
+
 function PresetChips({
   presets,
   current,
@@ -1308,6 +1412,20 @@ function SourceBadge({ source }: { source: string }) {
   );
 }
 
+/**
+ * The mark a prefilled field carries until someone acts on it.
+ *
+ * A value that appeared on its own, from the lead, must never be mistaken for
+ * one a person checked. It disappears the moment the field is confirmed or
+ * edited — editing rewrites the source to `OPERADOR`, confirming stamps the
+ * time — so it can only ever be read as "nobody has looked at this yet".
+ */
+function LeadSuggestionMark() {
+  return (
+    <p className="mt-1.5 text-xs text-amber-300">sugerido pelo lead — confirme</p>
+  );
+}
+
 function Suggestion({ label, onUse }: { label: string; onUse: () => void }) {
   return (
     <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-nox-muted">
@@ -1436,6 +1554,7 @@ function ConfirmableField({
         source={fact.source}
         suggestion={suggestion}
       />
+      {isLeadSuggestion(fact) ? <LeadSuggestionMark /> : null}
       <label
         htmlFor={`${id}-confirmado`}
         className={`mt-2 inline-flex items-center gap-2 text-xs ${confirmed ? "text-emerald-300" : "text-nox-muted"}`}
@@ -1608,6 +1727,15 @@ function ContactSection({
   const phonePreview = normalizePhoneE164(contact.phone.value);
   const whatsappPreview = normalizePhoneE164(contact.whatsapp.value);
   const addressConfirmed = Boolean(contact.address.confirmedAt) && addressHasContent(contact.address);
+  const addressSuggested =
+    contact.address.source === "LEAD" &&
+    !contact.address.confirmedAt &&
+    addressHasContent(contact.address);
+
+  const takenSocialUrls = new Set(contact.socialLinks.map((link) => link.url.trim()));
+  const untakenLeadSocialLinks = (lead?.socialLinks ?? []).filter(
+    (url) => !takenSocialUrls.has(url.trim()),
+  );
 
   function onOpeningHoursChange(index: number, update: Partial<OpeningHoursDraft>) {
     onContact({
@@ -1634,7 +1762,9 @@ function ContactSection({
           hint={phonePreview ? `Será gravado como ${phonePreview}` : "Use DDD + número."}
           invalid={invalid("publicContact.phone")}
           suggestion={
-            lead?.phoneE164
+            // Already prefilled from this lead? Then the button would only
+            // rewrite the field with what it already shows.
+            lead?.phoneE164 && contact.phone.value.trim() !== lead.phoneE164
               ? {
                   label: lead.phoneE164,
                   onUse: () => onContact({ phone: suggestedFact(lead?.phoneE164 ?? "") }),
@@ -1652,7 +1782,7 @@ function ContactSection({
           hint={whatsappPreview ? `Será gravado como ${whatsappPreview}` : "Use DDD + número."}
           invalid={invalid("publicContact.whatsapp")}
           suggestion={
-            lead?.phoneE164
+            lead?.phoneE164 && contact.whatsapp.value.trim() !== lead.phoneE164
               ? {
                   label: lead.phoneE164,
                   onUse: () => onContact({ whatsapp: suggestedFact(lead?.phoneE164 ?? "") }),
@@ -1680,7 +1810,7 @@ function ContactSection({
         <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-nox-muted">
           Endereço
         </legend>
-        {lead?.address ? (
+        {lead?.address && !addressHasContent(contact.address) ? (
           <Suggestion
             label={[lead.address, lead.city, lead.state].filter(Boolean).join(", ")}
             onUse={() =>
@@ -1760,6 +1890,7 @@ function ContactSection({
           />
           {addressConfirmed ? "Endereço confirmado — será publicado" : "Confirmar endereço (sem isto, não é enviado)"}
         </label>
+        {addressSuggested ? <LeadSuggestionMark /> : null}
       </fieldset>
 
       <fieldset
@@ -1828,9 +1959,9 @@ function ContactSection({
         <legend className="text-xs font-semibold uppercase tracking-wider text-nox-muted">
           Redes sociais
         </legend>
-        {lead && lead.socialLinks.length > 0 ? (
+        {lead && untakenLeadSocialLinks.length > 0 ? (
           <div className="mt-2 space-y-1">
-            {lead.socialLinks.map((url) => (
+            {untakenLeadSocialLinks.map((url) => (
               <Suggestion
                 key={url}
                 label={url}
@@ -1904,6 +2035,9 @@ function ContactSection({
                   />
                   {link.confirmedAt ? "Confirmado — será publicado" : "Confirmado (sem isto, não é enviado)"}
                 </label>
+                {isLeadSuggestion({ value: link.url, source: link.source, confirmedAt: link.confirmedAt })
+                  ? <LeadSuggestionMark />
+                  : null}
                 <button
                   type="button"
                   onClick={() => onSocialRemove(link.key)}

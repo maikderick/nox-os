@@ -29,6 +29,26 @@ export function isValidPhoneE164(value: string | null | undefined): value is str
   return Boolean(parsed?.isValid() && parsed.format("E.164") === value);
 }
 
+/**
+ * Whether a number is a mobile line, and so plausibly reachable on WhatsApp.
+ *
+ * The bundled metadata is the "min" set, which carries no line types, so this
+ * answers for Brazil only — where a mobile subscriber number is nine digits
+ * beginning with 9 — and answers "no" for anything else rather than guessing.
+ * A wrong "yes" would put a landline behind a WhatsApp button on a client's
+ * site; a wrong "no" only means the operator types the number themselves.
+ */
+export function isMobilePhone(raw: string | null | undefined): boolean {
+  const e164 = normalizePhoneE164(raw);
+  if (!e164) return false;
+
+  const parsed = parsePhoneNumberFromString(e164);
+  if (!parsed || parsed.country !== "BR") return false;
+
+  const national = parsed.nationalNumber;
+  return national.length === 11 && national.startsWith("9", 2);
+}
+
 /** Digits only for wa.me links (no leading +). */
 export function phoneDigitsForWaMe(e164: string): string {
   return e164.replace(/\D/g, "");

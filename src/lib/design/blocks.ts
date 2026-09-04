@@ -64,7 +64,14 @@ export function resolveComposition(brief: SiteBrief): { blocks: BlockId[]; unmap
   // (e.g. `hours`) that the operator never asked to remove. Whether a brief
   // should be able to opt a confirmed block out is a product decision left
   // to the owner.
-  const available = new Set<BlockId>(["navbar", "hero", "about", "footer"]);
+  const available = new Set<BlockId>(["navbar", "hero", "footer"]);
+
+  // `about` used to be unconditional, filled with the brief's `objective` and
+  // `audience`. Those are notes about the job, not copy for a visitor, so the
+  // block now stands on one fact of its own: the presentation text. Without it
+  // there is nothing to say under "Sobre", and a section with nothing to say
+  // gets no placeholder.
+  if (isSiteBriefV2(brief) && brief.about) available.add("about");
 
   if (brief.differentiators.length > 0) available.add("differentiators");
   if (isSiteBriefV2(brief) && brief.services.length > 0) available.add("services");

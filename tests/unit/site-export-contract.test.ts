@@ -491,6 +491,44 @@ describe("no caller can publish more than the brief confirmed", () => {
     // wrapper it never earned.
     expect(about.body[0]!.confirmedAt).toBe(CONFIRMED_AT);
   });
+
+  it("publishes the confirmed presentation text as the about body", () => {
+    const presentation = "A oficina atende reparos hidráulicos e elétricos na região central.";
+    const snapshot = buildSiteContentSnapshot({
+      brief: briefV2({ about: fact(presentation) }),
+      siteUrl: SITE_URL,
+      seed: SEED,
+      privacy,
+    });
+    const about = snapshot.about as { body: { value: string }[] };
+
+    expect(about.body.map((paragraph) => paragraph.value)).toEqual([presentation]);
+    expect(validateSnapshot(snapshot)).toEqual([]);
+  });
+
+  it("falls back to the positioning, never to the operator-facing fields", () => {
+    // `objective` ("what the site is for") and `audience` ("who it targets")
+    // are answers about the job. They were the about body until a client's
+    // site told its own customers "nicho voltado a restaurante japonês", and
+    // no snapshot may carry them again — with or without a presentation text.
+    for (const brief of [briefV1(), briefV2(), briefV2({ about: fact("A oficina atende na região central.") })]) {
+      const snapshot = buildSiteContentSnapshot({ brief, siteUrl: SITE_URL, seed: SEED, privacy });
+      const serialized = JSON.stringify(snapshot);
+
+      expect(serialized).not.toContain(NARRATIVE.objective.value);
+      expect(serialized).not.toContain(NARRATIVE.audience.value);
+      expect(validateSnapshot(snapshot)).toEqual([]);
+    }
+
+    const withoutPresentation = buildSiteContentSnapshot({
+      brief: briefV2(),
+      siteUrl: SITE_URL,
+      seed: SEED,
+      privacy,
+    });
+    const about = withoutPresentation.about as { body: { value: string }[] };
+    expect(about.body.map((paragraph) => paragraph.value)).toEqual([NARRATIVE.positioning.value]);
+  });
 });
 
 // ---------------------------------------------------------------------------

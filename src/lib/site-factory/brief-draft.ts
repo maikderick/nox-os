@@ -13,7 +13,7 @@
  */
 
 import { findClaimRisks } from "@/lib/content-integrity";
-import { normalizePhoneE164 } from "@/lib/phone";
+import { isMobilePhone, normalizePhoneE164 } from "@/lib/phone";
 
 import {
   BRIEF_DAYS,
@@ -462,6 +462,133 @@ export function guessSocialPlatform(url: string): BriefSocialPlatform | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Candidatos vindos do lead
+// ---------------------------------------------------------------------------
+
+/**
+ * The lead fields that can seed a contact draft.
+ *
+ * Structural, not the `Business` row: the draft layer must not depend on the
+ * database shape, and nothing here can carry a value that is not already a
+ * contact candidate.
+ */
+export type LeadContactCandidate = {
+  name?: string;
+  phoneE164?: string | null;
+  address?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  socialLinks?: string[];
+};
+
+/** The handle a social URL ends in, as a label a visitor would recognise. */
+function socialHandle(url: string): string {
+  try {
+    const segments = new URL(url.trim()).pathname.split("/").filter(Boolean);
+    const handle = segments[0] ?? "";
+    return handle ? `@${handle}` : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The contact draft a selected lead suggests.
+ *
+ * Every field comes back **unconfirmed**, carrying `source: "LEAD"`. That is
+ * the whole point: the operator was skipping the contact step because it
+ * started empty, and a site shipped with no phone and no address while the
+ * lead card had both. Offering them as candidates costs one confirmation each;
+ * leaving them out costs the client their contact block.
+ *
+ * What is deliberately *not* suggested:
+ *
+ * - Opening hours. The lead carries none, so anything here would be invented.
+ * - The website. A business with its own site is filtered out upstream, so a
+ *   value in that column is stale.
+ * - WhatsApp for a landline. The number is offered as WhatsApp only when it is
+ *   a mobile line; a landline behind a WhatsApp button is a dead end.
+ */
+export function leadContactDraft(
+  lead: LeadContactCandidate | null | undefined,
+  keyFor: (index: number) => string = (index) => `lead-social-${index}`,
+): ContactDraft {
+  const draft = emptyContactDraft();
+  if (!lead) return draft;
+
+  const phone = lead.phoneE164?.trim() ?? "";
+  if (phone) {
+    draft.phone = suggestedFact(phone);
+    if (isMobilePhone(phone)) draft.whatsapp = suggestedFact(phone);
+  }
+
+  const address: Partial<AddressDraft> = {
+    street: lead.address?.trim() ?? "",
+    neighborhood: lead.neighborhood?.trim() ?? "",
+    city: lead.city?.trim() ?? "",
+    state: lead.state?.trim() ?? "",
+    postalCode: lead.postalCode?.trim() ?? "",
+  };
+  const suggestedAddress = { ...draft.address, ...address };
+  // The street number is not a column on the lead; it stays for the operator.
+  if (addressHasContent(suggestedAddress)) {
+    draft.address = { ...suggestedAddress, source: "LEAD", confirmedAt: null };
+  }
+
+  draft.socialLinks = (lead.socialLinks ?? []).flatMap((url, index) => {
+    const trimmed = url.trim();
+    const platform = guessSocialPlatform(trimmed);
+    // A URL on no network the brief knows about would be published under a
+    // platform nobody chose, so it is dropped rather than guessed at.
+    if (!platform) return [];
+    return [
+      {
+        ...createSocialLinkDraft(keyFor(index)),
+        platform,
+        url: trimmed,
+        label: socialHandle(trimmed),
+        source: "LEAD" as const,
+        confirmedAt: null,
+      },
+    ];
+  });
+
+  return draft;
+}
+
+/**
+ * Lays a lead's candidates under what the operator already has.
+ *
+ * Anything already typed wins, field by field, so re-picking a lead never
+ * overwrites work. Opening hours and e-mail are never suggested, so they pass
+ * through untouched.
+ */
+export function mergeLeadContactDraft(
+  current: ContactDraft,
+  suggested: ContactDraft,
+): ContactDraft {
+  return {
+    ...current,
+    phone: current.phone.value.trim() ? current.phone : suggested.phone,
+    whatsapp: current.whatsapp.value.trim() ? current.whatsapp : suggested.whatsapp,
+    address: addressHasContent(current.address) ? current.address : suggested.address,
+    socialLinks:
+      current.socialLinks.length > 0 ? current.socialLinks : suggested.socialLinks,
+  };
+}
+
+/** True while a field still shows a lead's suggestion nobody has confirmed. */
+export function isLeadSuggestion(fact: {
+  value: string;
+  source: BriefFactSource;
+  confirmedAt: string | null;
+}): boolean {
+  return fact.source === "LEAD" && !fact.confirmedAt && fact.value.trim().length > 0;
+}
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
 function isHttpsUrl(value: string): boolean {
@@ -656,6 +783,8 @@ export type BriefDraft = {
   businessName: DraftFact;
   sector: DraftFact;
   city: DraftFact;
+  /** The business presented to its customers. The only narrative field published. */
+  about: DraftFact;
   objective: DraftFact;
   audience: DraftFact;
   positioning: DraftFact;
@@ -675,6 +804,7 @@ export function emptyBriefDraft(): BriefDraft {
     businessName: emptyFact(),
     sector: emptyFact(),
     city: emptyFact(),
+    about: emptyFact(),
     objective: emptyFact(),
     audience: emptyFact(),
     positioning: emptyFact(),
@@ -714,21 +844,29 @@ export function splitList(value: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * The fields a brief cannot be sent without, each with the sentence the
+ * operator reads. The message is written out rather than derived from a label
+ * because `about` asks for something in plain words — an operator who reads
+ * "Apresentação para o cliente: confirme este campo" still does not know what
+ * to write there.
+ */
 const REQUIRED_NARRATIVE: Array<[keyof BriefDraft, string]> = [
-  ["businessName", "Nome do negócio"],
-  ["sector", "Setor"],
-  ["objective", "Objetivo"],
-  ["audience", "Público"],
-  ["positioning", "Posicionamento"],
-  ["visualDirection", "Direção visual"],
+  ["businessName", "Nome do negócio: confirme este campo."],
+  ["sector", "Setor: confirme este campo."],
+  ["about", "Preencha a apresentação para o cliente."],
+  ["objective", "Objetivo: confirme este campo."],
+  ["audience", "Público: confirme este campo."],
+  ["positioning", "Frase de destaque: confirme este campo."],
+  ["visualDirection", "Direção visual: confirme este campo."],
 ];
 
 export function validateNarrative(draft: BriefDraft): DraftIssue[] {
   const issues: DraftIssue[] = [];
 
-  for (const [field, label] of REQUIRED_NARRATIVE) {
+  for (const [field, message] of REQUIRED_NARRATIVE) {
     if (!isFactConfirmed(draft[field] as DraftFact)) {
-      issues.push({ field: String(field), message: `${label}: confirme este campo.` });
+      issues.push({ field: String(field), message });
     }
   }
 
@@ -765,7 +903,7 @@ export function validateNarrative(draft: BriefDraft): DraftIssue[] {
 export function validateClaims(draft: BriefDraft): DraftIssue[] {
   // Only what would actually be sent. Text sitting in an unconfirmed field is
   // never published, so it must not block the operator either.
-  const narrative = (["objective", "audience", "positioning", "visualDirection", "notes"] as const)
+  const narrative = (["about", "objective", "audience", "positioning", "visualDirection", "notes"] as const)
     .filter((field) => isFactConfirmed(draft[field]))
     .map((field) => ({ field, value: draft[field].value }));
 
@@ -844,6 +982,7 @@ export function buildBriefV2(draft: BriefDraft): BriefDraftBuild {
       businessName: required(draft.businessName),
       sector: required(draft.sector),
       city: toConfirmedFact(draft.city),
+      about: required(draft.about),
       objective: required(draft.objective),
       audience: required(draft.audience),
       positioning: required(draft.positioning),
