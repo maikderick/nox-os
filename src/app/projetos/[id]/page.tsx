@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, Building2, FileText, MapPin, Phone } from "lucide-react";
+import { ArrowLeft, Building2, CheckCircle, FileText, MapPin, Phone } from "lucide-react";
 
 import { CATEGORY_GROUPS } from "@/lib/categories";
-import { GenerateSiteButton, SendToReviewButton } from "@/components/projetos/generate-site-button";
+import {
+  GenerateSiteButton, SendToReviewButton, TransitionButton,
+} from "@/components/projetos/generate-site-button";
 import { requirePermission } from "@/lib/authz/dal";
 import { resolveArtDirection, type Palette } from "@/lib/design/art-direction";
 import { BLOCK_LABELS, resolveComposition } from "@/lib/design/blocks";
@@ -53,6 +55,7 @@ export default async function ProjectPage({ params }: PageProps) {
   const project = await getSiteProject(actor, id);
 
   const canWrite = actor.permissions.includes("project:write");
+  const canWriteBrief = actor.permissions.includes("brief:write");
   const businessId = project.client.businessId;
 
   const state = isSiteProjectState(project.status) ? project.status : "RASCUNHO";
@@ -150,20 +153,49 @@ export default async function ProjectPage({ params }: PageProps) {
         ) : (
           <>
             <h2 className="text-xl font-semibold text-white">Confirmar o briefing</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
-              O site é calculado a partir dos fatos confirmados. Sem briefing confirmado não há
-              o que gerar.
-            </p>
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <Link href="/projetos/novo" className="nox-btn-primary px-6 py-3 text-base">
-                Concluir briefing
-              </Link>
-              {brief ? (
-                <Link href={`/projetos/${project.id}/preview`} className="nox-btn-secondary">
-                  Prévia interna
-                </Link>
-              ) : null}
-            </div>
+            {state === "RASCUNHO" && !brief ? (
+              // A project reaches RASCUNHO only through `BRIEFING_PRONTO -> RASCUNHO`
+              // or `PUBLICADO -> RASCUNHO`, and both keep the current brief version —
+              // so a RASCUNHO with no brief at all is a legacy record from before
+              // brief versioning. There is no per-project brief editor yet, so the
+              // only honest next step is starting over in the wizard.
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+                Este projeto não tem briefing confirmado. Crie o site por um projeto novo no
+                assistente.
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+                  O site é calculado a partir dos fatos confirmados. Sem briefing confirmado não
+                  há o que gerar.
+                </p>
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  {state === "RASCUNHO" ? (
+                    canWriteBrief ? (
+                      <TransitionButton
+                        projectId={project.id}
+                        targetStatus="BRIEFING_PRONTO"
+                        label="Concluir briefing"
+                        busyLabel="Concluindo"
+                        failure="O briefing não pôde ser concluído agora."
+                        icon={<CheckCircle size={16} aria-hidden="true" />}
+                        className="nox-btn-primary px-6 py-3 text-base"
+                      />
+                    ) : (
+                      <p className="text-sm text-nox-muted">
+                        Seu papel não permite concluir o briefing. Peça a um operador da
+                        organização.
+                      </p>
+                    )
+                  ) : null}
+                  {brief ? (
+                    <Link href={`/projetos/${project.id}/preview`} className="nox-btn-secondary">
+                      Prévia interna
+                    </Link>
+                  ) : null}
+                </div>
+              </>
+            )}
           </>
         )}
 

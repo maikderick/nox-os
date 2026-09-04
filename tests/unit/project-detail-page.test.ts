@@ -76,6 +76,22 @@ describe("raiz do projeto", () => {
     const source = readFileSync(PAGE, "utf8");
     expect(source).toContain("Construção do repositório (opcional)");
   });
+
+  it("em RASCUNHO, conclui o briefing do próprio projeto em vez de abrir um novo", () => {
+    const source = readFileSync(PAGE, "utf8");
+    // The fix: "Concluir briefing" is a transition on the current project
+    // (`RASCUNHO -> BRIEFING_PRONTO`, `brief:write`), not a link into the
+    // wizard that creates a second project.
+    expect(source).toContain("Concluir briefing");
+    expect(source).toContain('targetStatus="BRIEFING_PRONTO"');
+    expect(source).toContain('actor.permissions.includes("brief:write")');
+    // The legacy edge case — RASCUNHO with no brief at all — gets a plain
+    // sentence, not a link, since there is no per-project brief editor.
+    expect(source).toContain("Crie o site por um projeto novo");
+    // And the wizard link this finding was about is gone from this page
+    // entirely, not merely out of the RASCUNHO branch.
+    expect(source).not.toContain("/projetos/novo");
+  });
 });
 
 describe("saída do assistente", () => {

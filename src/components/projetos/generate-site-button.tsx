@@ -13,23 +13,29 @@ import type { SiteProjectState } from "@/lib/site-factory/states";
  * actor through the DAL and asks the state machine which permission the move
  * requires — so this component never decides anything: it names the target
  * state and reports whatever the domain answers.
+ *
+ * Exported so any page offering a human transition reuses this one component
+ * instead of hand-rolling the same fetch/spinner/error dance again.
  */
-function TransitionButton({
+export function TransitionButton({
   projectId,
-  to,
+  targetStatus,
   label,
   busyLabel,
   failure,
   icon,
   className,
+  description,
 }: {
   projectId: string;
-  to: SiteProjectState;
+  targetStatus: SiteProjectState;
   label: string;
   busyLabel: string;
   failure: string;
   icon: ReactNode;
   className: string;
+  /** Optional caption rendered under the button, when the label alone isn't enough. */
+  description?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -43,7 +49,7 @@ function TransitionButton({
       const response = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: to }),
+        body: JSON.stringify({ status: targetStatus }),
       });
       const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
       if (!response.ok) {
@@ -66,6 +72,7 @@ function TransitionButton({
         {busy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : icon}
         {busy ? busyLabel : label}
       </button>
+      {description && !error ? <p className="text-xs text-nox-muted">{description}</p> : null}
       {error ? <p className="text-sm text-red-200">{error}</p> : null}
     </div>
   );
@@ -90,7 +97,7 @@ export function GenerateSiteButton({
   return (
     <TransitionButton
       projectId={projectId}
-      to="PREVIA_PRONTA"
+      targetStatus="PREVIA_PRONTA"
       label="Gerar site"
       busyLabel="Gerando site"
       failure="O site não pôde ser gerado agora."
@@ -105,7 +112,7 @@ export function SendToReviewButton({ projectId }: { projectId: string }) {
   return (
     <TransitionButton
       projectId={projectId}
-      to="EM_REVISAO"
+      targetStatus="EM_REVISAO"
       label="Enviar para revisão"
       busyLabel="Enviando"
       failure="O projeto não pôde ser enviado para revisão agora."
