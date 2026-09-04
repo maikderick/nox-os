@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { resolveArtDirection, type FontToken } from "@/lib/design/art-direction";
+
 import {
   briefPublicContact,
   isSiteBriefV2,
@@ -21,11 +23,20 @@ import {
  * 1. **This function never sees the lead record.** A `Business` row is a source
  *    of candidates for a person to confirm, not a source of published facts.
  *    There is no parameter through which a raw phone, address or social link
- *    could arrive, so none can reach a public page.
+ *    could arrive, so none can reach a public page. `branding` is resolved by
+ *    `resolveArtDirection`, a pure function of the confirmed `sector` and the
+ *    project id — a static table lookup, not a new path for a lead or an
+ *    external value to reach the snapshot, so this rule still holds.
  * 2. **Nothing is truncated in silence.** A text that does not fit the contract
  *    raises, so an operator shortens it instead of the exporter deciding what
  *    to cut.
  */
+
+/**
+ * Fonts whose family the generated site's contract must render as "serif".
+ * Every other `FontToken` in the closed roster maps to "sans".
+ */
+const SERIF_FONTS = new Set<FontToken>(["fraunces", "source-serif", "instrument-serif"]);
 
 export const SITE_CONTENT_SCHEMA_VERSION = 2 as const;
 
@@ -48,6 +59,12 @@ export type PublicContactField = (typeof PUBLIC_CONTACT_FIELDS)[number];
 export type SiteExportInput = {
   brief: SiteBrief;
   siteUrl: string;
+  /**
+   * `SiteProject.id`. Fixes the art direction so the snapshot is reproducible
+   * and matches what the preview and the generation prompt already show —
+   * both resolve the same direction from this same id.
+   */
+  seed: string;
   /**
    * Which confirmed channels to publish. **Names only, never values.**
    *
@@ -128,6 +145,7 @@ function selectContact(
 export function buildSiteContentSnapshot(input: SiteExportInput): Record<string, unknown> {
   const { brief } = input;
   const contact = selectContact(briefPublicContact(brief), input.publishContactFields);
+  const direction = resolveArtDirection({ sector: brief.sector.value, seed: input.seed });
 
   /*
    * The meta description is derived from confirmed text, never typed in here.
@@ -221,13 +239,16 @@ export function buildSiteContentSnapshot(input: SiteExportInput): Record<string,
     services,
     gallery: [],
     callsToAction,
+    // The contract carries six fields and no more; they are the load-bearing
+    // half of the direction — the rest (anchor, rhythm, motion, device, …)
+    // reaches the generated site through the agent's prompt, not this snapshot.
     branding: {
-      primaryColor: "#1d4ed8",
-      accentColor: "#0f766e",
-      surfaceColor: "#ffffff",
-      textColor: "#111827",
-      fontFamily: "sans",
-      radius: "md",
+      primaryColor: direction.palette.ink,
+      accentColor: direction.palette.accent,
+      surfaceColor: direction.palette.surface,
+      textColor: direction.palette.ink,
+      fontFamily: SERIF_FONTS.has(direction.type.display) ? "serif" : "sans",
+      radius: direction.radius,
     },
     seo: {
       siteUrl: input.siteUrl,

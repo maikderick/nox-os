@@ -81,6 +81,10 @@ export async function provisionContent(params: {
     const content = buildSiteContentSnapshot({
       brief,
       siteUrl: `https://${hostingProjectNameFor(context.project.client.slug)}.vercel.app`,
+      // The project's own id, the same seed the preview and the generation
+      // prompt already resolve their art direction from — so the published
+      // branding matches what was previewed and what the agent was told to build.
+      seed: context.project.id,
       privacy: {
         controllerName: settings?.brandName ?? "NOX OS",
         contactEmail: settings?.privacyEmail ?? null,

@@ -141,6 +141,9 @@ const privacy = {
 };
 
 const SITE_URL = "https://exemplo-demonstracao.test";
+// A stable `SiteProject.id` stand-in — fixes the art direction so every
+// snapshot built with it is reproducible across runs of this suite.
+const SEED = "cmtm2yp9u0004zpc3r7jgufvr";
 
 // ---------------------------------------------------------------------------
 
@@ -243,7 +246,7 @@ function normalize(value: string): string {
 
 describe("a brief exported by the NOX OS is accepted by the site-kit", () => {
   it("produces a valid snapshot from a v1 brief", () => {
-    expect(validateSnapshot(buildSiteContentSnapshot({ brief: briefV1(), siteUrl: SITE_URL, privacy }))).toEqual([]);
+    expect(validateSnapshot(buildSiteContentSnapshot({ brief: briefV1(), siteUrl: SITE_URL, seed: SEED, privacy }))).toEqual([]);
   });
 
   it("produces a valid snapshot from a v2 brief with confirmed services and contact", () => {
@@ -259,6 +262,7 @@ describe("a brief exported by the NOX OS is accepted by the site-kit", () => {
         },
       }),
       siteUrl: SITE_URL,
+      seed: SEED,
       privacy,
     });
 
@@ -267,7 +271,7 @@ describe("a brief exported by the NOX OS is accepted by the site-kit", () => {
   });
 
   it("omits a service page when the brief only knows the service name", () => {
-    const snapshot = buildSiteContentSnapshot({ brief: briefV1(), siteUrl: SITE_URL, privacy });
+    const snapshot = buildSiteContentSnapshot({ brief: briefV1(), siteUrl: SITE_URL, seed: SEED, privacy });
     expect(snapshot.services).toEqual([]);
   });
 
@@ -276,6 +280,7 @@ describe("a brief exported by the NOX OS is accepted by the site-kit", () => {
       buildSiteContentSnapshot({
         brief: briefV1({ positioning: fact("a".repeat(700)) }),
         siteUrl: SITE_URL,
+        seed: SEED,
         privacy,
       }),
     ).toThrow(SiteExportError);
@@ -286,7 +291,7 @@ describe("a brief exported by the NOX OS is accepted by the site-kit", () => {
 
 describe("no public field borrows another field's confirmation", () => {
   it("omits every contact channel the brief did not confirm", () => {
-    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, privacy });
+    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, seed: SEED, privacy });
     const contact = snapshot.contact as Record<string, unknown>;
 
     expect(contact.phone).toBeNull();
@@ -314,6 +319,7 @@ describe("no public field borrows another field's confirmation", () => {
         },
       }),
       siteUrl: SITE_URL,
+      seed: SEED,
       privacy,
     });
 
@@ -336,6 +342,7 @@ describe("no public field borrows another field's confirmation", () => {
         },
       }),
       siteUrl: SITE_URL,
+      seed: SEED,
       privacy,
     });
 
@@ -366,7 +373,7 @@ describe("no public field borrows another field's confirmation", () => {
       opportunityScore: 87,
     };
 
-    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, privacy });
+    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, seed: SEED, privacy });
     const serialised = canonicalJsonStringify(snapshot);
 
     const leaked = Object.entries(rawLead)
@@ -384,7 +391,7 @@ describe("no public field borrows another field's confirmation", () => {
   it("refuses a public value that was never confirmed, even when the lead has one", () => {
     // The brief is the only door. A value that nobody confirmed there has no
     // other way to reach a page.
-    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, privacy });
+    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, seed: SEED, privacy });
     expect(canonicalJsonStringify(snapshot)).not.toContain("+5511988887777");
   });
 });
@@ -396,7 +403,7 @@ describe("no caller can publish more than the brief confirmed", () => {
     });
 
   it("publishes everything the brief confirmed when no selection is given", () => {
-    const snapshot = buildSiteContentSnapshot({ brief: withPhone(), siteUrl: SITE_URL, privacy });
+    const snapshot = buildSiteContentSnapshot({ brief: withPhone(), siteUrl: SITE_URL, seed: SEED, privacy });
     expect((snapshot.contact as Record<string, { value: string } | null>).phone?.value).toBe(
       "+5511900000000",
     );
@@ -406,6 +413,7 @@ describe("no caller can publish more than the brief confirmed", () => {
     const snapshot = buildSiteContentSnapshot({
       brief: withPhone(),
       siteUrl: SITE_URL,
+      seed: SEED,
       privacy,
       publishContactFields: ["email"],
     });
@@ -421,6 +429,7 @@ describe("no caller can publish more than the brief confirmed", () => {
     const snapshot = buildSiteContentSnapshot({
       brief: briefV2(),
       siteUrl: SITE_URL,
+      seed: SEED,
       privacy,
       publishContactFields: [
         "phone",
@@ -448,6 +457,7 @@ describe("no caller can publish more than the brief confirmed", () => {
     const snapshot = buildSiteContentSnapshot({
       brief: briefV2({ metaDescription: fact("Manutenção residencial com atendimento agendado.") }),
       siteUrl: SITE_URL,
+      seed: SEED,
       privacy,
     });
 
@@ -457,7 +467,7 @@ describe("no caller can publish more than the brief confirmed", () => {
   });
 
   it("falls back to the confirmed positioning when the brief confirms no meta description", () => {
-    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, privacy });
+    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, seed: SEED, privacy });
     expect((snapshot.seo as Record<string, string>).description).toBe(NARRATIVE.positioning.value);
   });
 
@@ -466,13 +476,14 @@ describe("no caller can publish more than the brief confirmed", () => {
       buildSiteContentSnapshot({
         brief: briefV2({ positioning: fact("a".repeat(200)) }),
         siteUrl: SITE_URL,
+        seed: SEED,
         privacy,
       }),
     ).toThrow(SiteExportError);
   });
 
   it("treats the about heading as a label, with no borrowed confirmation", () => {
-    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, privacy });
+    const snapshot = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, seed: SEED, privacy });
     const about = snapshot.about as { heading: unknown; body: { confirmedAt: string }[] };
 
     expect(typeof about.heading).toBe("string");
@@ -563,7 +574,7 @@ describe("provenance", () => {
     generatedAt: CONFIRMED_AT,
   };
 
-  const content = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, privacy });
+  const content = buildSiteContentSnapshot({ brief: briefV2(), siteUrl: SITE_URL, seed: SEED, privacy });
 
   it("declares exactly the template commit it was given", () => {
     const templateCommit = "c".repeat(40);
