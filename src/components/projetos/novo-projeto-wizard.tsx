@@ -213,6 +213,13 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempted, setAttempted] = useState<Record<number, boolean>>({});
+  /**
+   * How many times the operator has been refused. `attempted` only records
+   * *that* a step was tried, so a second refusal for the same reason changes
+   * nothing — and a group the operator had collapsed by hand would stay shut
+   * over the error that keeps blocking them. This counter is what reopens it.
+   */
+  const [attempt, setAttempt] = useState(0);
   const [leadId, setLeadId] = useState("");
   const [projectName, setProjectName] = useState("");
   const [draft, setDraft] = useState<BriefDraft>(initialBriefDraft);
@@ -413,6 +420,7 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
     const built = buildBriefV2(draft);
     if (!built.ok) {
       setAttempted((current) => ({ ...current, [step]: true }));
+      setAttempt((value) => value + 1);
       setError(built.issues.map((issue) => issue.message).join(" · "));
       return;
     }
@@ -464,6 +472,7 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
   function goForward() {
     if (stepIssues.length > 0) {
       setAttempted((current) => ({ ...current, [step]: true }));
+      setAttempt((value) => value + 1);
       return;
     }
     setError(null);
@@ -919,7 +928,10 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
                   />
                 </Section>
 
-                <InternalNotes invalid={isInvalid("objective") || isInvalid("audience")}>
+                <InternalNotes
+                  invalid={isInvalid("objective") || isInvalid("audience")}
+                  attempt={attempt}
+                >
                   <PresetChips
                     presets={OBJECTIVE_PRESETS}
                     current={draft.objective.value}
@@ -1004,7 +1016,7 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
                 to the sections list. It never was: no export, renderer or
                 prompt reads `notes`. It belongs with the other internal
                 fields, under the same heading that says so. */}
-            <InternalNotes invalid={isInvalid("notes")} className="mt-5">
+            <InternalNotes invalid={isInvalid("notes")} attempt={attempt} className="mt-5">
               <TextField
                 id="observacoes"
                 label="Observações confirmadas"

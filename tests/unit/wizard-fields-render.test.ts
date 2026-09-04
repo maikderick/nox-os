@@ -96,7 +96,15 @@ describe("notas internas", () => {
     expect(html).toContain("Objetivo principal");
   });
 
-  it("abrem sozinhas quando um campo de dentro barra a etapa", () => {
+  it("não chegam com `open` controlado nem no caso inválido", () => {
+    // Refinamento, não afrouxamento. Antes este caso afirmava `open` no markup
+    // estático, o que só era verdade porque o grupo era controlado por prop —
+    // o mesmo mecanismo que remontava a subárvore e tirava o foco da textarea
+    // que o operador estava corrigindo. A abertura passou a ser um efeito
+    // sobre o nó, que `renderToStaticMarkup` não executa por definição; quem
+    // prova os três comportamentos agora é `wizard-internal-notes-dom.test.ts`,
+    // no DOM. O que o render estático ainda pode provar é o negativo: nenhum
+    // `open` vem da renderização.
     const html = renderToStaticMarkup(
       React.createElement(
         InternalNotes,
@@ -105,6 +113,7 @@ describe("notas internas", () => {
       ),
     );
 
-    expect(html).toMatch(/<details[^>]*\sopen/);
+    expect(html).not.toMatch(/<details[^>]*\sopen/);
+    expect(html).toContain("Objetivo principal");
   });
 });

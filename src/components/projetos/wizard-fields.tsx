@@ -12,6 +12,8 @@
  * the mark and the collapsed group exist.
  */
 
+import { useEffect, useRef } from "react";
+
 import { isFactConfirmed, isLeadSuggestion, type DraftFact } from "@/lib/site-factory/brief-draft";
 import { cn } from "@/lib/utils";
 
@@ -202,24 +204,45 @@ export function ConfirmableField({
  */
 export function InternalNotes({
   invalid,
+  attempt = 0,
   className,
   children,
 }: {
   invalid: boolean;
+  /**
+   * How many times the operator has tried to advance and been refused. Bumping
+   * it re-runs the effect below, so a group closed by hand reopens on the next
+   * failed attempt even though `invalid` never stopped being true.
+   */
+  attempt?: number;
   className?: string;
   children: React.ReactNode;
 }) {
+  const details = useRef<HTMLDetailsElement>(null);
+
+  /*
+   * Opened by touching the DOM node, not by a controlled `open` prop and not
+   * by remounting.
+   *
+   * The first attempt at this used `key` to force a remount whenever `invalid`
+   * flipped. The fields inside confirm on every keystroke, so the first letter
+   * the operator typed into the field the error pointed at made `invalid` go
+   * false, remounted the subtree, and took the focus out of the textarea they
+   * were typing in. Writing `open` on the existing node changes nothing else
+   * about the tree, so the caret stays where the operator put it — and the
+   * group is left alone once open, so closing it by hand still works.
+   */
+  useEffect(() => {
+    if (invalid && details.current) details.current.open = true;
+  }, [invalid, attempt]);
+
   return (
     <details
+      ref={details}
       // Open when one of its fields is the reason the step will not advance:
       // an error pointing inside a closed group is an error nobody can find.
-      //
-      // `key` remounts the element when `invalid` flips. React writes `open`
-      // only when the prop *changes*, so an operator who collapsed the group
-      // by hand while it was already `invalid` would never see it re-open on
-      // the next failed attempt.
-      key={invalid ? "aberto" : "fechado"}
-      open={invalid}
+      // `defaultOpen` has no equivalent here, so the initial state is written
+      // by the same effect on mount.
       className={cn(
         "rounded-2xl border bg-nox-bg/40 p-5",
         invalid ? "border-red-400/50" : "border-nox-border",
