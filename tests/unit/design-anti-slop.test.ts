@@ -22,6 +22,16 @@ describe("regras anti-slop", () => {
     expect(findSlop(html).map((r) => r.id)).toContain("eyebrow-caps");
   });
 
+  it("não confunde uma wordmark em maiúsculas com um eyebrow", () => {
+    const html = '<header class="uppercase tracking-[0.18em]">ACME</header>';
+    expect(findSlop(html).map((r) => r.id)).not.toContain("eyebrow-caps");
+  });
+
+  it("não confunde um link em maiúsculas com um eyebrow", () => {
+    const html = '<a class="uppercase tracking-[0.2em]">Aurora</a>';
+    expect(findSlop(html).map((r) => r.id)).not.toContain("eyebrow-caps");
+  });
+
   it("pega gradiente radial de fundo", () => {
     const html = '<section class="bg-[radial-gradient(circle_at_85%_20%,rgba(34,211,238,.14),transparent_34%)]">x</section>';
     expect(findSlop(html).map((r) => r.id)).toContain("gradient-ground");
@@ -32,6 +42,11 @@ describe("regras anti-slop", () => {
     expect(findSlop(html).map((r) => r.id)).toContain("gradient-ground");
   });
 
+  it("não confunde o nome de um arquivo com um gradiente de fundo", () => {
+    const html = '<img src="/assets/radial-gradient.svg" alt="Foto do salão">';
+    expect(findSlop(html).map((r) => r.id)).not.toContain("gradient-ground");
+  });
+
   it("pega glow em blur/backdrop-filter inline", () => {
     const html = '<div style="filter: blur(40px); position: absolute;">x</div>';
     expect(findSlop(html).map((r) => r.id)).toContain("glow");
@@ -40,6 +55,11 @@ describe("regras anti-slop", () => {
   it("pega glow em backdrop-filter blur inline", () => {
     const html = '<div style="backdrop-filter: blur(24px);">x</div>';
     expect(findSlop(html).map((r) => r.id)).toContain("glow");
+  });
+
+  it("não confunde o nome de um arquivo com um glow", () => {
+    const html = '<img src="/assets/blur-2xl.jpg" alt="Textura">';
+    expect(findSlop(html).map((r) => r.id)).not.toContain("glow");
   });
 
   it("pega glassmorphism", () => {
@@ -63,6 +83,18 @@ describe("regras anti-slop", () => {
 
   it("pega quase-preto no lugar de preto", () => {
     expect(findSlop('<div class="bg-[#0B0B0B]">x</div>').map((r) => r.id)).toContain("tinted-black");
+  });
+
+  it("pega o atalho hex de três dígitos #111", () => {
+    expect(findSlop('<div class="bg-[#111]">x</div>').map((r) => r.id)).toContain("tinted-black");
+  });
+
+  it("pega quase-preto com alfa de dois dígitos", () => {
+    expect(findSlop('<div style="color:#0a0a0a80">x</div>').map((r) => r.id)).toContain("tinted-black");
+  });
+
+  it("não confunde #131313 com um substituto de preto", () => {
+    expect(findSlop('<div style="color:#131313">x</div>').map((r) => r.id)).not.toContain("tinted-black");
   });
 
   it("pega numeração ordinal de conteúdo que não é sequência", () => {

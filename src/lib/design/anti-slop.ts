@@ -28,19 +28,25 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
   {
     id: "gradient-ground",
     text: "Sem gradiente radial ou cônico como fundo de seção.",
-    // Matches `radial-gradient(`/`conic-gradient(` anywhere in the string —
-    // this already covers both `bg-[radial-gradient(...)]` (Tailwind class)
-    // and `style="background: radial-gradient(...)"` (inline style), since
-    // it is not anchored to any particular attribute syntax.
-    markup: /(radial|conic)-gradient/i,
+    // Requires the opening `(` — CSS gradient syntax, never present in a
+    // filename like `radial-gradient.svg` — so this covers both
+    // `bg-[radial-gradient(...)]` (Tailwind class) and
+    // `style="background: radial-gradient(...)"` (inline style) without
+    // false-positiving on an `<img src="...radial-gradient.svg">`.
+    markup: /(radial|conic)-gradient\(/i,
   },
   {
     id: "glow",
     text: "Sem glow: nenhum elemento borrado atrás do conteúdo.",
-    // Tailwind: `blur-2xl`/`blur-3xl` utility classes, or a `shadow-[0_0_...]`
-    // arbitrary glow shadow. Inline: `filter: blur(...)` or
-    // `backdrop-filter: blur(...)` in a `style` attribute.
-    markup: /blur-(2xl|3xl)|shadow-\[0_0_\d|filter:\s*blur\(|backdrop-filter:\s*blur\(/i,
+    // Tailwind: `blur-2xl`/`blur-3xl` utility classes (the negative
+    // lookbehind rejects a preceding `/`, word char, or `-`, so a path
+    // segment like `/assets/blur-2xl.jpg` cannot match while a class token,
+    // preceded by a space or quote, still can), or a `shadow-[0_0_...]`
+    // arbitrary glow shadow. Inline: `filter:` or `backdrop-filter:` followed
+    // by `blur(` in a `style` attribute — one alternation covers both
+    // because it is unanchored and `backdrop-filter: blur(` always contains
+    // `filter: blur(` as a substring.
+    markup: /(?<![\/\w-])blur-(2xl|3xl)\b|shadow-\[0_0_\d|filter:\s*blur\(/i,
   },
   {
     id: "glassmorphism",
@@ -59,6 +65,11 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
     markup: /[\u{1F300}-\u{1FAFF}\u{2700}-\u{27BF}]/u,
   },
   {
+    // In this design every radius comes from `var(--radius)`, set once by the
+    // art direction. A hardcoded arbitrary-value radius (`rounded-[...]`) is
+    // by definition outside that token system — it is a violation on its
+    // own, whether or not a second, different radius also appears on the
+    // page. So this flags any occurrence, not just a pair of mismatched ones.
     id: "radius-soup",
     text: "Um raio por site. Nada de rounded-[2rem] ao lado de rounded-lg.",
     markup: /rounded-\[\d/,
@@ -69,12 +80,17 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
   {
     id: "eyebrow-caps",
     text: "Sem eyebrow ALL-CAPS tracked-out acima de seção.",
-    // Tailwind: `uppercase` co-occurring with `tracking-[0.15em]` or wider
-    // in the same class attribute, in either order. Inline: `text-transform:
-    // uppercase` co-occurring with `letter-spacing: 0.15em` or wider in the
-    // same style attribute, in either order.
+    // An eyebrow label lives in a `<p>` or `<span>` above a section; a
+    // wordmark or nav link set in caps (e.g. `<header>`, `<h1>`, `<a>`) is
+    // not the pattern this rule forbids. Each alternation is anchored on the
+    // opening `<p`/`<span` tag first, so the class/style match below is only
+    // checked within that one element's attributes. Tailwind: `uppercase`
+    // co-occurring with `tracking-[0.15em]` or wider in the same class
+    // attribute, in either order. Inline: `text-transform: uppercase`
+    // co-occurring with `letter-spacing: 0.15em` or wider in the same style
+    // attribute, in either order.
     markup:
-      /uppercase[^"']*tracking-\[0\.(1[5-9]|[2-9])|tracking-\[0\.(1[5-9]|[2-9])[^"']*uppercase|text-transform:\s*uppercase[^"']*letter-spacing:\s*0?\.(1[5-9]|[2-9])\d*em|letter-spacing:\s*0?\.(1[5-9]|[2-9])\d*em[^"']*text-transform:\s*uppercase/i,
+      /<(?:p|span)\b[^>]*uppercase[^"']*tracking-\[0\.(1[5-9]|[2-9])|<(?:p|span)\b[^>]*tracking-\[0\.(1[5-9]|[2-9])[^"']*uppercase|<(?:p|span)\b[^>]*text-transform:\s*uppercase[^"']*letter-spacing:\s*0?\.(1[5-9]|[2-9])\d*em|<(?:p|span)\b[^>]*letter-spacing:\s*0?\.(1[5-9]|[2-9])\d*em[^"']*text-transform:\s*uppercase/i,
   },
   {
     id: "false-sequence",
@@ -94,7 +110,13 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
   {
     id: "tinted-black",
     text: "Preto é #000000. Nada de #0B0B0B ou #111 como substituto.",
-    markup: /#(0b0b0b|111111|0d0d0d|0a0a0a)\b/i,
+    // The three-digit shorthand (`#111`), every near-black neutral from
+    // `#0a0a0a` to `#121212`, each optionally followed by a two-digit alpha
+    // (`#0a0a0a80`). `#131313` and darker-but-distinct neutrals are not
+    // matched — this is the specific band of greys this codebase has used as
+    // a black substitute, not "any dark color".
+    markup:
+      /#(?:111|0a0a0a|0b0b0b|0c0c0c|0d0d0d|0e0e0e|0f0f0f|101010|111111|121212)(?:[0-9a-f]{2})?\b/i,
   },
   {
     id: "motion-budget",
