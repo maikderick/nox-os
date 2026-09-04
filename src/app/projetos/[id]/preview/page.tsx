@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ProjectSite } from "@/components/sites/project-site";
+import { SiteFonts } from "@/components/sites/site-fonts";
 import { requirePermission } from "@/lib/authz/dal";
 import { parseSiteBrief } from "@/lib/site-factory/brief-schema";
 import { getSiteProject } from "@/lib/site-factory/project-service";
@@ -46,7 +47,9 @@ export default async function ProjectPreviewPage({ params }: { params: Promise<{
           Prévia interna
         </span>
       </div>
-      <ProjectSite brief={parseSiteBrief(currentBrief.contentJson)} seed={project.id} />
+      <SiteFonts>
+        <ProjectSite brief={parseSiteBrief(currentBrief.contentJson)} seed={project.id} />
+      </SiteFonts>
     </>
   );
 }

@@ -2,12 +2,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const PREVIEW = "src/app/projetos/[id]/preview/page.tsx";
+const SITES_LAYOUT = "src/app/sites/[id]/layout.tsx";
 
 describe("prévia interna", () => {
   const source = readFileSync(PREVIEW, "utf8");
 
   it("renderiza o componente compartilhado em vez de duplicar o site", () => {
-    expect(source).toContain("ProjectSite");
+    expect(source).toContain("<ProjectSite");
+    expect(source).toContain("<SiteFonts");
   });
 
   it("não carrega mais a cópia dos tells", () => {
@@ -24,5 +26,14 @@ describe("prévia interna", () => {
 
   it("continua marcada como não indexável", () => {
     expect(source).toMatch(/robots:\s*\{\s*index:\s*false/);
+  });
+});
+
+describe("layout do site público", () => {
+  const source = readFileSync(SITES_LAYOUT, "utf8");
+
+  it("delega o roster de fontes ao componente compartilhado", () => {
+    expect(source).not.toContain("next/font/google");
+    expect(source).toContain("<SiteFonts");
   });
 });
