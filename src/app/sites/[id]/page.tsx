@@ -51,5 +51,5 @@ export default async function PublicSitePage({ params }: { params: Promise<{ id:
   const { id } = await params;
   const result = await loadPublicSite(id);
   if (!result) notFound();
-  return <ProjectSite brief={result.brief} />;
+  return <ProjectSite brief={result.brief} seed={result.project.id} />;
 }
