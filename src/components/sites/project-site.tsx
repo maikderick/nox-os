@@ -239,7 +239,11 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
 
   // One ground: `--surface` and `--surface-alt` alternate down the page, over
   // the blocks actually present, so a missing block never leaves two identical
-  // grounds touching.
+  // grounds touching *between content blocks*. The footer is not part of this
+  // alternation — it is always `--surface` — so with an odd number of content
+  // blocks the last one lands on `--surface` too and touches the footer with
+  // no visible seam; that case is resolved visually by the footer's
+  // `borderTop` rule rather than by this alternation.
   const contentBlocks: BlockId[] = blocks.filter(
     (block) => block !== "navbar" && block !== "footer",
   );
