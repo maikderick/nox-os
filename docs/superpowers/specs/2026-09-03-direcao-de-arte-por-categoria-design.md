@@ -387,3 +387,27 @@ Escritos antes do código.
   aberto.
 - **Catorze direções é bastante superfície para manter.** O teste de contraste
   e o de integridade do catálogo seguram o essencial; o resto é revisão humana.
+
+---
+
+## 13. Errata de execução (2026-09-04)
+
+Divergências deliberadas entre a branch e o texto acima, cada uma com o motivo:
+
+1. **§3/§5 — `ArtDirection` não tem campo `composition`.** É
+   `resolveComposition(brief)`, função só dos fatos confirmados, então uma
+   categoria nunca abre um bloco que os fatos não sustentam.
+2. **§5 — `desiredSections` reporta, não estreita a composição.** Alimenta só
+   o relatório `unmapped`. Estreitar foi deixado como decisão de produto: uma
+   seção a menos não pode derrubar em silêncio um bloco já sustentado, como
+   `hours`.
+3. **§4 "dispositivo estrutural" — quatro famílias de apresentação.**
+   `leader`, `index`, `spine`, `plain`, mais centralização do hero em
+   `facade-symmetry`. Oito dos catorze dispositivos da tabela caem em `plain`.
+4. **§8/§9 — roster de fontes num componente compartilhado.**
+   `src/components/sites/site-fonts.tsx` (`<SiteFonts>`), não em
+   `src/app/sites/[id]/layout.tsx`, porque `/sites/[id]` e a prévia interna
+   precisam das mesmas famílias.
+5. **`contact` exige canal de mensagem.** Endereço sozinho abre só
+   `location`; sem telefone, WhatsApp, e-mail ou rede social, `contact` não
+   abre.
