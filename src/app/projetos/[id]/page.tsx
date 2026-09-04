@@ -9,7 +9,7 @@ import {
 import { requirePermission } from "@/lib/authz/dal";
 import { resolveArtDirection, type Palette } from "@/lib/design/art-direction";
 import { BLOCK_LABELS, resolveComposition } from "@/lib/design/blocks";
-import { parseSiteBrief } from "@/lib/site-factory/brief-schema";
+import { briefCapabilities, parseSiteBrief } from "@/lib/site-factory/brief-schema";
 import { getSiteProject } from "@/lib/site-factory/project-service";
 import {
   hasInternalPreview, isSiteProjectState, SITE_PROJECT_STATE_LABELS,
@@ -80,6 +80,40 @@ export default async function ProjectPage({ params }: PageProps) {
     ? CATEGORY_GROUPS.find((group) => group.id === direction.categoryId)?.label
     : null;
 
+  /*
+   * Where a briefing gets answered a second time.
+   *
+   * Offered only from the states `createSiteBriefVersion` would accept a new
+   * version in, and only to someone who could save it: an "Editar briefing"
+   * that ends in 403 or 409 is worse than no link. It disappears while an
+   * agent is building, because the run would lose the ground under it.
+   */
+  const canEditBrief =
+    canWriteBrief &&
+    (state === "RASCUNHO" ||
+      state === "BRIEFING_PRONTO" ||
+      state === "PREVIA_PRONTA" ||
+      state === "FALHOU");
+  const briefingHref = `/projetos/${project.id}/briefing`;
+  const editBriefLink = canEditBrief ? (
+    <Link href={briefingHref} className="nox-btn-secondary">
+      Editar briefing
+    </Link>
+  ) : null;
+  const completeInBriefLink = canEditBrief ? (
+    <Link
+      href={briefingHref}
+      className="mt-3 inline-flex text-sm font-medium text-amber-200 hover:underline"
+    >
+      Complete no briefing
+    </Link>
+  ) : null;
+
+  // What the brief itself reports as missing. The wizard shows these once, on
+  // the way out; the panel shows them for as long as they are true, next to
+  // the link that fixes them.
+  const gaps = brief ? briefCapabilities(brief).gaps : [];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -121,15 +155,16 @@ export default async function ProjectPage({ params }: PageProps) {
             <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
               Gera o site a partir das informações confirmadas. Leva alguns segundos.
             </p>
-            {canWrite ? (
-              <div className="mt-5">
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              {canWrite ? (
                 <GenerateSiteButton projectId={project.id} />
-              </div>
-            ) : (
-              <p className="mt-5 text-sm text-nox-muted">
-                Seu papel não permite gerar o site. Peça a um operador da organização.
-              </p>
-            )}
+              ) : (
+                <p className="text-sm text-nox-muted">
+                  Seu papel não permite gerar o site. Peça a um operador da organização.
+                </p>
+              )}
+              {editBriefLink}
+            </div>
           </>
         ) : previewReady ? (
           <>
@@ -145,6 +180,7 @@ export default async function ProjectPage({ params }: PageProps) {
               <Link href={`/projetos/${project.id}/preview`} className="nox-btn-secondary">
                 Prévia interna
               </Link>
+              {editBriefLink}
               {canWrite && state === "PREVIA_PRONTA" ? (
                 <SendToReviewButton projectId={project.id} />
               ) : null}
@@ -157,12 +193,16 @@ export default async function ProjectPage({ params }: PageProps) {
               // A project reaches RASCUNHO only through `BRIEFING_PRONTO -> RASCUNHO`
               // or `PUBLICADO -> RASCUNHO`, and both keep the current brief version —
               // so a RASCUNHO with no brief at all is a legacy record from before
-              // brief versioning. There is no per-project brief editor yet, so the
-              // only honest next step is starting over in the wizard.
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
-                Este projeto não tem briefing confirmado. Crie o site por um projeto novo no
-                assistente.
-              </p>
+              // brief versioning. It is answerable in place now: the briefing editor
+              // opens on an empty form and the first save becomes version 1.
+              <>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+                  Este projeto não tem briefing confirmado. Preencha-o aqui e depois gere o
+                  site. Crie o site por um projeto novo no assistente apenas se este projeto
+                  não for mais o negócio certo.
+                </p>
+                {editBriefLink ? <div className="mt-5">{editBriefLink}</div> : null}
+              </>
             ) : (
               <>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
@@ -284,6 +324,21 @@ export default async function ProjectPage({ params }: PageProps) {
                     <li key={section}>{section}</li>
                   ))}
                 </ul>
+                {completeInBriefLink}
+              </div>
+            )}
+
+            {gaps.length > 0 && (
+              <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
+                <p className="text-sm font-medium text-amber-200">
+                  O que falta confirmar para o site sair completo
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-100">
+                  {gaps.map((gap) => (
+                    <li key={gap}>{gap}</li>
+                  ))}
+                </ul>
+                {completeInBriefLink}
               </div>
             )}
           </section>
