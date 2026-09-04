@@ -1,3 +1,7 @@
+// Circular with art-direction.ts, which imports the value DIRECTION_CATALOG
+// from this file. Safe only because this side is `import type`, which is
+// erased at compile time; a value import here would create a
+// temporal-dead-zone failure at module init instead.
 import type {
   ArtDirection, MotionMoment, Palette, Radius, Rhythm, TypeSpec,
 } from "./art-direction";
