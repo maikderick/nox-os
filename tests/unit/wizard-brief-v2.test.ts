@@ -31,6 +31,7 @@ import {
   type SocialLinkDraft,
   createServiceDraft,
   createSocialLinkDraft,
+  emptyContactDraft,
   emptyBriefDraft,
   pinServiceId,
   renameServiceDraft,
@@ -38,6 +39,7 @@ import {
   slugifyServiceId,
   suggestedFact,
   typedFact,
+  validatePublicContact,
   validateServices,
   type BriefDraft,
   type ServiceDraft,
@@ -113,6 +115,7 @@ function wizardDraft(): BriefDraft {
         source: "LEAD",
         confirmedAt: AT,
       },
+      openingHours: [],
       socialLinks: [
         {
           ...createSocialLinkDraft("s1"),
@@ -438,5 +441,65 @@ describe("editar uma rede social exige nova confirmação", () => {
     expect(built.ok).toBe(true);
     if (!built.ok) return;
     expect(built.brief.publicContact.socialLinks).toEqual([]);
+  });
+});
+
+describe("expediente do contato público", () => {
+  it("começa com sete dias fechados", () => {
+    const openingHours = emptyContactDraft().openingHours;
+
+    expect(openingHours).toHaveLength(7);
+    expect(openingHours.every((day) => !day.isOpen)).toBe(true);
+  });
+
+  it("recusa abertura igual ou posterior ao fechamento", () => {
+    const contact = emptyContactDraft();
+    contact.openingHours[0] = {
+      dayOfWeek: "SEGUNDA",
+      isOpen: true,
+      opens: "18:00",
+      closes: "09:00",
+    };
+
+    expect(validatePublicContact(contact)).toContainEqual({
+      field: "publicContact.openingHours.0",
+      message: "Segunda-feira: o horário de abertura precisa ser anterior ao de fechamento.",
+    });
+  });
+
+  it("converte apenas os dois dias abertos para uma única confirmação", () => {
+    const draft = wizardDraft();
+    draft.contact.openingHours = [
+      { dayOfWeek: "SEGUNDA", isOpen: true, opens: "09:00", closes: "18:00" },
+      { dayOfWeek: "TERCA", isOpen: false, opens: "09:00", closes: "18:00" },
+      { dayOfWeek: "QUARTA", isOpen: true, opens: "10:00", closes: "16:00" },
+    ];
+
+    const built = buildBriefV2(draft);
+
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.brief.publicContact.openingHours).toEqual({
+      value: [
+        { dayOfWeek: "SEGUNDA", opens: "09:00", closes: "18:00" },
+        { dayOfWeek: "QUARTA", opens: "10:00", closes: "16:00" },
+      ],
+      source: "OPERADOR",
+      confirmedAt: expect.any(String),
+    });
+  });
+
+  it("não cria fato quando nenhum dia está aberto", () => {
+    const draft = wizardDraft();
+    draft.contact.openingHours = [
+      { dayOfWeek: "SEGUNDA", isOpen: false, opens: "09:00", closes: "18:00" },
+      { dayOfWeek: "TERCA", isOpen: false, opens: "09:00", closes: "18:00" },
+    ];
+
+    const built = buildBriefV2(draft);
+
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.brief.publicContact.openingHours).toBeNull();
   });
 });

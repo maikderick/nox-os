@@ -16,6 +16,7 @@ import { findClaimRisks } from "@/lib/content-integrity";
 import { normalizePhoneE164 } from "@/lib/phone";
 
 import {
+  BRIEF_DAYS,
   BRIEF_FACT_SOURCES,
   BRIEF_SOCIAL_PLATFORMS,
   type BriefPublicContact,
@@ -26,6 +27,7 @@ import {
 
 export type BriefFactSource = (typeof BRIEF_FACT_SOURCES)[number];
 export type BriefSocialPlatform = (typeof BRIEF_SOCIAL_PLATFORMS)[number];
+export type BriefDayOfWeek = (typeof BRIEF_DAYS)[number];
 
 /** Something the operator has to fix before the brief can be sent. */
 export type DraftIssue = { field: string; message: string };
@@ -351,11 +353,41 @@ export function editSocialLinkDraft(
   return { ...next, source: "OPERADOR", confirmedAt: null };
 }
 
+/**
+ * One weekly row in the wizard's opening-hours editor.
+ *
+ * All seven days exist from the start — there is no "add a day" step — so a
+ * row is closed rather than absent. `opens`/`closes` stay empty until the
+ * operator picks a time; nothing plausible is pre-filled here.
+ */
+export type OpeningHoursDraft = {
+  dayOfWeek: BriefDayOfWeek;
+  isOpen: boolean;
+  opens: string;
+  closes: string;
+};
+
+/** Portuguese day labels, shared by the weekly editor and its validation messages. */
+export const OPENING_HOURS_DAY_LABELS: Record<BriefDayOfWeek, string> = {
+  SEGUNDA: "Segunda-feira",
+  TERCA: "Terça-feira",
+  QUARTA: "Quarta-feira",
+  QUINTA: "Quinta-feira",
+  SEXTA: "Sexta-feira",
+  SABADO: "Sábado",
+  DOMINGO: "Domingo",
+};
+
+export function emptyOpeningHoursDraft(): OpeningHoursDraft[] {
+  return BRIEF_DAYS.map((dayOfWeek) => ({ dayOfWeek, isOpen: false, opens: "", closes: "" }));
+}
+
 export type ContactDraft = {
   phone: DraftFact;
   whatsapp: DraftFact;
   email: DraftFact;
   address: AddressDraft;
+  openingHours: OpeningHoursDraft[];
   socialLinks: SocialLinkDraft[];
 };
 
@@ -380,6 +412,7 @@ export function emptyContactDraft(): ContactDraft {
     whatsapp: emptyFact(),
     email: emptyFact(),
     address: emptyAddressDraft(),
+    openingHours: emptyOpeningHoursDraft(),
     socialLinks: [],
   };
 }
@@ -471,6 +504,26 @@ export function validatePublicContact(contact: ContactDraft): DraftIssue[] {
     }
   }
 
+  contact.openingHours.forEach((day, index) => {
+    if (!day.isOpen) return;
+    const label = OPENING_HOURS_DAY_LABELS[day.dayOfWeek];
+    if (!day.opens.trim() || !day.closes.trim()) {
+      issues.push({
+        field: `publicContact.openingHours.${index}`,
+        message: `${label}: informe os horários de abertura e fechamento.`,
+      });
+      return;
+    }
+    // Mirrors the `opens < closes` refine in the v2 schema so the operator sees
+    // the same rule before submitting, not after a round trip to the server.
+    if (!(day.opens < day.closes)) {
+      issues.push({
+        field: `publicContact.openingHours.${index}`,
+        message: `${label}: o horário de abertura precisa ser anterior ao de fechamento.`,
+      });
+    }
+  });
+
   const seenUrls = new Set<string>();
   contact.socialLinks.forEach((link, index) => {
     if (!link.confirmedAt) return;
@@ -537,7 +590,22 @@ function buildPublicContact(contact: ContactDraft): BriefPublicContact {
           }
         : null,
     coordinates: null,
-    openingHours: null,
+    // The weekly editor has no per-day "confirmado" control of its own — the
+    // whole week is one fact, confirmed the moment the brief is built, the same
+    // way `differentiators` turns a single authored field into one fact.
+    openingHours: (() => {
+      const openDays = contact.openingHours.filter((day) => day.isOpen);
+      if (openDays.length === 0) return null;
+      return {
+        value: openDays.map((day) => ({
+          dayOfWeek: day.dayOfWeek,
+          opens: day.opens,
+          closes: day.closes,
+        })),
+        source: "OPERADOR",
+        confirmedAt: nowIso(),
+      };
+    })(),
     socialLinks: contact.socialLinks.flatMap((link) =>
       link.confirmedAt && link.url.trim()
         ? [

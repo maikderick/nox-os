@@ -33,6 +33,7 @@ import {
   guessSocialPlatform,
   isFactConfirmed,
   nowIso,
+  OPENING_HOURS_DAY_LABELS,
   pinServiceId,
   renameServiceDraft,
   setFactConfirmed,
@@ -49,11 +50,13 @@ import {
   type ContactDraft,
   type DraftFact,
   type DraftIssue,
+  type OpeningHoursDraft,
   type ServiceDraft,
   type SocialLinkDraft,
 } from "@/lib/site-factory/brief-draft";
 import { categoryMatchesNiche, findNicheByLabel, searchNiches, type Niche } from "@/lib/niches";
 import { normalizePhoneE164 } from "@/lib/phone";
+import { OBJECTIVE_PRESETS, TONE_PRESETS, VISUAL_PRESETS } from "@/lib/site-factory/wizard-presets";
 import { cn, opportunityBand } from "@/lib/utils";
 import { hasOwnWebsite } from "@/lib/website";
 
@@ -105,31 +108,6 @@ const SOCIAL_PLATFORM_LABELS: Record<BriefSocialPlatform, string> = {
 };
 
 const SOCIAL_PLATFORMS = Object.keys(SOCIAL_PLATFORM_LABELS) as BriefSocialPlatform[];
-
-/**
- * Quick fills. Each one writes plain operator text into an existing field, so
- * nothing new reaches the payload — the operator still owns every sentence.
- */
-const OBJECTIVE_PRESETS: { label: string; text: string }[] = [
-  { label: "Receber pedidos pelo WhatsApp", text: "Receber pedidos e dúvidas pelo WhatsApp a partir do site." },
-  { label: "Agendar atendimentos", text: "Facilitar o agendamento de atendimentos pelo WhatsApp." },
-  { label: "Gerar orçamentos", text: "Receber pedidos de orçamento já com as informações necessárias." },
-  { label: "Apresentar serviços e localização", text: "Apresentar os serviços, o endereço e os horários para quem busca na região." },
-];
-
-const TONE_PRESETS: { label: string; text: string }[] = [
-  { label: "Profissional e sóbrio", text: "Atendimento profissional e direto, com foco em confiança e clareza nas informações." },
-  { label: "Acolhedor e próximo", text: "Atendimento próximo e acolhedor, com linguagem simples e foco no relacionamento com o cliente." },
-  { label: "Direto e objetivo", text: "Comunicação direta e objetiva: o cliente encontra o que precisa e entra em contato em poucos toques." },
-  { label: "Sofisticado", text: "Apresentação cuidadosa e elegante, com foco na qualidade do serviço e na experiência do cliente." },
-];
-
-const VISUAL_PRESETS: { label: string; text: string }[] = [
-  { label: "Escuro e marcante", text: "Fundo escuro, contraste alto, uma cor de destaque forte e fotos grandes." },
-  { label: "Claro e limpo", text: "Fundo claro, bastante espaço em branco, tipografia leve e cores suaves." },
-  { label: "Quente e artesanal", text: "Tons quentes como terracota e âmbar, texturas discretas e fotos do produto em destaque." },
-  { label: "Clínico e sereno", text: "Tons frios e claros como azul e verde-água, layout organizado, sensação de calma e confiança." },
-];
 
 /** The draft keys that hold a single confirmable fact. */
 type FactField = {
@@ -1631,6 +1609,12 @@ function ContactSection({
   const whatsappPreview = normalizePhoneE164(contact.whatsapp.value);
   const addressConfirmed = Boolean(contact.address.confirmedAt) && addressHasContent(contact.address);
 
+  function onOpeningHoursChange(index: number, update: Partial<OpeningHoursDraft>) {
+    onContact({
+      openingHours: contact.openingHours.map((day, i) => (i === index ? { ...day, ...update } : day)),
+    });
+  }
+
   return (
     <fieldset className="mt-8">
       <legend className="text-sm font-semibold text-white">Contato público</legend>
@@ -1776,6 +1760,65 @@ function ContactSection({
           />
           {addressConfirmed ? "Endereço confirmado — será publicado" : "Confirmar endereço (sem isto, não é enviado)"}
         </label>
+      </fieldset>
+
+      <fieldset
+        className={`mt-6 rounded-2xl border bg-nox-bg/40 p-4 ${invalid("publicContact.openingHours") ? "border-red-400/50" : "border-nox-border"}`}
+      >
+        <legend className="px-2 text-sm font-semibold text-white">Horário de funcionamento</legend>
+        <p className="mt-1 mb-4 text-xs text-nox-muted">
+          Marque os dias em que o negócio atende. Sem nenhum dia marcado, nada é enviado.
+        </p>
+        <div className="space-y-2">
+          {contact.openingHours.map((day, index) => (
+            <div
+              key={day.dayOfWeek}
+              className={`flex flex-wrap items-center gap-3 rounded-xl border px-3 py-2 ${invalid(`publicContact.openingHours.${index}`) ? "border-red-400/50" : "border-nox-border"}`}
+            >
+              <label
+                htmlFor={`horario-${day.dayOfWeek}-aberto`}
+                className="flex w-40 items-center gap-2 text-sm text-white"
+              >
+                <input
+                  id={`horario-${day.dayOfWeek}-aberto`}
+                  type="checkbox"
+                  checked={day.isOpen}
+                  onChange={(event) => onOpeningHoursChange(index, { isOpen: event.target.checked })}
+                  className="size-4 accent-emerald-400"
+                />
+                {OPENING_HOURS_DAY_LABELS[day.dayOfWeek]}
+              </label>
+              <label
+                htmlFor={`horario-${day.dayOfWeek}-abre`}
+                className="flex items-center gap-2 text-xs text-nox-muted"
+              >
+                Abre
+                <input
+                  id={`horario-${day.dayOfWeek}-abre`}
+                  type="time"
+                  value={day.opens}
+                  disabled={!day.isOpen}
+                  onChange={(event) => onOpeningHoursChange(index, { opens: event.target.value })}
+                  className="nox-input w-28 disabled:opacity-40"
+                />
+              </label>
+              <label
+                htmlFor={`horario-${day.dayOfWeek}-fecha`}
+                className="flex items-center gap-2 text-xs text-nox-muted"
+              >
+                Fecha
+                <input
+                  id={`horario-${day.dayOfWeek}-fecha`}
+                  type="time"
+                  value={day.closes}
+                  disabled={!day.isOpen}
+                  onChange={(event) => onOpeningHoursChange(index, { closes: event.target.value })}
+                  className="nox-input w-28 disabled:opacity-40"
+                />
+              </label>
+            </div>
+          ))}
+        </div>
       </fieldset>
 
       <fieldset className="mt-6">
