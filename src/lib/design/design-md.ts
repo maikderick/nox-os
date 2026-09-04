@@ -125,7 +125,8 @@ export function toDesignMarkdown(direction: ArtDirection): string {
     hero.ground === direction.ground
       ? `- **Chão** — \`--hero-surface\`, o mesmo do corpo. Um chão só nesta direção.`
       : `- **Chão** — \`--hero-surface\` é preto puro sob um corpo claro. São os dois chãos permitidos, e não existe um terceiro.`,
-    `- **Título** — \`<h1>\` em \`--font-display\`, \`clamp(3rem, 8vw, 7rem)\`, \`line-height: 0.95\`, peso ${heroWeight}, cor \`--hero-ink\`. O impacto vem do tamanho: nada de gradiente nas letras.`,
+    `- **Título** — \`<h1>\` em \`--font-display\`, \`clamp(2.6rem, 6.5vw, 6rem)\` no desktop e \`clamp(2.6rem, 12vw, 4rem)\` no celular, \`line-height: 0.95\`, peso ${heroWeight}, cor \`--hero-ink\`. O impacto vem do tamanho: nada de gradiente nas letras.`,
+    `- **O nome não se parte** — \`hyphens: manual\`, \`overflow-wrap: normal\`, \`word-break: normal\`: um nome de negócio quebra no espaço ou não quebra. Se o termo mais longo não couber na coluna, quem cede é o tamanho, nunca a palavra.`,
     `- **Frase** — uma só, a de posicionamento, em \`--hero-ink-muted\`, \`max-width: 34ch\`.`,
     `- **Spotlight** — uma única elipse borrada em \`--hero-spotlight\`, no elemento marcado \`data-hero-spotlight\`, com entrada de 2s uma vez. É a única luz da página; não repita em outra seção.`,
     `- **Objeto** — à direita, um SVG inline desenhado do mundo da categoria (motivo \`${direction.hero.motif}\`), \`aria-hidden\`, marcado \`data-category-motif\`, com uma animação lenta de 8 a 14s. Sem foto de banco, sem cena 3D, sem ilustração genérica.`,

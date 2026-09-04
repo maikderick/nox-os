@@ -112,7 +112,13 @@ describe("emissor de DESIGN.md", () => {
     expect(markdown).toContain("### Hero");
     const hero = markdown.split("### Hero")[1].split("## Do's and Don'ts")[0];
     expect(hero).toContain("88vh");
-    expect(hero).toContain("clamp(3rem, 8vw, 7rem)");
+    // O contrato do título é o que o renderizador realmente aplica, escala a
+    // escala: um agente que lesse o teto antigo entregaria um hero diferente
+    // do que o cliente aprovou na prévia.
+    expect(hero).toContain("clamp(2.6rem, 6.5vw, 6rem)");
+    expect(hero).toContain("clamp(2.6rem, 12vw, 4rem)");
+    expect(hero).toContain("hyphens: manual");
+    expect(hero).not.toContain("clamp(3rem, 8vw, 7rem)");
     expect(hero).toContain("data-hero-spotlight");
     expect(hero).toContain("data-category-motif");
     expect(hero).toContain(direction.hero.motif);
