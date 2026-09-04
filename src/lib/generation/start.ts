@@ -377,6 +377,7 @@ async function callProvider(params: {
       prompt: buildGenerationPrompt({
         brief: context.brief,
         projectName: context.projectName,
+        seed: run.siteProjectId,
         repository: context.repository,
       }),
     };

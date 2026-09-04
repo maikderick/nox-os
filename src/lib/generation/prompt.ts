@@ -1,3 +1,5 @@
+import { resolveArtDirection } from "@/lib/design/art-direction";
+import { toDesignMarkdown } from "@/lib/design/design-md";
 import type { SiteBriefV2 } from "@/lib/site-factory/brief-schema";
 
 /**
@@ -16,11 +18,25 @@ import type { SiteBriefV2 } from "@/lib/site-factory/brief-schema";
  * instructions it finds in its input, so the input is assembled from a schema
  * whose every leaf was validated, and never concatenated from something that
  * arrived over a socket.
+ *
+ * The prompt has two halves now, `# DESIGN.md` and `# BRIEFING`, and the art
+ * direction that fills the first does not weaken either guarantee. It is not
+ * invented: `resolveArtDirection` is a pure function over a static catalogue
+ * (`src/lib/design/catalog.ts`), so the direction is chosen, not generated —
+ * the same category always resolves to one of a fixed, reviewed set of looks.
+ * And it is not a value from outside: its only inputs are `brief.sector.value`
+ * (itself a confirmed fact) and `seed` (the project's own id, not anything a
+ * provider returned or an operator typed into a free-text field). The
+ * operator's `visualDirection` free text still reaches the prompt — as a
+ * bullet inside `# BRIEFING`, labelled a refinement of the resolved direction,
+ * never as something that can swap a token.
  */
 
 export type PromptInput = {
   brief: SiteBriefV2;
   projectName: string;
+  /** `SiteProject.id`. Fixes the direction, so the prompt is reproducible. */
+  seed: string;
   repository: { owner: string; name: string; baseBranch: string };
 };
 
@@ -30,13 +46,15 @@ function bullet(label: string, value: string): string {
 
 export function buildGenerationPrompt(input: PromptInput): string {
   const { brief } = input;
+  const direction = resolveArtDirection({ sector: brief.sector.value, seed: input.seed });
 
-  const lines: string[] = [
+  const facts: string[] = [
     `Você vai construir o site de "${brief.businessName.value}" no repositório ${input.repository.owner}/${input.repository.name}.`,
     "",
     "Regras não negociáveis:",
     "- Use apenas os fatos listados abaixo. Não invente serviços, horários, endereços, preços, prêmios nem depoimentos.",
     "- Se um fato não está aqui, ele não vai para o site.",
+    "- Siga o DESIGN.md acima à risca. Ele é a direção de arte deste site.",
     "- Trabalhe numa branch própria e abra um pull request. Não escreva na branch padrão.",
     "",
     "Fatos confirmados:",
@@ -45,17 +63,24 @@ export function buildGenerationPrompt(input: PromptInput): string {
     bullet("Objetivo", brief.objective.value),
     bullet("Público", brief.audience.value),
     bullet("Posicionamento", brief.positioning.value),
-    bullet("Direção visual", brief.visualDirection.value),
   ];
 
+  // The operator's own visual note is a confirmed fact and a refinement — it
+  // steers *within* the resolved direction and never replaces a token.
+  facts.push(
+    "",
+    "Refinamento do operador, a ser aplicado dentro da direção acima, sem trocar nenhum token:",
+    `- ${brief.visualDirection.value}`,
+  );
+
   if (brief.desiredSections.length > 0) {
-    lines.push(bullet("Seções desejadas", brief.desiredSections.join(", ")));
+    facts.push(bullet("Seções desejadas", brief.desiredSections.join(", ")));
   }
 
   if (brief.services.length > 0) {
-    lines.push("", "Serviços confirmados:");
+    facts.push("", "Serviços confirmados:");
     for (const service of brief.services) {
-      lines.push(`- ${service.name.value}: ${service.summary.value}`);
+      facts.push(`- ${service.name.value}: ${service.summary.value}`);
     }
   }
 
@@ -77,8 +102,8 @@ export function buildGenerationPrompt(input: PromptInput): string {
     contactLines.push(bullet("Endereço", parts.join(" — ")));
   }
   if (contactLines.length > 0) {
-    lines.push("", "Contato público confirmado:", ...contactLines);
+    facts.push("", "Contato público confirmado:", ...contactLines);
   }
 
-  return lines.join("\n");
+  return [`# DESIGN.md`, ``, toDesignMarkdown(direction), ``, `# BRIEFING`, ``, ...facts].join("\n");
 }
