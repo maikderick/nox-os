@@ -7,10 +7,14 @@ import { resolveArtDirection } from "@/lib/design/art-direction";
 import { DIRECTION_CATALOG } from "@/lib/design/catalog";
 import type { CategoryId } from "@/lib/design/category";
 
-const FONT_ROSTER = new Set([
-  "fraunces", "source-serif", "instrument-serif", "archivo",
-  "inter-tight", "inter", "work-sans", "dm-mono",
-]);
+// Reads the loaded roster straight out of site-fonts.tsx, rather than
+// hardcoding a third copy of the list here, so that removing a family from
+// site-fonts.tsx fails this test instead of silently falling back to the
+// system face at render time.
+const SITE_FONTS_SOURCE = readFileSync("src/components/sites/site-fonts.tsx", "utf8");
+const FONT_ROSTER = new Set(
+  [...SITE_FONTS_SOURCE.matchAll(/variable:\s*"--font-([a-z0-9-]+)"/g)].map((match) => match[1]),
+);
 
 function channel(value: number): number {
   const c = value / 255;
@@ -54,6 +58,12 @@ describe("catálogo de direções de arte", () => {
   });
 
   it("só referencia fontes do roster carregado", () => {
+    // Pins the roster itself: if a family is added to or removed from
+    // site-fonts.tsx without updating this list, this fails here first.
+    expect([...FONT_ROSTER].sort()).toEqual([
+      "archivo", "dm-mono", "fraunces", "instrument-serif",
+      "inter", "inter-tight", "source-serif", "work-sans",
+    ]);
     for (const id of categoryIds) {
       for (const type of DIRECTION_CATALOG[id].types) {
         expect(FONT_ROSTER.has(type.display), `${id} display ${type.display}`).toBe(true);
