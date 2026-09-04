@@ -35,6 +35,30 @@ function render(sector: string, seed: string, overrides = {}) {
   );
 }
 
+/** Every optional block open at once: differentiators, services, hours, location, contact. */
+function richFixture() {
+  const stamp = "2026-09-03T12:00:00.000Z";
+  return {
+    differentiators: [fact("Atendimento um de cada vez."), fact("Orçamento por escrito.")],
+    desiredSections: ["Início", "Sobre", "Serviços", "Horários", "Localização", "Contato"],
+    services: [
+      { id: "a", name: fact("Corte"), summary: fact("Corte na tesoura ou na máquina."), body: [fact("Acabamento na navalha.")], relatedIds: [], featured: false },
+      { id: "b", name: fact("Barba"), summary: fact("Toalha quente e navalha."), body: [fact("Finalização com óleo.")], relatedIds: [], featured: false },
+    ],
+    publicContact: {
+      phone: { value: "+5585999998888", source: "CLIENTE" as const, confirmedAt: stamp },
+      whatsapp: { value: "+5585999998888", source: "CLIENTE" as const, confirmedAt: stamp },
+      email: { value: "contato@aurora.com.br", source: "CLIENTE" as const, confirmedAt: stamp },
+      address: { value: { street: "Rua das Flores", number: "120", complement: "Sala 3", neighborhood: "Centro", city: "Fortaleza", state: "CE", postalCode: "60000-000", country: "Brasil" }, source: "CLIENTE" as const, confirmedAt: stamp },
+      coordinates: null,
+      openingHours: { value: [{ dayOfWeek: "SEGUNDA" as const, opens: "09:00", closes: "18:00" }, { dayOfWeek: "SABADO" as const, opens: "09:00", closes: "13:00" }], source: "CLIENTE" as const, confirmedAt: stamp },
+      socialLinks: [{ value: { platform: "INSTAGRAM" as const, url: "https://instagram.com/aurora", label: "Instagram" }, source: "CLIENTE" as const, confirmedAt: stamp }],
+    },
+  };
+}
+
+const RICH_FIXTURE_SECTORS = ["Barbearia", "Advocacia", "Pizzaria", "Clínica odontológica", "Pousada"];
+
 describe("renderizador do site", () => {
   it("não comete nenhuma das regras anti-slop", () => {
     for (const sector of ["Barbearia", "Advocacia", "Pizzaria", "Clínica odontológica", "Pousada"]) {
@@ -44,29 +68,27 @@ describe("renderizador do site", () => {
   });
 
   it("não comete nenhuma regra anti-slop com todos os blocos presentes", () => {
-    const stamp = "2026-09-03T12:00:00.000Z";
-    const full = {
-      differentiators: [fact("Atendimento um de cada vez."), fact("Orçamento por escrito.")],
-      desiredSections: ["Início", "Sobre", "Serviços", "Horários", "Localização", "Contato"],
-      services: [
-        { id: "a", name: fact("Corte"), summary: fact("Corte na tesoura ou na máquina."), body: [fact("Acabamento na navalha.")], relatedIds: [], featured: false },
-        { id: "b", name: fact("Barba"), summary: fact("Toalha quente e navalha."), body: [fact("Finalização com óleo.")], relatedIds: [], featured: false },
-      ],
-      publicContact: {
-        phone: { value: "+5585999998888", source: "CLIENTE" as const, confirmedAt: stamp },
-        whatsapp: { value: "+5585999998888", source: "CLIENTE" as const, confirmedAt: stamp },
-        email: { value: "contato@aurora.com.br", source: "CLIENTE" as const, confirmedAt: stamp },
-        address: { value: { street: "Rua das Flores", number: "120", complement: "Sala 3", neighborhood: "Centro", city: "Fortaleza", state: "CE", postalCode: "60000-000", country: "Brasil" }, source: "CLIENTE" as const, confirmedAt: stamp },
-        coordinates: null,
-        openingHours: { value: [{ dayOfWeek: "SEGUNDA" as const, opens: "09:00", closes: "18:00" }, { dayOfWeek: "SABADO" as const, opens: "09:00", closes: "13:00" }], source: "CLIENTE" as const, confirmedAt: stamp },
-        socialLinks: [{ value: { platform: "INSTAGRAM" as const, url: "https://instagram.com/aurora", label: "Instagram" }, source: "CLIENTE" as const, confirmedAt: stamp }],
-      },
-    };
-    for (const sector of ["Barbearia", "Advocacia", "Pizzaria", "Clínica odontológica", "Pousada"]) {
+    const full = richFixture();
+    for (const sector of RICH_FIXTURE_SECTORS) {
       const html = render(sector, "semente-fixa", full);
       expect(findSlop(html).map((rule) => rule.id), sector).toEqual([]);
       expect(html, sector).toContain("Acabamento na navalha.");
       expect(html, sector).toContain("Finalização com óleo.");
+    }
+  });
+
+  it("nunca usa o accent para colorir texto", () => {
+    // The accent may draw an edge (border) or a background, but coloring
+    // words with it risks contrast failures the palette was not built to
+    // guarantee. It must also appear at most once: today that is the hero's
+    // CTA border, so a second occurrence would flag a new, unreviewed use.
+    const full = richFixture();
+    for (const sector of RICH_FIXTURE_SECTORS) {
+      const html = render(sector, "semente-fixa", full);
+      expect(html, sector).not.toContain("color:var(--accent)");
+      expect(html, sector).not.toContain("color: var(--accent)");
+      const occurrences = html.match(/var\(--accent\)/g) ?? [];
+      expect(occurrences.length, sector).toBeLessThanOrEqual(1);
     }
   });
 
