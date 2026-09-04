@@ -37,11 +37,22 @@ describe("branding do snapshot", () => {
     expect(snapshot.branding.surfaceColor).toBe(direction.palette.surface);
     expect(snapshot.branding.textColor).toBe(direction.palette.ink);
     expect(snapshot.branding.accentColor).toBe(direction.palette.accent);
+    expect(snapshot.branding.primaryColor).toBe(direction.palette.ink);
     expect(snapshot.branding.primaryColor).not.toBe("#1d4ed8");
   });
 
   it("respeita o enum do contrato", () => {
-    for (const sector of ["Barbearia", "Advocacia", "Pizzaria", "Pousada", "Academia"]) {
+    const sectors = ["Barbearia", "Advocacia", "Pizzaria", "Pousada", "Academia"];
+
+    // These five sectors must resolve to five distinct categories — otherwise
+    // this loop would silently exercise the same direction more than once and
+    // a keyword change collapsing two categories together would go unnoticed.
+    const categories = new Set(
+      sectors.map((sector) => resolveArtDirection({ sector, seed: "s" }).categoryId),
+    );
+    expect(categories.size).toBe(sectors.length);
+
+    for (const sector of sectors) {
       const snapshot = buildSiteContentSnapshot({
         brief: briefFor(sector), siteUrl: "https://exemplo.com.br", seed: "s",
         privacy: { controllerName: "X", updatedAt: "2026-09-03T12:00:00.000Z", sections: [] },
