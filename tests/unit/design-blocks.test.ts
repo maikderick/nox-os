@@ -110,4 +110,32 @@ describe("composição de blocos", () => {
     const { blocks } = resolveComposition(briefV2({ desiredSections: ["Início", "Início", "Contato"] }));
     expect(new Set(blocks).size).toBe(blocks.length);
   });
+
+  it("não desvia uma seção que apenas contém um alias dentro de outra palavra", () => {
+    const { blocks, unmapped } = resolveComposition(
+      briefV2({ desiredSections: ["Início", "Sobremesas", "Homenagem", "Capacidade de atendimento", "Topografia"] }),
+    );
+    for (const section of ["Sobremesas", "Homenagem", "Capacidade de atendimento", "Topografia"]) {
+      expect(unmapped, section).toContain(section);
+    }
+    expect(blocks).toContain("hero");
+  });
+
+  it("continua casando alias como palavra inteira e como frase", () => {
+    const { unmapped } = resolveComposition(
+      briefV2({ desiredSections: ["Sobre nós", "Quem somos", "Início", "Onde estamos"] }),
+    );
+    expect(unmapped).not.toContain("Sobre nós");
+    expect(unmapped).not.toContain("Quem somos");
+    expect(unmapped).not.toContain("Início");
+    // "Onde estamos" maps to `location`, which the default fixture does not confirm —
+    // so it is reported, and that is correct.
+    expect(unmapped).toContain("Onde estamos");
+  });
+
+  it("reporta a seção pedida cujo bloco não está disponível por falta de fato confirmado", () => {
+    const { blocks, unmapped } = resolveComposition(briefV2({ desiredSections: ["Início", "Horários"] }));
+    expect(unmapped).toContain("Horários");
+    expect(blocks).not.toContain("hours");
+  });
 });

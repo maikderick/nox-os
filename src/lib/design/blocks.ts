@@ -39,6 +39,20 @@ const SECTION_ALIASES: [BlockId, string[]][] = [
   ["contact", ["contato", "fale conosco", "orcamento", "agendamento"]],
 ];
 
+// Aliases must match at word boundaries, never as bare substrings. After
+// normalization "sobremesas" contains "sobre", "homenagem" contains "home",
+// and a bare `.includes()` would silently route a restaurant's dessert
+// section into `about`, or a tribute section into `hero`, with the operator
+// never told the section wasn't actually built. Each regex is compiled once
+// here, at module load, rather than per lookup inside the matching loop.
+const WORD_BOUNDARY = String.raw`\b`;
+const SECTION_ALIAS_MATCHERS: [BlockId, RegExp[]][] = SECTION_ALIASES.map(
+  ([block, aliases]) => [
+    block,
+    aliases.map((alias) => new RegExp(`${WORD_BOUNDARY}${alias}${WORD_BOUNDARY}`)),
+  ],
+);
+
 export function resolveComposition(brief: SiteBrief): { blocks: BlockId[]; unmapped: string[] } {
   const contact = briefPublicContact(brief);
 
@@ -58,8 +72,8 @@ export function resolveComposition(brief: SiteBrief): { blocks: BlockId[]; unmap
   const unmapped: string[] = [];
   for (const section of brief.desiredSections) {
     const normalized = normalizeForMatching(section);
-    const match = SECTION_ALIASES.find(([, aliases]) =>
-      aliases.some((alias) => normalized.includes(alias)),
+    const match = SECTION_ALIAS_MATCHERS.find(([, regexes]) =>
+      regexes.some((regex) => regex.test(normalized)),
     );
     // A requested section that maps to nothing, or to a block no confirmed
     // fact supports, is reported. Dropping it silently would let an operator
