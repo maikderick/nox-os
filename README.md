@@ -177,7 +177,8 @@ O texto livre do setor no briefing resolve para uma de quatorze categorias. Cada
 categoria tem uma direção de arte autoral — âncora sensorial, paleta, par tipográfico,
 raio, ritmo de espaçamento e um dispositivo estrutural — e um espaço de variantes
 (paletas, tipos e ritmos alternativos) sorteado por semente, para que dois clientes da
-mesma categoria não recebam a mesma página.
+mesma categoria tendam a receber páginas diferentes — o espaço é pequeno, então uma
+coincidência é possível, mas a identidade da categoria nunca muda.
 
 A direção é configuração, não fato: quem resolve é uma função pura de setor +
 `SiteProject.id`, nunca um modelo, então a mesma entrada rende sempre a mesma saída.
@@ -185,10 +186,13 @@ Um único objeto alimenta as duas pontas — as variáveis CSS da prévia em `/s
 o `DESIGN.md` que o agente de geração lê.
 
 Quinze regras anti-slop (um acento por site, um raio por site, preto é `#000000`, sem
-glow, sem gradiente radial, sem emoji como ícone) são verificadas por um linter sobre o
-markup renderizado, não apenas descritas em prosa. Os blocos da página só aparecem
-quando o fato por trás deles está confirmado no briefing: sem telefone confirmado, sem
-bloco de contato. A página do projeto em `/projetos/[id]` mostra a direção resolvida
+glow, sem gradiente radial, sem emoji como ícone) vão para o `DESIGN.md` do agente; dez
+delas têm forma mecânica e são verificadas por um linter sobre o markup renderizado, e as
+cinco restantes (orçamento de acento, de tipos, de chão, de CTA e de movimento) são regras
+de julgamento que só o revisor confere. Os blocos da página só aparecem quando o fato por
+trás deles está confirmado no briefing: sem canal de mensagem confirmado — telefone,
+WhatsApp, e-mail ou rede social — não há bloco de contato; o endereço sozinho abre apenas
+a localização. A página do projeto em `/projetos/[id]` mostra a direção resolvida
 antes de qualquer geração.
 
 Especificação: [direção de arte por categoria](docs/superpowers/specs/2026-09-03-direcao-de-arte-por-categoria-design.md).
