@@ -262,7 +262,7 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     paletteNames: ["indice", "sumario"],
     palettes: [
       { surface: "#FAFAF8", surfaceAlt: "#F0F0EC", ink: "#131313", inkMuted: "#55565A", line: "#E0E0DA", accent: "#0E6B5E" },
-      { surface: "#F5F5F2", surfaceAlt: "#EAEAE4", ink: "#101010", inkMuted: "#515256", line: "#DADAD3", accent: "#0B5C51" },
+      { surface: "#F5F5F2", surfaceAlt: "#EAEAE4", ink: "#000000", inkMuted: "#515256", line: "#DADAD3", accent: "#0B5C51" },
     ],
     types: [
       { display: "inter-tight", body: "inter", scale: "compact", displayCase: "none" },

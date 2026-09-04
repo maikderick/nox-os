@@ -36,13 +36,20 @@ describe("catálogo de direções de arte", () => {
     expect(Object.keys(DIRECTION_CATALOG).sort()).toEqual([...categoryIds].sort());
   });
 
-  it("dá a toda categoria pelo menos uma opção em cada eixo", () => {
+  it("dá a toda categoria pelo menos duas opções em cada eixo, senão dois clientes da mesma categoria saem com o mesmo site", () => {
     for (const id of categoryIds) {
       const entry = DIRECTION_CATALOG[id];
-      expect(entry.palettes.length, `${id}.palettes`).toBeGreaterThan(0);
-      expect(entry.types.length, `${id}.types`).toBeGreaterThan(0);
-      expect(entry.rhythms.length, `${id}.rhythms`).toBeGreaterThan(0);
+      expect(entry.palettes.length, `${id}.palettes`).toBeGreaterThanOrEqual(2);
+      expect(entry.types.length, `${id}.types`).toBeGreaterThanOrEqual(2);
+      expect(entry.rhythms.length, `${id}.rhythms`).toBeGreaterThanOrEqual(2);
       expect(entry.anchor.length, `${id}.anchor`).toBeGreaterThan(0);
+    }
+  });
+
+  it("nomeia toda paleta: paletteNames tem o mesmo tamanho que palettes", () => {
+    for (const id of categoryIds) {
+      const entry = DIRECTION_CATALOG[id];
+      expect(entry.paletteNames.length, `${id}.paletteNames`).toBe(entry.palettes.length);
     }
   });
 
@@ -81,11 +88,22 @@ describe("catálogo de direções de arte", () => {
     }
   });
 
+  // `#131313` — o `ink` da primeira paleta de `catalog` — precisa continuar
+  // passando: ele vem do dado de origem (a tabela de tokens), não foi
+  // inventado. É por isso que o limite é 0x13: é o cinza neutro mais escuro
+  // que os tokens realmente usam, então qualquer cinza neutro mais escuro
+  // que ele — mas que não seja preto puro — é invenção, exatamente a mesma
+  // armadilha de "quase-preto no lugar de preto" que esta regra existe para
+  // barrar. Não mova esse limite sem revisitar a tabela de tokens de origem.
   it("nunca usa quase-preto no lugar de preto", () => {
     for (const id of categoryIds) {
       for (const palette of DIRECTION_CATALOG[id].palettes) {
         for (const value of Object.values(palette)) {
-          expect(["#0b0b0b", "#111111", "#111"], `${id} ${value}`).not.toContain(value.toLowerCase());
+          const r = parseInt(value.slice(1, 3), 16);
+          const g = parseInt(value.slice(3, 5), 16);
+          const b = parseInt(value.slice(5, 7), 16);
+          const isForbiddenNearBlack = r === g && g === b && r > 0 && r < 0x13;
+          expect(isForbiddenNearBlack, `${id} ${value}`).toBe(false);
         }
       }
     }
