@@ -380,13 +380,13 @@ function HeroPreview() {
       </div>
 
       <div className="absolute -left-4 top-10 hidden rounded-xl border border-nox-border bg-nox-panel/95 px-3.5 py-2.5 shadow-xl backdrop-blur sm:block">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-nox-muted">Feito para</p>
+        <p className="text-[10px] text-nox-muted">Feito para</p>
         <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-white">
           <Smartphone size={14} className="text-nox-cyan" /> Celular primeiro
         </p>
       </div>
       <div className="absolute -bottom-5 -right-3 hidden rounded-xl border border-nox-border bg-nox-panel/95 px-3.5 py-2.5 shadow-xl backdrop-blur sm:block">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-nox-muted">Contato</p>
+        <p className="text-[10px] text-nox-muted">Contato</p>
         <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-white">
           <MessageCircle size={14} className="text-emerald-300" /> WhatsApp em 1 toque
         </p>

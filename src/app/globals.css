@@ -171,7 +171,7 @@ select option {
   }
 
   .nox-table thead th {
-    @apply border-b border-nox-border px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-nox-muted;
+    @apply border-b border-nox-border px-3 py-2.5 text-[11px] font-semibold text-nox-muted;
   }
 
   .nox-table tbody td {

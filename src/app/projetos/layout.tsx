@@ -26,6 +26,7 @@ export default async function ProjectsLayout({ children }: { children: React.Rea
         role={actor.role}
         canManageUsers={roleHasPermission(actor.role, "org:manage_members")}
         canManageOrganization={roleHasPermission(actor.role, "org:read")}
+        canReadJobs={roleHasPermission(actor.role, "job:read")}
       >
         {children}
       </AppShell>

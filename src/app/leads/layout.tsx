@@ -21,6 +21,7 @@ export default async function LeadsLayout({ children }: { children: React.ReactN
   const actor = await getActor();
   const canManageUsers = actor ? roleHasPermission(actor.role, "org:manage_members") : false;
   const canManageOrganization = actor ? roleHasPermission(actor.role, "org:read") : false;
+  const canReadJobs = actor ? roleHasPermission(actor.role, "job:read") : false;
 
   return (
     <Providers>
@@ -31,6 +32,7 @@ export default async function LeadsLayout({ children }: { children: React.ReactN
         role={actor?.role ?? null}
         canManageUsers={canManageUsers}
         canManageOrganization={canManageOrganization}
+        canReadJobs={canReadJobs}
       >
         {children}
       </AppShell>

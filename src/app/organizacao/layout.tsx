@@ -30,6 +30,7 @@ export default async function OrganizationLayout({
         role={actor.role}
         canManageUsers={roleHasPermission(actor.role, "org:manage_members")}
         canManageOrganization
+        canReadJobs={roleHasPermission(actor.role, "job:read")}
       >
         <div className="mx-auto max-w-5xl">{children}</div>
       </AppShell>

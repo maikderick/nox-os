@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FolderKanban,
   LayoutDashboard,
+  ListOrdered,
   LogOut,
   Map as MapIcon,
   Menu,
@@ -43,6 +44,7 @@ export type AppShellProps = {
   role?: string | null;
   canManageUsers: boolean;
   canManageOrganization: boolean;
+  canReadJobs: boolean;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -65,6 +67,7 @@ export function AppShell({
   role,
   canManageUsers,
   canManageOrganization,
+  canReadJobs,
 }: AppShellProps) {
   const pathname = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
@@ -79,6 +82,7 @@ export function AppShell({
 
   const organization: NavItem[] = [
     { href: "/organizacao/integracoes", label: "Integrações", icon: Plug, hidden: !canManageOrganization },
+    { href: "/organizacao/fila", label: "Fila", icon: ListOrdered, hidden: !canReadJobs },
     { href: "/leads/settings", label: "Configurações", icon: Settings },
     { href: "/leads/users", label: "Usuários", icon: Users, hidden: !canManageUsers },
   ];
@@ -229,7 +233,7 @@ function NavGroup({ title, items, pathname }: { title: string; items: NavItem[];
   if (visible.length === 0) return null;
   return (
     <div>
-      <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-nox-muted/80">{title}</p>
+      <p className="px-3 pb-2 text-[10px] font-semibold text-nox-muted/80">{title}</p>
       <ul className="space-y-0.5">
         {visible.map((item) => {
           const active = isActive(pathname, item);

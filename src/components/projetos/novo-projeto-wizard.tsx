@@ -427,7 +427,7 @@ export function NewProjectWizard({ studio }: { studio: StudioIdentity }) {
 
       const capabilities = payload?.capabilities ?? null;
       const projectId = payload?.project?.id;
-      const destination = projectId ? `/projetos/${projectId}?gerar=1` : "/projetos";
+      const destination = projectId ? `/projetos/${projectId}/geracao` : "/projetos";
       setCreatedPath(destination);
       if (!capabilities || capabilities.gaps.length === 0) {
         router.push(destination);
