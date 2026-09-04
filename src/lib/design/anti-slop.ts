@@ -133,78 +133,214 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
   },
 ];
 
+
 /**
- * Removes an element and everything inside it, found by a marker attribute.
+ * What each granted fragment — and only that fragment — is allowed to trip.
+ *
+ * The owner's reversal (spec §13, errata 6) grants the hero a radial gradient
+ * and a blur, and grants the motif a blur and a slow loop. It grants nothing
+ * else. So a fragment is not *hidden* from the rules: it is measured by all
+ * fifteen, and only the rules named here are dropped from its result. A `#111`
+ * or an ALL-CAPS eyebrow written inside the spotlight is still reported.
+ */
+const FRAGMENT_GRANTS = {
+  spotlight: ["gradient-ground", "glow", "motion-budget"],
+  motif: ["glow", "motion-budget"],
+} as const;
+
+/**
+ * Findings about the *shape* of the exception, not about taste.
+ *
+ * They are deliberately not members of `ANTI_SLOP_RULES`: that array is the
+ * `## Don't` list an agent reads, and "your markup does not close" is not a
+ * matter of taste. What they do is make rule 1's promise — "o spotlight do
+ * hero é permitido uma vez" — mechanical instead of merely written.
+ */
+export const HERO_STRUCTURE_FINDINGS = {
+  "spotlight-once": "O hero tem exatamente um spotlight, marcado data-hero-spotlight.",
+  "motif-once": "O hero tem no máximo um motivo, marcado data-category-motif.",
+  "unbalanced-exception":
+    "Um elemento marcado como exceção do hero não fecha: o markup não pode ser medido.",
+} as const;
+
+type StructureFinding = keyof typeof HERO_STRUCTURE_FINDINGS;
+
+/**
+ * The attribute *names* on an opening tag, ignoring everything inside a value.
+ *
+ * A regex over the raw tag cannot do this. `\bdata-hero-spotlight` matches
+ * inside `class="x-data-hero-spotlight"`, because `\b` fires after a hyphen;
+ * widening the boundary to `["'\s]` then matches inside
+ * `data-x="data-hero-spotlight "`, because a value opens with a quote. Both
+ * were real bypasses. Walking the tag is the only way to be sure a marker is
+ * an attribute and not a substring of somebody's class list.
+ */
+function attributeNames(tag: string): string[] {
+  const body = tag.replace(/^<\/?[a-zA-Z][a-zA-Z0-9]*/, "").replace(/\/?>$/, "");
+  const names: string[] = [];
+  let index = 0;
+
+  const skipSpace = () => {
+    while (index < body.length && /\s/.test(body[index]!)) index += 1;
+  };
+
+  while (index < body.length) {
+    skipSpace();
+    const start = index;
+    while (index < body.length && !/[\s=]/.test(body[index]!)) index += 1;
+    if (index > start) names.push(body.slice(start, index).toLowerCase());
+    skipSpace();
+    if (body[index] !== "=") continue;
+
+    index += 1;
+    skipSpace();
+    const quote = body[index];
+    if (quote === '"' || quote === "'") {
+      index += 1;
+      while (index < body.length && body[index] !== quote) index += 1;
+      index += 1;
+    } else {
+      while (index < body.length && !/\s/.test(body[index]!)) index += 1;
+    }
+  }
+  return names;
+}
+
+/** One element's span in the source. `end` is null when it never closes. */
+type Fragment = { start: number; end: number | null };
+
+/**
+ * Every `<tag>` carrying `attribute`, with the span of its whole subtree.
  *
  * Depth-counted rather than lazily matched to the first closing tag: the
- * spotlight and the motif both nest elements of their own tag, and a
- * `[\s\S]*?</svg>` would cut at the first inner close and leave the tail of
- * the subtree behind — the half that carries the blur.
+ * motif nests `<g>` inside `<g>`, and a `[\s\S]*?</svg>` would cut at the
+ * first inner close and leave the tail of the subtree — the half that carries
+ * the blur — in the measured markup.
  */
-function stripElement(html: string, tag: string, attribute: string): string {
-  const tags = new RegExp(`</?${tag}\\b[^>]*>`, "gi");
-  const marker = new RegExp(`\\b${attribute}(?=[\\s=>])`, "i");
-  let out = html;
+function markedElements(html: string, tag: string, attribute: string): Fragment[] {
+  const tags = [...html.matchAll(new RegExp(`</?${tag}\\b[^>]*>`, "gi"))];
+  const found: Fragment[] = [];
 
-  for (;;) {
-    tags.lastIndex = 0;
-    let start = -1;
-    let end = -1;
-    let depth = 0;
+  for (let i = 0; i < tags.length; i += 1) {
+    const open = tags[i]!;
+    if (open[0].startsWith("</")) continue;
+    if (!attributeNames(open[0]).includes(attribute)) continue;
+    if (open[0].endsWith("/>")) {
+      found.push({ start: open.index, end: open.index + open[0].length });
+      continue;
+    }
 
-    for (let match = tags.exec(out); match; match = tags.exec(out)) {
-      const closing = match[0].startsWith("</");
-      const selfClosing = match[0].endsWith("/>");
-
-      if (start === -1) {
-        if (closing || !marker.test(match[0])) continue;
-        start = match.index;
-        if (selfClosing) {
-          end = match.index + match[0].length;
-          break;
-        }
-        depth = 1;
-        continue;
-      }
-
-      if (selfClosing) continue;
-      depth += closing ? -1 : 1;
+    let depth = 1;
+    let end: number | null = null;
+    for (let j = i + 1; j < tags.length; j += 1) {
+      const next = tags[j]!;
+      if (next[0].endsWith("/>")) continue;
+      depth += next[0].startsWith("</") ? -1 : 1;
       if (depth === 0) {
-        end = match.index + match[0].length;
+        end = next.index + next[0].length;
         break;
       }
     }
-
-    if (start === -1) return out;
-    // An unbalanced marked element takes the rest of the document with it;
-    // that is malformed markup, and this linter is not the place to guess.
-    out = out.slice(0, start) + (end === -1 ? "" : out.slice(end));
+    found.push({ start: open.index, end });
   }
+  return found;
 }
 
-/**
- * The two elements the rules above deliberately do not see.
- *
- * The owner's 2026-09-04 reversal (spec §13, errata 6) grants the hero one
- * spotlight and one generated motif, and grants them the radial gradient, the
- * blur and the slow loop that make those two things what they are. The grant
- * is scoped by *markup*, not by prose: everything outside these two elements
- * is still measured by the same fifteen rules, so a second gradient one
- * section down still fails.
- */
-function withoutHeroExceptions(html: string): string {
-  return stripElement(stripElement(html, "div", "data-hero-spotlight"), "svg", "data-category-motif");
+function matchRules(text: string): { id: string; text: string }[] {
+  return ANTI_SLOP_RULES.filter((rule) => rule.markup?.test(text)).map((rule) => ({
+    id: rule.id,
+    text: rule.text,
+  }));
 }
 
 export function antiSlopMarkdown(): string {
   return ["### Don't", ...ANTI_SLOP_RULES.map((rule) => `- ${rule.text}`)].join("\n");
 }
 
-/** Reports every mechanically checkable rule a piece of rendered HTML trips. */
+/**
+ * Reports every mechanically checkable rule a piece of rendered HTML trips.
+ *
+ * The hero's exception is an *allowlist over fragments*, never a blind cut:
+ *
+ * 1. The grant is anchored. Only a spotlight or a motif inside the
+ *    `<section data-hero>` can earn it — a `data-hero-spotlight` in the footer
+ *    exempts nothing.
+ * 2. The grant is counted. A page with a hero carries exactly one spotlight
+ *    and at most one motif; anything else is a finding of its own *and*
+ *    revokes the grant, because an exception granted to "the" spotlight cannot
+ *    be handed to five of them.
+ * 3. The grant is narrow. Each fragment is measured by all fifteen rules; only
+ *    the ones named in `FRAGMENT_GRANTS` are dropped from its result.
+ * 4. Malformed markup fails loudly. An element that never closes is reported
+ *    and the whole document is measured with no grant at all — a linter that
+ *    returns "clean" for markup it could not parse is worse than no linter.
+ */
 export function findSlop(html: string): { id: string; text: string }[] {
-  const measured = withoutHeroExceptions(html);
-  return ANTI_SLOP_RULES.filter((rule) => rule.markup?.test(measured)).map((rule) => ({
-    id: rule.id,
-    text: rule.text,
-  }));
+  const structure: StructureFinding[] = [];
+  const note = (id: StructureFinding) => {
+    if (!structure.includes(id)) structure.push(id);
+  };
+
+  const heroes = markedElements(html, "section", "data-hero");
+  const spotlights = markedElements(html, "div", "data-hero-spotlight");
+  const motifs = markedElements(html, "svg", "data-category-motif");
+
+  const unbalanced = [...heroes, ...spotlights, ...motifs].some(
+    (fragment) => fragment.end === null,
+  );
+  if (unbalanced) note("unbalanced-exception");
+
+  const only = heroes.length === 1 ? heroes[0]! : null;
+  const hero = only !== null && only.end !== null ? { start: only.start, end: only.end } : null;
+  const inHero = (fragment: Fragment) =>
+    hero !== null &&
+    fragment.end !== null &&
+    fragment.start >= hero.start &&
+    fragment.end <= hero.end;
+
+  const heroSpotlights = spotlights.filter(inHero);
+  const heroMotifs = motifs.filter(inHero);
+
+  // Counted over the whole document, not only over the hero: a second element
+  // wearing the marker is a second spotlight wherever it stands, and rule 1
+  // grants exactly one. The hero-scoped count catches the other direction — a
+  // page whose only spotlight sits outside the hero has none in it.
+  if (hero) {
+    if (spotlights.length !== 1 || heroSpotlights.length !== 1) note("spotlight-once");
+    if (motifs.length > 1 || heroMotifs.length > 1) note("motif-once");
+  }
+
+  const granted =
+    !unbalanced && hero !== null && heroSpotlights.length === 1 && heroMotifs.length <= 1;
+
+  const exempt: { fragment: Fragment; grant: readonly string[] }[] = granted
+    ? [
+        ...heroSpotlights.map((fragment) => ({ fragment, grant: FRAGMENT_GRANTS.spotlight })),
+        ...heroMotifs.map((fragment) => ({ fragment, grant: FRAGMENT_GRANTS.motif })),
+      ]
+    : [];
+
+  // The document with the granted fragments carved out, measured by every rule.
+  let rest = html;
+  for (const { fragment } of [...exempt].sort((a, b) => b.fragment.start - a.fragment.start)) {
+    rest = rest.slice(0, fragment.start) + rest.slice(fragment.end!);
+  }
+  const found = matchRules(rest);
+
+  // Then each fragment on its own, minus what it was granted.
+  for (const { fragment, grant } of exempt) {
+    for (const finding of matchRules(html.slice(fragment.start, fragment.end!))) {
+      if (!grant.includes(finding.id)) found.push(finding);
+    }
+  }
+
+  // One report per rule, in the order the rules are written, then the
+  // structural findings — so a caller can compare against a stable list.
+  const byId = new Map(found.map((finding) => [finding.id, finding]));
+  return [
+    ...ANTI_SLOP_RULES.map((rule) => byId.get(rule.id)).filter(
+      (finding): finding is { id: string; text: string } => finding !== undefined,
+    ),
+    ...structure.map((id) => ({ id, text: HERO_STRUCTURE_FINDINGS[id] })),
+  ];
 }

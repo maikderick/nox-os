@@ -70,6 +70,41 @@ function styleDeclarations(html: string): string[] {
   );
 }
 
+/** The content of every `<style>` element in the markup. */
+function styleSheets(html: string): string[] {
+  return Array.from(html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)).map((match) => match[1]);
+}
+
+/**
+ * The at-rule blocks of a stylesheet, by name, with braces actually balanced.
+ *
+ * Splitting on the at-rule string and calling the tail "inside the block" is
+ * what the first version of this test did, and it proved nothing: a rule
+ * written *after* the block closed counted as guarded. Counting braces is the
+ * difference between asserting containment and asserting order.
+ */
+function atRuleBlocks(css: string, atRule: string): string[] {
+  const blocks: string[] = [];
+  let from = 0;
+  for (;;) {
+    const start = css.indexOf(atRule, from);
+    if (start === -1) return blocks;
+    const open = css.indexOf("{", start);
+    if (open === -1) return blocks;
+    let depth = 0;
+    let index = open;
+    for (; index < css.length; index += 1) {
+      if (css[index] === "{") depth += 1;
+      else if (css[index] === "}") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    blocks.push(css.slice(open + 1, index));
+    from = index + 1;
+  }
+}
+
 /** The contact section only: from its `id` to the end of the document. */
 function contactBlock(html: string): string {
   const start = html.indexOf('id="contato"');
@@ -114,6 +149,37 @@ describe("renderizador do site", () => {
           `${sector}: ${declaration}`,
         ).toBe(true);
       }
+    }
+  });
+
+  it("nunca usa nenhum dos dois acentos para colorir texto, nem no <style> do hero", () => {
+    // O mesmo princípio do teste acima, estendido ao token do hero e às regras
+    // da folha de estilo — que o teste anterior não olhava. `--hero-accent`
+    // desenha a borda do CTA e o traço dos motivos; nunca uma letra.
+    const full = richFixture();
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      for (const token of ["var(--accent)", "var(--hero-accent)"]) {
+        expect(html, `${id}: ${token}`).not.toContain(`color:${token}`);
+        expect(html, `${id}: ${token}`).not.toContain(`color: ${token}`);
+      }
+      // Nas folhas de estilo emitidas, toda declaração que cita o acento do
+      // hero desenha: uma borda no CSS do hero, um `fill`/`stroke` no do
+      // motivo. `color` é a propriedade da tipografia nos dois mundos, e é
+      // dela que o acento fica fora — um numeral decorativo dentro de um SVG
+      // `aria-hidden` é uma forma, não uma palavra publicada.
+      for (const sheet of styleSheets(html)) {
+        for (const declaration of sheet.split(/[;{}]/)) {
+          if (!declaration.includes("var(--hero-accent)")) continue;
+          const property = declaration.slice(0, declaration.indexOf(":")).trim();
+          expect(
+            property.startsWith("border") || property === "fill" || property === "stroke",
+            `${id}: ${declaration}`,
+          ).toBe(true);
+        }
+      }
+      // E o CTA do hero é onde ela está.
+      expect(html, id).toContain("border:1px solid var(--hero-accent)");
     }
   });
 
@@ -360,16 +426,62 @@ describe("hero imersivo", () => {
   it("guarda todo movimento atrás de prefers-reduced-motion, sem hover e sem transition", () => {
     for (const [id, sector] of CATEGORY_CASES) {
       const html = render(sector, `semente-${id}`, full);
-      expect(html, id).toContain("@media (prefers-reduced-motion");
-      // Toda `animation:` declarada tem de cair dentro de um bloco de
-      // reduced-motion. Contá-las prova isso sem parsear CSS: fora desses
-      // blocos o renderizador não escreve nenhuma.
-      const guarded =
-        html.split("@media (prefers-reduced-motion").slice(1).join("").split("animation:").length -
-        1;
-      expect(occurrences(html, "animation:"), `${id}: animação fora do bloco`).toBe(guarded);
+      const sheets = styleSheets(html);
+      expect(sheets.length, `${id}: folhas de estilo`).toBeGreaterThan(0);
+
+      for (const sheet of sheets) {
+        // O que fica fora dos blocos de reduced-motion, medido de verdade:
+        // recortando cada bloco balanceado, o que sobra não pode conter nem
+        // uma `@keyframes` nem uma `animation:`.
+        let outside = sheet;
+        for (const block of atRuleBlocks(sheet, "@media (prefers-reduced-motion")) {
+          outside = outside.replace(block, "");
+        }
+        expect(outside, `${id}: @keyframes fora do bloco`).not.toContain("@keyframes");
+        expect(outside, `${id}: animation fora do bloco`).not.toContain("animation:");
+        expect(sheet, `${id}: transition`).not.toContain("transition");
+        expect(sheet, `${id}: hover`).not.toContain("hover");
+      }
+
+      // E toda `animation:` do documento está numa folha de estilo — nenhuma
+      // veio num `style` inline, onde nenhuma media query poderia guardá-la.
+      const inSheets = sheets.join("").split("animation:").length - 1;
+      expect(occurrences(html, "animation:"), `${id}: animação inline`).toBe(inSheets);
       expect(html, id).not.toContain("transition");
       expect(html, id).not.toContain("hover");
+    }
+  });
+
+  it("põe o cabeçalho no chão do hero, e o corpo no seu", () => {
+    // Uma faixa clara colada sobre um hero preto é um terceiro chão, e lê como
+    // banner, não como abertura. O cabeçalho segue o hero; o corpo, não.
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      const header = html.slice(html.indexOf("<header"), html.indexOf("</header"));
+      expect(header, id).toContain("background:var(--hero-surface)");
+      expect(header, id).toContain("color:var(--hero-ink)");
+      expect(header, id).toContain("color:var(--hero-ink-muted)");
+      expect(header, id).not.toContain("background:var(--surface)");
+
+      const inverted = ["food", "fitness", "auto", "retail", "events"].includes(id);
+      // Sem costura a esconder, a régua inferior sai: sobre preto ela seria um
+      // risco claro atravessando o topo da página.
+      expect(header.includes("border-bottom:1px solid var(--line)"), id).toBe(!inverted);
+      // O corpo continua no chão da direção.
+      const body = html.slice(html.indexOf('id="sobre"'));
+      expect(body, id).toContain("background:var(--surface-alt)");
+    }
+  });
+
+  it("ancora a exceção do linter num hero de verdade", () => {
+    // `findSlop` só concede o gradiente e o blur a um fragmento que esteja
+    // dentro de `<section data-hero>`; sem o marcador, o hero real reprovaria.
+    for (const [id, sector] of CATEGORY_CASES) {
+      const html = render(sector, `semente-${id}`, full);
+      expect(occurrences(html, 'data-hero=""'), id).toBe(1);
+      expect(findSlop(html.replace('data-hero=""', "")).map((rule) => rule.id), id).toContain(
+        "gradient-ground",
+      );
     }
   });
 
