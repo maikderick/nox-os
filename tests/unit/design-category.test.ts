@@ -28,6 +28,7 @@ describe("resolução de categoria a partir do setor", () => {
     expect(resolveCategoryId("Escritório de advocacia")).toBe("professional");
     expect(resolveCategoryId("advogado")).toBe("professional");
     expect(resolveCategoryId("contador")).toBe("professional");
+    expect(resolveCategoryId("consultoria contábil")).toBe("professional");
     expect(resolveCategoryId("barbearia masculina")).toBe("beauty");
     expect(resolveCategoryId("clínica odontológica")).toBe("health");
     expect(resolveCategoryId("pousada")).toBe("tourism");
