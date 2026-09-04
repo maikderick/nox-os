@@ -84,36 +84,54 @@ const HERO_ENTRANCE_CSS =
   "to{opacity:1;transform:translateY(0)}}" +
   "[data-hero-enter]{animation:site-hero-enter var(--motion-max) ease-out both}}";
 
-const DISPLAY_TEXT: CSSProperties = {
-  fontFamily: "var(--font-display)",
-  fontSize: "var(--text-display)",
-  lineHeight: "var(--leading-display)",
-  letterSpacing: "var(--tracking-display)",
-  fontWeight: 500,
-};
+/**
+ * The two levels set in the display face, as functions of a resolved weight.
+ *
+ * `weight` is computed once per render, in `ProjectSite`, from the direction's
+ * display face: Instrument Serif ships only weight 400, and any heavier value
+ * asked of it is a browser-synthesized ("fake") bold, so directions on that
+ * face collapse both levels to 400. Every other display face keeps its
+ * nominal weight (500 here, 600 for `serviceNameText`). These stay plain
+ * functions of the weight they are given, not of the direction itself, so
+ * they remain pure and module-scoped like the other helpers below.
+ */
+function displayText(weight: number): CSSProperties {
+  return {
+    fontFamily: "var(--font-display)",
+    fontSize: "var(--text-display)",
+    lineHeight: "var(--leading-display)",
+    letterSpacing: "var(--tracking-display)",
+    fontWeight: weight,
+  };
+}
 
-const HEADING_TEXT: CSSProperties = {
-  fontFamily: "var(--font-display)",
-  fontSize: "var(--text-heading)",
-  lineHeight: "var(--leading-heading)",
-  letterSpacing: "var(--tracking-heading)",
-  fontWeight: 500,
-};
+function headingText(weight: number): CSSProperties {
+  return {
+    fontFamily: "var(--font-display)",
+    fontSize: "var(--text-heading)",
+    lineHeight: "var(--leading-heading)",
+    letterSpacing: "var(--tracking-heading)",
+    fontWeight: weight,
+  };
+}
 
 /**
  * The service name: the third level.
  *
- * A service name set in `HEADING_TEXT` is byte-identical to the section heading
+ * A service name set in `headingText` is byte-identical to the section heading
  * above it, which leaves the one block long enough to have hierarchy with none.
- * Body size in the display face at 600 sits between the 2rem section heading
- * and the 400-weight summary without adding a fifth size to the scale.
+ * Body size in the display face at 600 (400 on Instrument Serif, see above)
+ * sits between the 2rem section heading and the 400-weight summary without
+ * adding a fifth size to the scale.
  */
-const SERVICE_NAME_TEXT: CSSProperties = {
-  fontFamily: "var(--font-display)",
-  fontSize: "var(--text-body)",
-  lineHeight: "var(--leading-body)",
-  fontWeight: 600,
-};
+function serviceNameText(weight: number): CSSProperties {
+  return {
+    fontFamily: "var(--font-display)",
+    fontSize: "var(--text-body)",
+    lineHeight: "var(--leading-body)",
+    fontWeight: weight,
+  };
+}
 
 const BODY_TEXT: CSSProperties = {
   fontFamily: "var(--font-body)",
@@ -171,8 +189,8 @@ function SiteSection({
   );
 }
 
-function SectionHeading({ children }: { children: ReactNode }) {
-  return <h2 style={HEADING_TEXT}>{children}</h2>;
+function SectionHeading({ weight, children }: { weight: number; children: ReactNode }) {
+  return <h2 style={headingText(weight)}>{children}</h2>;
 }
 
 /** A dimension line: a rule with a tick at each end, as on a floor plan. */
@@ -197,6 +215,16 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
   const contact = briefPublicContact(brief);
   const services: BriefService[] = isSiteBriefV2(brief) ? brief.services : [];
   const has = (block: BlockId) => blocks.includes(block);
+
+  // Instrument Serif ships a single real weight (400); any heavier value on
+  // it forces the browser to synthesize ("fake") bold, which the type system
+  // does not allow. Every other display face keeps its nominal weight.
+  // Hierarchy between the heading and service-name levels still holds when
+  // both collapse to 400, because the two levels already differ by size
+  // (--text-heading vs --text-body).
+  const isInstrumentSerif = direction.type.display === "instrument-serif";
+  const headingWeight = isInstrumentSerif ? 400 : 500;
+  const serviceWeight = isInstrumentSerif ? 400 : 600;
 
   const family = deviceFamily(direction.device);
   const upper = direction.type.displayCase === "upper";
@@ -324,7 +352,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
           {services.map((service) => (
             <article key={service.id} style={ROW}>
               <div className="flex items-baseline gap-4">
-                <h3 style={{ ...SERVICE_NAME_TEXT, flex: "0 0 auto" }}>{service.name.value}</h3>
+                <h3 style={{ ...serviceNameText(serviceWeight), flex: "0 0 auto" }}>{service.name.value}</h3>
                 <span
                   aria-hidden="true"
                   style={{ flex: "1 1 2rem", borderBottom: "1px dotted var(--line)" }}
@@ -351,7 +379,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
                   gap: "var(--space-inline)",
                 }}
               >
-                <h3 style={SERVICE_NAME_TEXT}>{service.name.value}</h3>
+                <h3 style={serviceNameText(serviceWeight)}>{service.name.value}</h3>
                 {serviceSummary(service, { maxWidth: "62ch" })}
               </div>
               {serviceBody(service)}
@@ -369,7 +397,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
             <Fragment key={service.id}>
               <RuleDivider ticks={ticks} />
               <article style={{ paddingBlock: "var(--space-inline)" }}>
-                <h3 style={SERVICE_NAME_TEXT}>{service.name.value}</h3>
+                <h3 style={serviceNameText(serviceWeight)}>{service.name.value}</h3>
                 {serviceSummary(service, { marginTop: "var(--space-inline)", maxWidth: "62ch" })}
                 {serviceBody(service)}
               </article>
@@ -383,7 +411,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
       <div style={{ marginTop: "var(--space-block)" }}>
         {services.map((service) => (
           <article key={service.id} style={ROW}>
-            <h3 style={SERVICE_NAME_TEXT}>{service.name.value}</h3>
+            <h3 style={serviceNameText(serviceWeight)}>{service.name.value}</h3>
             {serviceSummary(service, { marginTop: "var(--space-inline)", maxWidth: "62ch" })}
             {serviceBody(service)}
           </article>
@@ -422,7 +450,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
               style={{
                 fontFamily: "var(--font-display)",
                 fontSize: "var(--text-small)",
-                fontWeight: 500,
+                fontWeight: headingWeight,
                 textTransform: upper ? "uppercase" : "none",
                 letterSpacing: upper ? "0.08em" : "0",
               }}
@@ -450,7 +478,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
           >
             <h1
               style={{
-                ...DISPLAY_TEXT,
+                ...displayText(headingWeight),
                 textTransform: upper ? "uppercase" : "none",
                 maxWidth: "18ch",
                 marginInline: centred ? "auto" : undefined,
@@ -493,7 +521,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
 
       {has("about") ? (
         <SiteSection id="sobre" ground={groundOf("about")} spine={spine}>
-          <SectionHeading>Sobre</SectionHeading>
+          <SectionHeading weight={headingWeight}>Sobre</SectionHeading>
           <div style={{ marginTop: "var(--space-block)", maxWidth: "62ch" }}>
             <p style={{ ...BODY_TEXT, color: "var(--ink-muted)" }}>{brief.objective.value}</p>
             <p
@@ -511,7 +539,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
 
       {has("differentiators") ? (
         <SiteSection id="diferenciais" ground={groundOf("differentiators")} spine={spine}>
-          <SectionHeading>Diferenciais</SectionHeading>
+          <SectionHeading weight={headingWeight}>Diferenciais</SectionHeading>
           <ul style={{ marginTop: "var(--space-block)", maxWidth: "62ch", listStyle: "none" }}>
             {brief.differentiators.map((item) => (
               <li key={item.value} style={{ ...ROW, ...BODY_TEXT }}>
@@ -524,14 +552,14 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
 
       {has("services") ? (
         <SiteSection id="servicos" ground={groundOf("services")} spine={spine}>
-          <SectionHeading>Serviços</SectionHeading>
+          <SectionHeading weight={headingWeight}>Serviços</SectionHeading>
           {renderServices()}
         </SiteSection>
       ) : null}
 
       {has("hours") ? (
         <SiteSection id="horarios" ground={groundOf("hours")} spine={spine}>
-          <SectionHeading>Horários</SectionHeading>
+          <SectionHeading weight={headingWeight}>Horários</SectionHeading>
           <dl
             style={{
               marginTop: "var(--space-block)",
@@ -560,7 +588,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
           confirmed, so has("location") already implies it. */}
       {has("location") && contact.address ? (
         <SiteSection id="localizacao" ground={groundOf("location")} spine={spine}>
-          <SectionHeading>Localização</SectionHeading>
+          <SectionHeading weight={headingWeight}>Localização</SectionHeading>
           <address
             style={{
               ...BODY_TEXT,
@@ -580,7 +608,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
 
       {has("contact") ? (
         <SiteSection id="contato" ground={groundOf("contact")} spine={spine}>
-          <SectionHeading>Contato</SectionHeading>
+          <SectionHeading weight={headingWeight}>Contato</SectionHeading>
           <ul style={{ marginTop: "var(--space-block)", maxWidth: "48ch", listStyle: "none" }}>
             {contactRows}
           </ul>

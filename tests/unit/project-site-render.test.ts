@@ -145,4 +145,19 @@ describe("renderizador do site", () => {
     expect(law).not.toContain("dotted");
     expect(new Set([food, auto, law]).size).toBe(3);
   });
+
+  it("nunca sintetiza negrito sobre Instrument Serif", () => {
+    // events (Fotógrafo) is the only category whose display face is
+    // instrument-serif, and that family ships a single real weight, 400.
+    // Any heavier fontWeight asked of it renders as a browser-synthesized
+    // ("fake") bold, so it must never appear in the markup.
+    const events = render("Fotógrafo", "s");
+    expect(events).not.toContain("font-weight:500");
+    expect(events).not.toContain("font-weight:600");
+
+    // Any other display face keeps its nominal weight, so the same markup
+    // for a non-instrument-serif category still carries 500 somewhere.
+    const law = render("Advocacia", "s");
+    expect(law).toContain("font-weight:500");
+  });
 });
