@@ -1,0 +1,106 @@
+---
+description: Regras do NOX OS — disciplina de fatos, direção de arte por categoria e o que nunca vai para um site de cliente
+alwaysApply: true
+---
+
+# NOX OS
+
+Fábrica de sites para negócios locais. O produto é um site que diz **apenas o que
+o negócio realmente disse**, com direção de arte tirada do mundo da categoria.
+
+Duas disciplinas governam tudo. Elas não são estilo — são a razão de o produto
+existir.
+
+## 1. Nada é inventado
+
+Todo texto publicável vem de um `confirmedFact`: um valor que uma pessoa leu e
+confirmou, com fonte (`LEAD | OPERADOR | CLIENTE | IMPORTACAO`) e momento da
+confirmação. Um fato ausente **não vira placeholder e não vira suposição** — a
+seção simplesmente não existe.
+
+`src/lib/content-integrity.ts` reprova, em qualquer texto de briefing ou de
+página: depoimento, prêmio, selo, avaliação, preço, promoção, garantia,
+superlativo ("o melhor", "líder em"), tempo de mercado ("desde 1998", "mais de
+500 clientes") e qualificação de equipe. Se você está escrevendo copy que
+dispara uma dessas regras, o problema é a copy, não a regra.
+
+Consequências práticas ao editar:
+
+- Nunca preencha um campo vazio do briefing com texto plausível.
+- Nunca acrescente um bloco de depoimentos, tabela de preços, FAQ, contador de
+  estatística ou nuvem de logos. Não é questão de gosto: só podem ser
+  preenchidos inventando.
+- `src/lib/site-factory/site-export.ts` **nunca** recebe o registro do lead. Um
+  `Business` é fonte de candidatos para alguém confirmar, não de fatos
+  publicados. Não acrescente esse parâmetro.
+- Nada é truncado em silêncio. Texto que não cabe no contrato levanta erro para
+  o operador encurtar — quem decide o que cortar é ele.
+
+## 2. Nada parece gerado por IA
+
+Cada categoria de negócio tem direção de arte própria em `src/lib/design/`,
+resolvida por função pura a partir do setor e de uma semente (`SiteProject.id`).
+Mesma entrada, mesma saída, sempre. Nenhum modelo escolhe cor ou fonte.
+
+**Nunca escreva num site gerado:**
+
+1. Gradiente radial ou cônico como fundo de seção.
+2. Glow — elemento borrado atrás do conteúdo.
+3. Glassmorphism (`bg-white/[0.0x]` com `backdrop-blur`) como estilo de card.
+4. Mais de um acento, ou acento em mais de ~5% da superfície.
+5. Emoji como ícone, ou grade de ícone genérica.
+6. Mais de um raio de borda no mesmo site.
+7. Mais de quatro tamanhos ou três pesos de tipo.
+8. Dois chãos — hero escuro sobre corpo claro.
+9. Mais de um CTA primário por viewport.
+10. Eyebrow ALL-CAPS tracked-out acima de seção.
+11. Numeração `01 / 02 / 03` sobre conteúdo que não é sequência.
+12. Metadado unido por ponto médio (`A · B · C`).
+13. `→` anexado a texto de link ou botão.
+14. Quase-preto (`#0B0B0B`, `#111`) no lugar de `#000000`.
+15. Movimento além de um momento no hero, até 200ms. Nada de fade-up por seção,
+    hover em todo card, parallax, contador subindo, marquee ou cena 3D.
+
+A lista vive em código em `src/lib/design/anti-slop.ts`, com `findSlop()`
+auditando o markup renderizado. Se você adicionar uma dessas coisas, um teste
+reprova — e ele está certo.
+
+Os valores visuais saem de `var(--surface)`, `var(--ink)`, `var(--ink-muted)`,
+`var(--line)`, `var(--accent)`, `var(--radius)`, `var(--space-*)`,
+`var(--text-*)`, `var(--font-display)` e `var(--font-body)`. **Nenhuma cor
+literal no JSX de um site gerado.**
+
+## Convenções do repositório
+
+- Comentários e identificadores em código: **inglês**. Texto de interface e
+  descrição de teste: **português**.
+- Comentário explica *por quê*, não *o quê*. O código já diz o quê.
+- Zod para toda entrada. `plainText(max)` de `src/lib/zod-text.ts` para string.
+- Toda rota de API resolve o autor pelo DAL (`src/lib/authz/dal.ts`) e pede uma
+  permissão nomeada. Não existe rota sem permissão.
+- Estados de projeto passam por `src/lib/site-factory/states.ts`. A máquina
+  recusa saltos e separa transição humana de retorno do orquestrador. Não
+  escreva `status` direto.
+- Provedores externos nascem `DESLIGADO`. `LIVE` não é selecionável — o portão é
+  `MODES_AVAILABLE` em `src/lib/integrations/modes.ts`, e mudá-lo é decisão
+  aprovada à parte, um provedor por vez.
+
+## Testes
+
+- Vitest, ambiente `node`, arquivos em `tests/unit/`. `npx vitest run <arquivo>`.
+- **A rede está bloqueada nos testes** (`tests/setup/no-network.ts`). Um teste
+  que passa chamando a internet não prova nada. Não contorne o guard.
+- Testes com sufixo `-db` exigem PostgreSQL local. Sem banco de pé, não rode.
+- Um teste cuja asserção não pode falhar é defeito, não cobertura.
+- Ao corrigir um teste que falha: conserte o código. **Nunca relaxe a
+  asserção** — em especial os limites de contraste WCAG do catálogo de direções.
+
+`npm run verify` roda lint, tipos, unidade, infra e build.
+
+## O contrato do site-kit
+
+`contracts/site-kit/site-content.schema.json` é versionado e fixado por teste de
+contrato e por `hashes.json`. `branding` tem exatamente seis campos, com
+`additionalProperties: false`. **Não acrescente campo ao contrato** sem uma
+decisão explícita de versão — o pacote `@nox/site-kit` versiona sozinho e não
+vive neste repositório.
