@@ -147,7 +147,14 @@ describe("resolução da direção", () => {
   });
 
   it("não toca relógio nem aleatoriedade", () => {
-    for (const path of ["src/lib/design/catalog.ts", "src/lib/design/art-direction.ts"]) {
+    for (const path of [
+      "src/lib/design/catalog.ts",
+      "src/lib/design/art-direction.ts",
+      "src/lib/design/category.ts",
+      "src/lib/design/blocks.ts",
+      "src/lib/design/tokens.ts",
+      "src/lib/design/design-md.ts",
+    ]) {
       expect(readFileSync(path, "utf8"), path).not.toMatch(/Date\.now|Math\.random|new Date/);
     }
   });
