@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -38,10 +40,28 @@ describe("motivo por categoria", () => {
     }
   });
 
-  it("cabe em sessenta elementos: é um desenho, não uma cena", () => {
+  it("cabe em sessenta elementos, e tem pelo menos doze: é um desenho, não um ícone", () => {
+    // O teto é o orçamento de markup; o piso é o que separa um objeto de um
+    // glifo. Um SVG de quatro formas cumpre o contrato e não entrega o que o
+    // dono pediu para ver.
     for (const motif of MOTIFS) {
-      expect(elements(draw(motif)).length, motif).toBeLessThanOrEqual(60);
+      const count = elements(draw(motif)).length;
+      expect(count, `${motif}: ${count} elementos`).toBeGreaterThanOrEqual(12);
+      expect(count, `${motif}: ${count} elementos`).toBeLessThanOrEqual(60);
     }
+  });
+
+  it("os catorze desenhos são realmente diferentes, não catorze ids no mesmo SVG", () => {
+    // Conferir só o `data-motif` deixaria passar um desenho genérico repetido
+    // catorze vezes. O que precisa ser distinto é o markup.
+    const drawings = new Map<string, string>();
+    for (const motif of MOTIFS) {
+      const body = draw(motif)
+        .replace(new RegExp(motif, "g"), "")
+        .replace(/data-motif="[^"]*"/g, "");
+      drawings.set(createHash("sha256").update(body).digest("hex"), motif);
+    }
+    expect(drawings.size).toBe(MOTIFS.length);
   });
 
   it("não usa imagem raster nem foreignObject", () => {
@@ -83,8 +103,12 @@ describe("motivo por categoria", () => {
 
   it("não publica texto, só numerais decorativos", () => {
     for (const motif of MOTIFS) {
-      for (const text of [...draw(motif).matchAll(/<text[^>]*>([^<]*)</g)].map((m) => m[1])) {
-        expect(text.trim(), `${motif}: "${text}"`).toMatch(/^[0-9:]*$/);
+      // Capturado até `</text>`, e não até o primeiro `<`, para que um
+      // `<tspan>` não esconda uma palavra do teste; e casado com `+`, para que
+      // um `<text>` vazio não passe por vacuidade.
+      for (const text of [...draw(motif).matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)]) {
+        const content = text[1].replace(/<[^>]*>/g, "").trim();
+        expect(content, `${motif}: "${content}"`).toMatch(/^[0-9:]+$/);
       }
     }
   });

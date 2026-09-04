@@ -90,16 +90,21 @@ type Motif = { css: string; art: ReactNode };
 
 const azulejo: Motif = {
   // Six rows of tiles; one row at a time takes the glaze, top to bottom.
-  css: motion(
-    "@keyframes motif-azulejo{0%{opacity:0}4%{opacity:1}14%{opacity:1}20%{opacity:0}100%{opacity:0}}" +
-      '[data-motif="azulejo"] .m-az-rows rect{opacity:0;animation:motif-azulejo 12s linear infinite}' +
+  css:
+    // The resting state stays outside the media query on purpose. Inside it,
+    // a person who asked for stillness got a drawing nobody designed: with no
+    // animation to set the opacity, all six accent rows painted at once.
+    '[data-motif="azulejo"] .m-az-rows rect{opacity:0}' +
+    motion(
+      "@keyframes motif-azulejo{0%{opacity:0}4%{opacity:1}14%{opacity:1}20%{opacity:0}100%{opacity:0}}" +
+      '[data-motif="azulejo"] .m-az-rows rect{animation:motif-azulejo 12s linear infinite}' +
       '[data-motif="azulejo"] .m-az-rows rect:nth-child(1){animation-delay:0s}' +
       '[data-motif="azulejo"] .m-az-rows rect:nth-child(2){animation-delay:2s}' +
       '[data-motif="azulejo"] .m-az-rows rect:nth-child(3){animation-delay:4s}' +
       '[data-motif="azulejo"] .m-az-rows rect:nth-child(4){animation-delay:6s}' +
       '[data-motif="azulejo"] .m-az-rows rect:nth-child(5){animation-delay:8s}' +
       '[data-motif="azulejo"] .m-az-rows rect:nth-child(6){animation-delay:10s}',
-  ),
+    ),
   art: (
     <>
       <defs>
@@ -281,18 +286,20 @@ const placar: Motif = {
 const patas: Motif = {
   // The whole trail is always there; the emphasis walks along it. Fading each
   // print out entirely left the motif empty for most of the loop.
-  css: motion(
-    "@keyframes motif-patas{0%{opacity:0.4}10%{opacity:1}30%{opacity:1}" +
+  css:
+    '[data-motif="patas"] .m-pt-paw{opacity:0.4}' +
+    motion(
+      "@keyframes motif-patas{0%{opacity:0.4}10%{opacity:1}30%{opacity:1}" +
       "48%{opacity:0.4}100%{opacity:0.4}}" +
-      '[data-motif="patas"] .m-pt-paw{opacity:0.4;animation:motif-patas 12s ease-in-out infinite}' +
+      '[data-motif="patas"] .m-pt-paw{animation:motif-patas 12s ease-in-out infinite}' +
       '[data-motif="patas"] .m-pt-paw-1{animation-delay:1.6s}' +
       '[data-motif="patas"] .m-pt-paw-2{animation-delay:3.2s}' +
       '[data-motif="patas"] .m-pt-paw-3{animation-delay:4.8s}' +
       '[data-motif="patas"] .m-pt-paw-4{animation-delay:6.4s}',
-  ),
+    ),
   art: (
     <>
-      {[234, 170, 106].map((r, index) => (
+      {[236, 176, 116].map((r, index) => (
         <circle
           key={r}
           cx={240}
@@ -304,11 +311,11 @@ const patas: Motif = {
           strokeWidth={2.4}
         />
       ))}
-      {paw(112, 424, -18, 0)}
-      {paw(200, 368, -4, 1)}
-      {paw(182, 286, -18, 2)}
-      {paw(272, 228, -4, 3)}
-      {paw(256, 146, -18, 4)}
+      {paw(76, 405, -18, 0)}
+      {paw(181, 354, -4, 1)}
+      {paw(222, 243, -18, 2)}
+      {paw(327, 192, -4, 3)}
+      {paw(368, 81, -18, 4)}
     </>
   ),
 };
@@ -442,15 +449,15 @@ const vitrine: Motif = {
 
 const passePartout: Motif = {
   css: motion(
-    "@keyframes motif-passe{0%{transform:translate(-40px,26px)}50%{transform:translate(46px,-20px)}" +
-      "100%{transform:translate(-40px,26px)}}" +
+    "@keyframes motif-passe{0%{transform:translate(-18px,11px)}50%{transform:translate(20px,-9px)}" +
+      "100%{transform:translate(-18px,11px)}}" +
       '[data-motif="passe-partout"] .m-pp-light{transform-box:view-box;animation:motif-passe 13s ease-in-out infinite}',
   ),
   art: (
     <>
       <defs>
-        <filter id="motif-passe-blur" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="34" />
+        <filter id="motif-passe-blur" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="16" />
         </filter>
         <clipPath id="motif-passe-window">
           <rect x={126} y={150} width={228} height={180} />
@@ -459,8 +466,15 @@ const passePartout: Motif = {
       <rect x={26} y={50} width={428} height={380} fill="none" stroke="var(--hero-ink)" strokeOpacity={0.65} strokeWidth={2} />
       <rect x={58} y={82} width={364} height={316} fill="var(--hero-ink)" fillOpacity={0.05} stroke="var(--hero-ink)" strokeOpacity={0.35} strokeWidth={1.4} />
       <rect x={126} y={150} width={228} height={180} fill="var(--hero-ink)" fillOpacity={0.09} />
+      {/* A focus of light inside the mount, not a fill of it. The first
+          version was an ellipse wide enough to reach the clip on every side
+          under a 34-unit blur, and a blurred shape cut by a straight edge is
+          not light — it is a grey slab, and it read as an image that failed
+          to load. The light now dies inside the window, and a small crisp
+          core gives it a source to come from. */}
       <g clipPath="url(#motif-passe-window)">
-        <ellipse className="m-pp-light" cx={240} cy={240} rx={112} ry={78} fill="var(--hero-accent)" fillOpacity={0.5} filter="url(#motif-passe-blur)" />
+        <ellipse className="m-pp-light" cx={240} cy={240} rx={58} ry={40} fill="var(--hero-accent)" fillOpacity={0.34} filter="url(#motif-passe-blur)" />
+        <ellipse className="m-pp-light" cx={240} cy={240} rx={15} ry={10} fill="var(--hero-accent)" fillOpacity={0.55} />
       </g>
       <rect x={126} y={150} width={228} height={180} fill="none" stroke="var(--hero-ink)" strokeOpacity={0.75} strokeWidth={2} />
       <g stroke="var(--hero-ink)" strokeOpacity={0.3} strokeWidth={1.2}>
@@ -473,7 +487,7 @@ const passePartout: Motif = {
 
 const planta: Motif = {
   css: motion(
-    "@keyframes motif-planta{0%{stroke-dashoffset:268}55%{stroke-dashoffset:0}100%{stroke-dashoffset:0}}" +
+    "@keyframes motif-planta{0%{stroke-dashoffset:268}15%{stroke-dashoffset:0}100%{stroke-dashoffset:0}}" +
       '[data-motif="planta"] .m-pl-cota{stroke-dasharray:268;animation:motif-planta 12s ease-in-out infinite}',
   ),
   art: (
@@ -547,26 +561,34 @@ const luzDifusa: Motif = {
       "100%{transform:scale(0.92);opacity:0.55}}" +
       '[data-motif="luz-difusa"] .m-lz-ring{transform-box:view-box;transform-origin:240px 240px;' +
       "animation:motif-luz 12s ease-in-out infinite}" +
-      '[data-motif="luz-difusa"] .m-lz-ring:nth-child(2){animation-delay:1.6s}' +
-      '[data-motif="luz-difusa"] .m-lz-ring:nth-child(3){animation-delay:3.2s}' +
-      '[data-motif="luz-difusa"] .m-lz-ring:nth-child(4){animation-delay:4.8s}',
+      '[data-motif="luz-difusa"] .m-lz-ring:nth-child(2){animation-delay:1.2s}' +
+      '[data-motif="luz-difusa"] .m-lz-ring:nth-child(3){animation-delay:2.4s}' +
+      '[data-motif="luz-difusa"] .m-lz-ring:nth-child(4){animation-delay:3.6s}' +
+      '[data-motif="luz-difusa"] .m-lz-ring:nth-child(5){animation-delay:4.8s}' +
+      '[data-motif="luz-difusa"] .m-lz-ring:nth-child(6){animation-delay:6s}',
   ),
   art: (
     <>
       <defs>
         <filter id="motif-luz-blur" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="18" />
+          <feGaussianBlur stdDeviation="22" />
         </filter>
       </defs>
+      {/* Six rings, wide and overlapping, on a real opacity ramp from the rim
+          to the middle: diffusion is a gradient, and four thin rings around a
+          solid dot was a radar glyph instead. The centre is now the brightest
+          part of the light, not a bead sitting in it. */}
       <g className="m-lz-rings" filter="url(#motif-luz-blur)">
-        <circle className="m-lz-ring" cx={240} cy={240} r={216} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.3} strokeWidth={26} />
-        <circle className="m-lz-ring" cx={240} cy={240} r={166} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.4} strokeWidth={24} />
-        <circle className="m-lz-ring" cx={240} cy={240} r={116} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.5} strokeWidth={22} />
-        <circle className="m-lz-ring" cx={240} cy={240} r={66} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.62} strokeWidth={20} />
+        <circle className="m-lz-ring" cx={240} cy={240} r={214} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.16} strokeWidth={38} />
+        <circle className="m-lz-ring" cx={240} cy={240} r={178} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.24} strokeWidth={38} />
+        <circle className="m-lz-ring" cx={240} cy={240} r={142} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.34} strokeWidth={38} />
+        <circle className="m-lz-ring" cx={240} cy={240} r={106} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.46} strokeWidth={38} />
+        <circle className="m-lz-ring" cx={240} cy={240} r={70} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.58} strokeWidth={38} />
+        <circle className="m-lz-ring" cx={240} cy={240} r={34} fill="none" stroke="var(--hero-accent)" strokeOpacity={0.7} strokeWidth={40} />
       </g>
-      <circle cx={240} cy={240} r={191} fill="none" stroke="var(--hero-ink)" strokeOpacity={0.28} strokeWidth={1.4} />
-      <circle cx={240} cy={240} r={91} fill="none" stroke="var(--hero-ink)" strokeOpacity={0.34} strokeWidth={1.4} />
-      <circle cx={240} cy={240} r={30} fill="var(--hero-accent)" fillOpacity={0.9} />
+      <circle cx={240} cy={240} r={232} fill="none" stroke="var(--hero-ink)" strokeOpacity={0.22} strokeWidth={1.4} />
+      <circle cx={240} cy={240} r={158} fill="none" stroke="var(--hero-ink)" strokeOpacity={0.3} strokeWidth={1.4} />
+      <circle cx={240} cy={240} r={84} fill="none" stroke="var(--hero-ink)" strokeOpacity={0.36} strokeWidth={1.4} />
     </>
   ),
 };
