@@ -32,6 +32,10 @@ function addressLines(address: PostalAddress): string[] {
     address.neighborhood,
     `${address.city}, ${address.state}`,
     address.postalCode,
+    // The schema defaults `country` to "Brasil" and the site is written in
+    // pt-BR, so a domestic address printing "Brasil" reads as filler. A foreign
+    // address has to name its country, and that is the only case it appears.
+    address.country === "Brasil" ? null : address.country,
   ].filter((line): line is string => Boolean(line));
 }
 
@@ -94,6 +98,21 @@ const HEADING_TEXT: CSSProperties = {
   lineHeight: "var(--leading-heading)",
   letterSpacing: "var(--tracking-heading)",
   fontWeight: 500,
+};
+
+/**
+ * The service name: the third level.
+ *
+ * A service name set in `HEADING_TEXT` is byte-identical to the section heading
+ * above it, which leaves the one block long enough to have hierarchy with none.
+ * Body size in the display face at 600 sits between the 2rem section heading
+ * and the 400-weight summary without adding a fifth size to the scale.
+ */
+const SERVICE_NAME_TEXT: CSSProperties = {
+  fontFamily: "var(--font-display)",
+  fontSize: "var(--text-body)",
+  lineHeight: "var(--leading-body)",
+  fontWeight: 600,
 };
 
 const BODY_TEXT: CSSProperties = {
@@ -261,13 +280,6 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
     );
   }
 
-  // `resolveComposition` counts a confirmed address as reason enough to offer a
-  // contact block, but the address is published by `location`. When it is the
-  // only confirmed contact fact there is nothing left for this block to hold,
-  // and a heading over an empty list is the hollow section this renderer exists
-  // to avoid.
-  const showContact = has("contact") && contactRows.length > 0;
-
   const openingHours = contact.openingHours;
   const hours = openingHours
     ? BRIEF_DAYS.flatMap((day) =>
@@ -284,20 +296,43 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
     </p>
   );
 
+  // Every paragraph of `body` is a confirmed fact in its own right, and the
+  // schema requires at least one. Publishing the summary and dropping these
+  // would lose facts someone took the trouble to confirm, so all four families
+  // print them - in `leader` and `index` on their own full-width row, so the
+  // menu and the table keep their shape.
+  const serviceBody = (service: BriefService) =>
+    service.body.map((paragraph, index) => (
+      <p
+        key={`${service.id}-${index}`}
+        style={{
+          ...BODY_TEXT,
+          marginTop: "var(--space-inline)",
+          color: "var(--ink-muted)",
+          maxWidth: "62ch",
+        }}
+      >
+        {paragraph.value}
+      </p>
+    ));
+
   function renderServices() {
     if (family === "leader") {
       // A menu: the name, a dotted leader across the gap, the summary. No card.
       return (
         <div style={{ marginTop: "var(--space-block)" }}>
           {services.map((service) => (
-            <div key={service.id} className="flex items-baseline gap-4" style={ROW}>
-              <h3 style={{ ...HEADING_TEXT, flex: "0 0 auto" }}>{service.name.value}</h3>
-              <span
-                aria-hidden="true"
-                style={{ flex: "1 1 2rem", borderBottom: "1px dotted var(--line)" }}
-              />
-              {serviceSummary(service, { flex: "0 1 34ch", textAlign: "right" })}
-            </div>
+            <article key={service.id} style={ROW}>
+              <div className="flex items-baseline gap-4">
+                <h3 style={{ ...SERVICE_NAME_TEXT, flex: "0 0 auto" }}>{service.name.value}</h3>
+                <span
+                  aria-hidden="true"
+                  style={{ flex: "1 1 2rem", borderBottom: "1px dotted var(--line)" }}
+                />
+                {serviceSummary(service, { flex: "0 1 34ch", textAlign: "right" })}
+              </div>
+              {serviceBody(service)}
+            </article>
           ))}
         </div>
       );
@@ -308,18 +343,19 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
       return (
         <div style={{ marginTop: "var(--space-block)", fontVariantNumeric: "tabular-nums" }}>
           {services.map((service) => (
-            <div
-              key={service.id}
-              style={{
-                ...ROW,
-                display: "grid",
-                gridTemplateColumns: "minmax(9rem, 18rem) 1fr",
-                gap: "var(--space-inline)",
-              }}
-            >
-              <h3 style={HEADING_TEXT}>{service.name.value}</h3>
-              {serviceSummary(service, { maxWidth: "62ch" })}
-            </div>
+            <article key={service.id} style={ROW}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(9rem, 18rem) 1fr",
+                  gap: "var(--space-inline)",
+                }}
+              >
+                <h3 style={SERVICE_NAME_TEXT}>{service.name.value}</h3>
+                {serviceSummary(service, { maxWidth: "62ch" })}
+              </div>
+              {serviceBody(service)}
+            </article>
           ))}
         </div>
       );
@@ -333,8 +369,9 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
             <Fragment key={service.id}>
               <RuleDivider ticks={ticks} />
               <article style={{ paddingBlock: "var(--space-inline)" }}>
-                <h3 style={HEADING_TEXT}>{service.name.value}</h3>
+                <h3 style={SERVICE_NAME_TEXT}>{service.name.value}</h3>
                 {serviceSummary(service, { marginTop: "var(--space-inline)", maxWidth: "62ch" })}
+                {serviceBody(service)}
               </article>
             </Fragment>
           ))}
@@ -346,8 +383,9 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
       <div style={{ marginTop: "var(--space-block)" }}>
         {services.map((service) => (
           <article key={service.id} style={ROW}>
-            <h3 style={HEADING_TEXT}>{service.name.value}</h3>
+            <h3 style={SERVICE_NAME_TEXT}>{service.name.value}</h3>
             {serviceSummary(service, { marginTop: "var(--space-inline)", maxWidth: "62ch" })}
+            {serviceBody(service)}
           </article>
         ))}
       </div>
@@ -398,7 +436,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
             >
               {has("about") ? <a href="#sobre">Sobre</a> : null}
               {has("services") ? <a href="#servicos">Serviços</a> : null}
-              {showContact ? <a href="#contato">Contato</a> : null}
+              {has("contact") ? <a href="#contato">Contato</a> : null}
             </nav>
           </div>
         </header>
@@ -431,7 +469,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
             >
               {brief.positioning.value}
             </p>
-            {showContact ? (
+            {has("contact") ? (
               <a
                 href="#contato"
                 className="inline-block"
@@ -517,6 +555,9 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
         </SiteSection>
       ) : null}
 
+      {/* The `contact.address` conjunct narrows the type for TypeScript; it is
+          not a second gate. `location` is available only when the address is
+          confirmed, so has("location") already implies it. */}
       {has("location") && contact.address ? (
         <SiteSection id="localizacao" ground={groundOf("location")} spine={spine}>
           <SectionHeading>Localização</SectionHeading>
@@ -537,7 +578,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
         </SiteSection>
       ) : null}
 
-      {showContact ? (
+      {has("contact") ? (
         <SiteSection id="contato" ground={groundOf("contact")} spine={spine}>
           <SectionHeading>Contato</SectionHeading>
           <ul style={{ marginTop: "var(--space-block)", maxWidth: "48ch", listStyle: "none" }}>

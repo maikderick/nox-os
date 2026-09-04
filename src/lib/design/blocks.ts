@@ -64,7 +64,12 @@ export function resolveComposition(brief: SiteBrief): { blocks: BlockId[]; unmap
   if (isSiteBriefV2(brief) && brief.services.length > 0) available.add("services");
   if (contact.openingHours) available.add("hours");
   if (contact.address) available.add("location");
-  if (contact.phone || contact.whatsapp || contact.email || contact.address ||
+  // A channel someone can send a message down. A confirmed address is not one:
+  // it opens `location`, which owns and publishes it. Counting the address here
+  // too would let an address-only brief that asks for "Contato" pass the
+  // `unmapped` report — telling the operator a contact section was built when
+  // there is no channel to put in it.
+  if (contact.phone || contact.whatsapp || contact.email ||
       contact.socialLinks.length > 0) {
     available.add("contact");
   }

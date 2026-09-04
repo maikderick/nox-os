@@ -60,8 +60,9 @@ describe("composição de blocos", () => {
     expect(blocks).not.toContain("location");
   });
 
-  it("emite localização quando o endereço foi confirmado", () => {
+  it("emite localização, e não contato, quando só o endereço foi confirmado", () => {
     const brief = briefV2({
+      desiredSections: ["Início", "Contato"],
       publicContact: {
         phone: null, whatsapp: null, email: null,
         address: {
@@ -75,9 +76,39 @@ describe("composição de blocos", () => {
         coordinates: null, openingHours: null, socialLinks: [],
       },
     });
-    const { blocks } = resolveComposition(brief);
+    const { blocks, unmapped } = resolveComposition(brief);
+    expect(blocks).toContain("location");
+    // An address is a place, not a channel: it opens `location`, which owns it.
+    // The operator asked for "Contato" and no channel was confirmed, so the
+    // request is reported rather than answered with an empty section.
+    expect(blocks).not.toContain("contact");
+    expect(unmapped).toContain("Contato");
+  });
+
+  it("emite localização e contato quando há endereço e canal confirmados", () => {
+    const brief = briefV2({
+      desiredSections: ["Início", "Contato"],
+      publicContact: {
+        phone: {
+          value: "+5585999998888",
+          source: "CLIENTE" as const, confirmedAt: "2026-09-03T12:00:00.000Z",
+        },
+        whatsapp: null, email: null,
+        address: {
+          value: {
+            street: "Rua das Flores", number: "10", complement: null,
+            neighborhood: "Centro", city: "Fortaleza", state: "CE",
+            postalCode: null, country: "Brasil",
+          },
+          source: "CLIENTE" as const, confirmedAt: "2026-09-03T12:00:00.000Z",
+        },
+        coordinates: null, openingHours: null, socialLinks: [],
+      },
+    });
+    const { blocks, unmapped } = resolveComposition(brief);
     expect(blocks).toContain("location");
     expect(blocks).toContain("contact");
+    expect(unmapped).not.toContain("Contato");
   });
 
   it("nunca emite bloco que exigiria inventar conteúdo", () => {
