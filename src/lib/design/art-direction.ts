@@ -19,6 +19,35 @@ export type FontToken =
   | "inter-tight" | "inter" | "work-sans" | "dm-mono";
 
 export type Ground = "light" | "dark";
+
+/**
+ * The hero's ground, relative to the page's.
+ *
+ * `inherit` is the page's own ground; `dark` is the deliberate reversal the
+ * owner asked for on 2026-09-04 (spec §13, errata 6): a black hero over a
+ * light body, for the five categories whose identity carries it. There is no
+ * `light` member because no direction needs one — the two dark-ground
+ * directions (`beauty`, `tourism`) already open on black, and a light hero
+ * over a dark body would need an inverted palette nobody has confirmed.
+ */
+export type HeroGround = "dark" | "inherit";
+
+/**
+ * The generated object that fills the hero's right column.
+ *
+ * One per category, drawn from the category's own world. The point of the
+ * reversal is a hero carrying *this* trade's object — an azulejo wall for a
+ * kitchen, a scoreboard for a gym — never a stock scene that would sit as
+ * happily on any other site.
+ * `src/components/sites/category-motif.tsx` draws each one.
+ */
+export type MotifId =
+  | "azulejo" | "navalha" | "placar" | "patas" | "manual" | "grade-horaria"
+  | "vitrine" | "passe-partout" | "planta" | "encadernacao" | "luz-difusa"
+  | "ficha" | "entardecer" | "indice";
+
+export type HeroSpec = { ground: HeroGround; motif: MotifId };
+
 export type Radius = "none" | "sm" | "md" | "lg";
 export type Rhythm = "tight" | "regular" | "airy";
 export type Scale = "compact" | "regular" | "editorial";
@@ -60,6 +89,8 @@ export type ArtDirection = {
   motion: { moment: MotionMoment; maxMs: number };
   /** The structural device borrowed from the category's own world. */
   device: string;
+  /** The opening: which ground it stands on, and which object it draws. */
+  hero: HeroSpec;
 };
 
 /**
@@ -106,5 +137,9 @@ export function resolveArtDirection(input: { sector: string; seed: string }): Ar
     rhythm: pickVariant(entry.rhythms, seed, "rhythm"),
     motion: entry.motion,
     device: entry.device,
+    // Not on the variant axis: the hero is the category's identity, and two
+    // clients of the same trade opening on different grounds with different
+    // objects would be two categories, not two seeds.
+    hero: entry.hero,
   };
 }
