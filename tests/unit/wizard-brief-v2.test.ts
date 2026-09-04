@@ -46,6 +46,7 @@ import {
   validatePublicContact,
   validateServices,
   type BriefDraft,
+  type ContactDraft,
   type ServiceDraft,
 } from "../../src/lib/site-factory/brief-draft";
 import {
@@ -392,6 +393,49 @@ describe("o contato sugerido pelo lead escolhido", () => {
     expect(merged.socialLinks.map((link) => link.url)).toEqual([
       "https://instagram.com/outronegocio",
     ]);
+  });
+
+  it("o pino do mapa acompanha o endereço que ele descreve", () => {
+    // Uma coordenada descreve um endereço, e só aquele. Ao trocar o candidato
+    // do lead A pelo do lead B, deixar o pino para trás publicaria o mapa de
+    // um negócio sobre o endereço de outro — a mesma regra que
+    // `editAddressDraft` aplica quando alguém edita o campo à mão.
+    const fromA: ContactDraft = {
+      ...leadContactDraft(lead),
+      coordinates: {
+        value: { latitude: -3.7319, longitude: -38.5267 },
+        source: "LEAD",
+        confirmedAt: "2026-08-25T12:00:00.000Z",
+      },
+    };
+    const leadB = {
+      name: "Outro Negócio",
+      address: "Avenida Paulista, 1000",
+      city: "São Paulo",
+      state: "SP",
+    };
+
+    const replaced = mergeLeadContactDraft(fromA, leadContactDraft(leadB, (i) => `b-${i}`));
+
+    expect(replaced.address.street).toBe("Avenida Paulista, 1000");
+    expect(replaced.coordinates ?? null).toBeNull();
+  });
+
+  it("mantém o pino quando o endereço do operador sobrevive à troca de lead", () => {
+    // O endereço que o operador escreveu vence o candidato do lead, então o
+    // pino continua descrevendo o endereço que está na tela.
+    const own = emptyContactDraft();
+    own.address = { ...own.address, street: "Avenida Beira Mar", city: "Fortaleza" };
+    own.coordinates = {
+      value: { latitude: -3.7227, longitude: -38.4967 },
+      source: "OPERADOR",
+      confirmedAt: "2026-08-25T12:00:00.000Z",
+    };
+
+    const merged = mergeLeadContactDraft(own, leadContactDraft(lead));
+
+    expect(merged.address.street).toBe("Avenida Beira Mar");
+    expect(merged.coordinates).toEqual(own.coordinates);
   });
 
   it("esvazia o candidato obsoleto quando o novo lead não tem o dado", () => {
