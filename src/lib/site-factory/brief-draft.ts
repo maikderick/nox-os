@@ -401,17 +401,6 @@ export type ContactDraft = {
   openingHours: OpeningHoursDraft[];
   socialLinks: SocialLinkDraft[];
   /**
-   * The confirmation the loaded week already carried.
-   *
-   * The wizard has no per-day "confirmado" control — the whole week is one
-   * fact — so a brand new week is stamped at build time. A week that came from
-   * a stored brief keeps the stamp and the source it was confirmed with, and
-   * loses them the moment a row is edited ({@link editOpeningHours}). Without
-   * this, opening an existing briefing and saving it would re-date a schedule
-   * nobody looked at, and rewrite a `CLIENTE` confirmation as the operator's.
-   */
-  openingHoursFact?: { source: BriefFactSource; confirmedAt: string } | null;
-  /**
    * Coordinates carried through untouched.
    *
    * Nothing in the wizard edits a latitude, but the brief may hold one and the
@@ -445,7 +434,6 @@ export function emptyContactDraft(): ContactDraft {
     address: emptyAddressDraft(),
     openingHours: emptyOpeningHoursDraft(),
     socialLinks: [],
-    openingHoursFact: null,
     coordinates: null,
   };
 }
@@ -453,9 +441,10 @@ export function emptyContactDraft(): ContactDraft {
 /**
  * Applies an edit to one weekly row.
  *
- * Editing any row drops the week's carried confirmation, so the schedule that
- * reaches the payload is stamped now, by whoever changed it, instead of
- * inheriting a confirmation that was given for different hours.
+ * The week's confirmation is not decided here. A schedule that comes back out
+ * exactly as it went in keeps the fact it arrived with, and one that changed
+ * gets a new one — {@link reuseStoredProvenance} settles that by comparing
+ * values, so toggling a day off and on again is not an edit.
  */
 export function editOpeningHours(
   contact: ContactDraft,
@@ -467,7 +456,6 @@ export function editOpeningHours(
     openingHours: contact.openingHours.map((day, position) =>
       position === index ? { ...day, ...update } : day,
     ),
-    openingHoursFact: null,
   };
 }
 
@@ -674,15 +662,21 @@ export function mergeLeadContactDraft(
   );
   const takenUrls = new Set(ownLinks.map((link) => link.url.trim()).filter(Boolean));
 
+  const address = isLeadAddressSuggestion(current.address)
+    ? suggested.address
+    : addressHasContent(current.address)
+      ? current.address
+      : suggested.address;
+
   return {
     ...current,
     phone: preferOperatorValue(current.phone, suggested.phone),
     whatsapp: preferOperatorValue(current.whatsapp, suggested.whatsapp),
-    address: isLeadAddressSuggestion(current.address)
-      ? suggested.address
-      : addressHasContent(current.address)
-        ? current.address
-        : suggested.address,
+    address,
+    // A pin describes one address. When another lead's address takes over, the
+    // pin goes with it — the same rule `editAddressDraft` applies when someone
+    // edits the field by hand, applied here so it does not depend on the flow.
+    coordinates: address === current.address ? current.coordinates : null,
     socialLinks: [
       ...ownLinks,
       ...suggested.socialLinks.filter((link) => !takenUrls.has(link.url.trim())),
@@ -873,20 +867,19 @@ function buildPublicContact(contact: ContactDraft): BriefPublicContact {
     // The weekly editor has no per-day "confirmado" control of its own — the
     // whole week is one fact, confirmed the moment the brief is built, the same
     // way `differentiators` turns a single authored field into one fact. A week
-    // loaded from a stored brief and left alone keeps the confirmation it
-    // arrived with, so re-saving does not re-date what nobody touched.
+    // that came from a stored brief and did not change gets that fact back in
+    // `reuseStoredProvenance`, stamp, source and original order included.
     openingHours: (() => {
       const openDays = contact.openingHours.filter((day) => day.isOpen);
       if (openDays.length === 0) return null;
-      const carried = contact.openingHoursFact;
       return {
         value: openDays.map((day) => ({
           dayOfWeek: day.dayOfWeek,
           opens: day.opens,
           closes: day.closes,
         })),
-        source: carried?.source ?? "OPERADOR",
-        confirmedAt: carried?.confirmedAt ?? nowIso(),
+        source: "OPERADOR",
+        confirmedAt: nowIso(),
       };
     })(),
     socialLinks: contact.socialLinks.flatMap((link) =>
@@ -929,6 +922,15 @@ export type BriefDraft = {
   desiredSections: string;
   services: ServiceDraft[];
   contact: ContactDraft;
+  /**
+   * The briefing this draft was read from, when it was read from one.
+   *
+   * Kept whole, and only ever compared against: it is what lets the payload
+   * hand back the *stored* fact for every value nobody changed, instead of a
+   * fresh one carrying today's date and the operator's name. A draft the
+   * wizard starts from scratch has none, so creating a project is unaffected.
+   */
+  stored?: SiteBrief | null;
 };
 
 export function emptyBriefDraft(): BriefDraft {
@@ -947,6 +949,7 @@ export function emptyBriefDraft(): BriefDraft {
     desiredSections: "",
     services: [],
     contact: emptyContactDraft(),
+    stored: null,
   };
 }
 
@@ -1106,33 +1109,34 @@ export function buildBriefV2(draft: BriefDraft): BriefDraftBuild {
     featured: service.featured,
   }));
 
-  return {
-    ok: true,
-    issues: [],
-    brief: {
-      schemaVersion: 2,
-      businessName: required(draft.businessName),
-      sector: required(draft.sector),
-      city: toConfirmedFact(draft.city),
-      about: required(draft.about),
-      objective: required(draft.objective),
-      audience: required(draft.audience),
-      positioning: required(draft.positioning),
-      differentiators: differentiators
-        ? splitList(differentiators.value).map((value) => ({
-            value,
-            source: differentiators.source,
-            confirmedAt: differentiators.confirmedAt,
-          }))
-        : [],
-      desiredSections: splitList(draft.desiredSections),
-      visualDirection: required(draft.visualDirection),
-      notes: toConfirmedFact(draft.notes),
-      services,
-      publicContact: buildPublicContact(draft.contact),
-      metaDescription: toConfirmedFact(draft.metaDescription),
-    },
+  const brief: SiteBriefV2 = {
+    schemaVersion: 2,
+    businessName: required(draft.businessName),
+    sector: required(draft.sector),
+    city: toConfirmedFact(draft.city),
+    about: required(draft.about),
+    objective: required(draft.objective),
+    audience: required(draft.audience),
+    positioning: required(draft.positioning),
+    differentiators: differentiators
+      ? splitList(differentiators.value).map((value) => ({
+          value,
+          source: differentiators.source,
+          confirmedAt: differentiators.confirmedAt,
+        }))
+      : [],
+    desiredSections: splitList(draft.desiredSections),
+    visualDirection: required(draft.visualDirection),
+    notes: toConfirmedFact(draft.notes),
+    services,
+    publicContact: buildPublicContact(draft.contact),
+    metaDescription: toConfirmedFact(draft.metaDescription),
   };
+
+  // Everything above stamps the operator and the current time, because that is
+  // what writing a value means. The last step hands back the stored fact for
+  // every value that did not actually change.
+  return { ok: true, issues: [], brief: reuseStoredProvenance(draft.stored, brief) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1245,9 +1249,6 @@ function storedContactDraft(contact: BriefPublicContact): ContactDraft {
         ? { dayOfWeek: day.dayOfWeek, isOpen: true, opens: stored.opens, closes: stored.closes }
         : day;
     }),
-    openingHoursFact: openingHours
-      ? { source: openingHours.source, confirmedAt: openingHours.confirmedAt }
-      : null,
     coordinates: contact.coordinates,
     socialLinks: contact.socialLinks.map((link, index) => ({
       key: `brief-social-${index}`,
@@ -1298,6 +1299,7 @@ export function briefToDraft(brief: SiteBrief): BriefDraft {
       ? brief.services.map(storedServiceDraft)
       : brief.services.map(legacyServiceDraft),
     contact: isSiteBriefV2(brief) ? storedContactDraft(brief.publicContact) : emptyContactDraft(),
+    stored: brief,
   };
 }
 
@@ -1345,14 +1347,172 @@ export function briefDraftLosses(brief: SiteBrief): string[] {
     );
   }
 
-  const attributed = brief.services.filter((service) => service.name.source !== "OPERADOR");
-  if (attributed.length > 0) {
+  // A body paragraph is one line in the editor, and `serviceBodyParagraphs`
+  // splits on every line break. One stored with a break inside comes back as
+  // two paragraphs — two new facts, since neither value matches what was
+  // stored — so it is named here instead of discovered afterwards.
+  for (const service of brief.services) {
+    const split = service.body.filter((paragraph) => /\r?\n/.test(paragraph.value));
+    if (split.length === 0) continue;
     losses.push(
-      attributed.length === 1
-        ? "Um serviço foi confirmado por outra origem que não o operador. Salvar passa a atribuí-lo ao operador."
-        : `${attributed.length} serviços foram confirmados por outra origem que não o operador. Salvar passa a atribuí-los ao operador.`,
+      split.length === 1
+        ? `O serviço “${service.name.value}” tem um parágrafo com quebra de linha dentro. O editor guarda um parágrafo por linha, então salvar vai dividi-lo em dois.`
+        : `O serviço “${service.name.value}” tem ${split.length} parágrafos com quebra de linha dentro. O editor guarda um parágrafo por linha, então salvar vai dividi-los.`,
     );
   }
 
   return losses;
+}
+
+// ---------------------------------------------------------------------------
+// Proveniência: reuso por valor
+// ---------------------------------------------------------------------------
+
+/**
+ * Structural equality for the small JSON values a brief fact carries.
+ *
+ * Written out rather than compared through `JSON.stringify`, because a stored
+ * brief comes back from `JSON.parse` and its keys need not be in the order
+ * this module writes them.
+ */
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null) return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    return left.length === right.length && left.every((item, i) => sameJsonValue(item, right[i]));
+  }
+  if (typeof left === "object" && typeof right === "object") {
+    const a = left as Record<string, unknown>;
+    const b = right as Record<string, unknown>;
+    const keys = Object.keys(a);
+    if (keys.length !== Object.keys(b).length) return false;
+    return keys.every((key) => key in b && sameJsonValue(a[key], b[key]));
+  }
+  return false;
+}
+
+/** Anything the schema stores as a value with its own source and moment. */
+type StoredFactLike = { value: unknown; source: BriefFactSource; confirmedAt: string };
+
+/** The stored fact when the value is untouched, the new one when it is not. */
+function reuseFact<T extends StoredFactLike>(
+  stored: T | null | undefined,
+  built: T | null,
+): T | null {
+  if (!built || !stored) return built;
+  return sameJsonValue(stored.value, built.value) ? stored : built;
+}
+
+function reuseRequired<T extends StoredFactLike>(stored: T | null | undefined, built: T): T {
+  return stored && sameJsonValue(stored.value, built.value) ? stored : built;
+}
+
+/**
+ * Matches produced facts against stored ones by value, each stored fact
+ * claimable once.
+ *
+ * Position cannot be the key: reordering a list, or deleting the first item,
+ * would hand every remaining item the wrong provenance. Value can, because
+ * value is exactly what "this did not change" means here.
+ */
+function factPool<T extends StoredFactLike>(stored: readonly T[]): (built: T) => T {
+  const remaining = [...stored];
+  return (built) => {
+    const index = remaining.findIndex((fact) => sameJsonValue(fact.value, built.value));
+    if (index === -1) return built;
+    return remaining.splice(index, 1)[0]!;
+  };
+}
+
+/**
+ * The stored week when the same ranges come back, in whatever order.
+ *
+ * The editor holds seven rows and writes them out in week order, so a briefing
+ * that stored Saturday before Monday would come back reordered: same schedule,
+ * different JSON, different facts hash — a "tampered briefing" for a save that
+ * changed nothing. Same set, same fact, original order.
+ */
+function reuseOpeningHours<T extends { value: readonly unknown[]; source: BriefFactSource; confirmedAt: string }>(
+  stored: T | null | undefined,
+  built: T | null,
+): T | null {
+  if (!built || !stored || stored.value.length !== built.value.length) return built;
+  const remaining = [...stored.value];
+  for (const range of built.value) {
+    const index = remaining.findIndex((entry) => sameJsonValue(entry, range));
+    if (index === -1) return built;
+    remaining.splice(index, 1);
+  }
+  return stored;
+}
+
+/**
+ * Hands back the stored fact for every value nobody changed.
+ *
+ * `confirmedAt` answers "when did a person say this was right", and `source`
+ * answers "who". Rebuilding a briefing from a form stamps both afresh on every
+ * field, which is correct for what was typed and a lie for the twenty fields
+ * that were merely displayed — it would relabel a phone the client confirmed
+ * as something the operator wrote today, and change the facts hash of a save
+ * that changed nothing.
+ *
+ * So provenance follows the value: identical value, identical fact, verbatim;
+ * changed or new value, a fresh fact, and only there. Lists match by value
+ * rather than by position, and services by their stable id.
+ *
+ * A v1 briefing lends what it has — the common fields and its service names —
+ * which is why migrating one only re-dates the parts it never carried.
+ */
+export function reuseStoredProvenance(
+  stored: SiteBrief | null | undefined,
+  built: SiteBriefV2,
+): SiteBriefV2 {
+  if (!stored) return built;
+
+  const v2 = isSiteBriefV2(stored) ? stored : null;
+  const contact = v2?.publicContact;
+  const differentiator = factPool(stored.differentiators);
+  const socialLink = factPool(contact?.socialLinks ?? []);
+  const legacyServiceName = factPool(isSiteBriefV2(stored) ? [] : stored.services);
+  const storedServices = new Map((v2?.services ?? []).map((service) => [service.id, service]));
+
+  return {
+    ...built,
+    businessName: reuseRequired(stored.businessName, built.businessName),
+    sector: reuseRequired(stored.sector, built.sector),
+    city: reuseFact(stored.city, built.city),
+    about: reuseFact(v2?.about, built.about ?? null),
+    objective: reuseRequired(stored.objective, built.objective),
+    audience: reuseRequired(stored.audience, built.audience),
+    positioning: reuseRequired(stored.positioning, built.positioning),
+    visualDirection: reuseRequired(stored.visualDirection, built.visualDirection),
+    notes: reuseFact(stored.notes, built.notes),
+    metaDescription: reuseFact(v2?.metaDescription, built.metaDescription),
+    differentiators: built.differentiators.map(differentiator),
+    services: built.services.map((service) => {
+      const previous = storedServices.get(service.id);
+      // No service with this id was stored: it is new, or it was renamed into
+      // existence. Only a v1 name can still recognise it, by its text.
+      if (!previous) return { ...service, name: legacyServiceName(service.name) };
+      const paragraph = factPool(previous.body);
+      return {
+        ...service,
+        name: reuseRequired(previous.name, service.name),
+        summary: reuseRequired(previous.summary, service.summary),
+        price: reuseFact(previous.price, service.price),
+        body: service.body.map(paragraph),
+      };
+    }),
+    publicContact: {
+      ...built.publicContact,
+      phone: reuseFact(contact?.phone, built.publicContact.phone),
+      whatsapp: reuseFact(contact?.whatsapp, built.publicContact.whatsapp),
+      email: reuseFact(contact?.email, built.publicContact.email),
+      address: reuseFact(contact?.address, built.publicContact.address),
+      coordinates: reuseFact(contact?.coordinates, built.publicContact.coordinates),
+      openingHours: reuseOpeningHours(contact?.openingHours, built.publicContact.openingHours),
+      socialLinks: built.publicContact.socialLinks.map(socialLink),
+    },
+  };
 }

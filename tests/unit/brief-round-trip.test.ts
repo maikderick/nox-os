@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { briefFactsHash } from "@/lib/site-factory/brief-service";
 import {
   authoredFact,
   briefDraftLosses,
@@ -167,7 +168,11 @@ describe("ida e volta do briefing gravado", () => {
 
     expect(stamps).toEqual(Array(stamps.length).fill(AT));
     expect(draft.services.map((service) => service.confirmedAt)).toEqual([AT, AT]);
-    expect(draft.contact.openingHoursFact).toEqual({ source: "CLIENTE", confirmedAt: AT });
+    // A semana não tem carimbo próprio no rascunho: ela volta a ser o fato
+    // gravado porque o conjunto de intervalos não mudou.
+    expect(rebuild(draft).publicContact.openingHours).toEqual(
+      storedBrief().publicContact.openingHours,
+    );
     // And the origins survive: what the lead answered is still the lead's.
     expect(draft.businessName.source).toBe("LEAD");
     expect(draft.contact.whatsapp.source).toBe("LEAD");
@@ -381,5 +386,344 @@ describe("briefings que o editor não escreveu", () => {
       "Atendimento individual",
       "em sala privativa",
     ]);
+  });
+});
+
+/**
+ * The same briefing after it has been through a client review: four sources,
+ * six different days, and a week written in the order the client dictated it.
+ *
+ * The rich fixture above cannot catch a provenance bug, because everything in
+ * it was confirmed by the operator on the same day — any mix-up would land on
+ * the value it came from. Here every fact is distinguishable from every other.
+ */
+function heterogeneousBrief(): SiteBriefV2 {
+  return siteBriefSchema.parse({
+    schemaVersion: 2,
+    businessName: { value: "Estúdio Aurora", source: "LEAD", confirmedAt: "2026-01-01T10:00:00.000Z" },
+    sector: { value: "Estética", source: "OPERADOR", confirmedAt: "2026-02-02T10:00:00.000Z" },
+    city: { value: "Fortaleza", source: "IMPORTACAO", confirmedAt: "2026-03-03T10:00:00.000Z" },
+    about: {
+      value: "O Estúdio Aurora atende estética facial e corporal em Fortaleza, em sala privativa.",
+      source: "CLIENTE",
+      confirmedAt: "2026-04-04T10:00:00.000Z",
+    },
+    objective: {
+      value: "Criar um site completo para apresentar o negócio e facilitar novos contatos.",
+      source: "OPERADOR",
+      confirmedAt: "2026-02-02T10:00:00.000Z",
+    },
+    audience: {
+      value: "Pessoas que procuram os serviços do negócio na região.",
+      source: "OPERADOR",
+      confirmedAt: "2026-02-02T10:00:00.000Z",
+    },
+    positioning: {
+      value: "Apresentar informações confirmadas com clareza e credibilidade.",
+      source: "CLIENTE",
+      confirmedAt: "2026-04-04T10:00:00.000Z",
+    },
+    differentiators: [
+      { value: "Equipe própria", source: "OPERADOR", confirmedAt: "2026-01-01T10:00:00.000Z" },
+      { value: "Sala privativa", source: "CLIENTE", confirmedAt: "2026-05-05T10:00:00.000Z" },
+    ],
+    desiredSections: ["Início", "Sobre", "Serviços", "Contato"],
+    visualDirection: {
+      value: "Visual contemporâneo, legível e adequado ao setor.",
+      source: "OPERADOR",
+      confirmedAt: "2026-02-02T10:00:00.000Z",
+    },
+    notes: {
+      value: "Cliente prefere ser avisado antes de qualquer publicação.",
+      source: "OPERADOR",
+      confirmedAt: "2026-02-02T10:00:00.000Z",
+    },
+    services: [
+      {
+        id: "limpeza-de-pele",
+        name: { value: "Limpeza de pele", source: "OPERADOR", confirmedAt: "2026-01-01T10:00:00.000Z" },
+        summary: {
+          value: "Procedimento facial realizado na própria clínica.",
+          source: "CLIENTE",
+          confirmedAt: "2026-06-06T10:00:00.000Z",
+        },
+        body: [
+          {
+            value: "A sessão é conduzida por profissional da clínica.",
+            source: "OPERADOR",
+            confirmedAt: "2026-01-01T10:00:00.000Z",
+          },
+          {
+            value: "O procedimento é agendado com antecedência.",
+            source: "CLIENTE",
+            confirmedAt: "2026-09-09T10:00:00.000Z",
+          },
+        ],
+        price: { value: "R$ 180", source: "CLIENTE", confirmedAt: "2026-07-07T10:00:00.000Z" },
+        relatedIds: [],
+        featured: false,
+      },
+    ],
+    publicContact: {
+      phone: { value: "+558533334444", source: "CLIENTE", confirmedAt: "2026-04-04T10:00:00.000Z" },
+      whatsapp: { value: "+5585999990000", source: "LEAD", confirmedAt: "2026-01-01T10:00:00.000Z" },
+      email: {
+        value: "contato@estudioaurora.com.br",
+        source: "IMPORTACAO",
+        confirmedAt: "2026-03-03T10:00:00.000Z",
+      },
+      address: {
+        value: {
+          street: "Rua das Flores",
+          number: "120",
+          complement: null,
+          neighborhood: "Aldeota",
+          city: "Fortaleza",
+          state: "CE",
+          postalCode: "60000000",
+          country: "Brasil",
+        },
+        source: "LEAD",
+        confirmedAt: "2026-01-01T10:00:00.000Z",
+      },
+      coordinates: {
+        value: { latitude: -3.7319, longitude: -38.5267 },
+        source: "IMPORTACAO",
+        confirmedAt: "2026-03-03T10:00:00.000Z",
+      },
+      // Gravado fora da ordem da semana, como o cliente ditou.
+      openingHours: {
+        value: [
+          { dayOfWeek: "SABADO", opens: "09:00", closes: "13:00" },
+          { dayOfWeek: "SEGUNDA", opens: "09:00", closes: "18:00" },
+        ],
+        source: "CLIENTE",
+        confirmedAt: "2026-05-05T10:00:00.000Z",
+      },
+      socialLinks: [
+        {
+          value: {
+            platform: "INSTAGRAM",
+            url: "https://instagram.com/estudioaurora",
+            label: "@estudioaurora",
+          },
+          source: "LEAD",
+          confirmedAt: "2026-01-01T10:00:00.000Z",
+        },
+        {
+          value: { platform: "FACEBOOK", url: "https://facebook.com/estudioaurora", label: null },
+          source: "CLIENTE",
+          confirmedAt: "2026-05-05T10:00:00.000Z",
+        },
+      ],
+    },
+    metaDescription: {
+      value: "Estúdio de estética em Fortaleza com atendimento individual.",
+      source: "CLIENTE",
+      confirmedAt: "2026-06-06T10:00:00.000Z",
+    },
+  }) as SiteBriefV2;
+}
+
+/**
+ * Exactly what `createSiteBriefVersion` writes to the row: the payload after
+ * the route re-parses it. Comparing these two strings is comparing the bytes
+ * that end up in the database — the schema decides key order on both sides, so
+ * this is byte equality and not an accident of how the builder happens to be
+ * written.
+ */
+function storedJson(brief: SiteBriefV2): string {
+  return JSON.stringify(siteBriefSchema.parse(brief));
+}
+
+describe("proveniência: quem confirmou, e quando, sobrevive à edição", () => {
+  it("um salvamento sem edição devolve o mesmo JSON e o mesmo facts hash", () => {
+    freezeClock();
+    const brief = heterogeneousBrief();
+    const rebuilt = rebuild(briefToDraft(brief));
+
+    expect(storedJson(rebuilt)).toBe(storedJson(brief));
+    // O hash é o que a barreira de provisionamento recalcula: se ele muda, um
+    // projeto pronto vira "briefing adulterado" por um salvamento que não
+    // mudou nada.
+    expect(briefFactsHash(rebuilt)).toBe(briefFactsHash(brief));
+  });
+
+  it("cada fato do serviço mantém a origem e a data com que foi confirmado", () => {
+    freezeClock();
+    const service = rebuild(briefToDraft(heterogeneousBrief())).services[0];
+
+    expect(service.name).toMatchObject({ source: "OPERADOR", confirmedAt: "2026-01-01T10:00:00.000Z" });
+    expect(service.summary).toMatchObject({ source: "CLIENTE", confirmedAt: "2026-06-06T10:00:00.000Z" });
+    expect(service.price).toMatchObject({ source: "CLIENTE", confirmedAt: "2026-07-07T10:00:00.000Z" });
+    expect(service.body.map((paragraph) => paragraph.source)).toEqual(["OPERADOR", "CLIENTE"]);
+    expect(service.body[1].confirmedAt).toBe("2026-09-09T10:00:00.000Z");
+  });
+
+  it("um diferencial confirmado pelo cliente não vira do operador", () => {
+    freezeClock();
+    const rebuilt = rebuild(briefToDraft(heterogeneousBrief()));
+
+    expect(rebuilt.differentiators).toEqual(heterogeneousBrief().differentiators);
+  });
+
+  it("mantém a ordem em que a semana foi gravada quando o horário não muda", () => {
+    freezeClock();
+    const rebuilt = rebuild(briefToDraft(heterogeneousBrief()));
+
+    expect(rebuilt.publicContact.openingHours).toEqual(
+      heterogeneousBrief().publicContact.openingHours,
+    );
+    expect(
+      rebuilt.publicContact.openingHours?.value.map((entry) => entry.dayOfWeek),
+    ).toEqual(["SABADO", "SEGUNDA"]);
+  });
+
+  it("editar o resumo de um serviço carimba só o resumo", () => {
+    freezeClock();
+    const brief = heterogeneousBrief();
+    const draft = briefToDraft(brief);
+
+    const rebuilt = rebuild({
+      ...draft,
+      services: draft.services.map((service) => ({
+        ...service,
+        summary: "Procedimento facial realizado na clínica, com hora marcada.",
+        // O cartão do serviço re-carimba o serviço inteiro ao editar qualquer
+        // campo; é justamente isso que o reuso por valor precisa desfazer.
+        confirmedAt: NOW,
+      })),
+    });
+
+    expect(rebuilt.services[0].summary).toEqual({
+      value: "Procedimento facial realizado na clínica, com hora marcada.",
+      source: "OPERADOR",
+      confirmedAt: NOW,
+    });
+    expect({
+      ...rebuilt,
+      services: [{ ...rebuilt.services[0], summary: brief.services[0].summary }],
+    }).toEqual(brief);
+  });
+
+  it("editar um dia do horário re-carimba a semana inteira, na ordem da semana", () => {
+    freezeClock();
+    const draft = briefToDraft(heterogeneousBrief());
+    const monday = draft.contact.openingHours.findIndex((day) => day.dayOfWeek === "SEGUNDA");
+
+    const rebuilt = rebuild({
+      ...draft,
+      contact: editOpeningHours(draft.contact, monday, { closes: "19:00" }),
+    });
+
+    expect(rebuilt.publicContact.openingHours).toEqual({
+      value: [
+        { dayOfWeek: "SEGUNDA", opens: "09:00", closes: "19:00" },
+        { dayOfWeek: "SABADO", opens: "09:00", closes: "13:00" },
+      ],
+      source: "OPERADOR",
+      confirmedAt: NOW,
+    });
+  });
+
+  it("apagar um diferencial não passa a origem dele para o vizinho", () => {
+    freezeClock();
+    const brief = heterogeneousBrief();
+    const draft = briefToDraft(brief);
+
+    // Sobra só o segundo, confirmado pelo cliente. Casar por posição daria a
+    // ele a origem do primeiro.
+    const rebuilt = rebuild({ ...draft, differentiators: authoredFact("Sala privativa", NOW) });
+
+    expect(rebuilt.differentiators).toEqual([brief.differentiators[1]]);
+  });
+
+  it("avisa que um parágrafo com quebra de linha será dividido, e divide só ele", () => {
+    freezeClock();
+    const brief = heterogeneousBrief();
+    brief.services[0].body[0] = {
+      value: "A sessão é conduzida por profissional da clínica.\nA sala é privativa.",
+      source: "CLIENTE",
+      confirmedAt: "2026-09-09T10:00:00.000Z",
+    };
+
+    expect(briefDraftLosses(brief).join(" ")).toContain(
+      "tem um parágrafo com quebra de linha dentro",
+    );
+
+    const rebuilt = rebuild(briefToDraft(brief));
+    expect(rebuilt.services[0].body.map((paragraph) => paragraph.value)).toEqual([
+      "A sessão é conduzida por profissional da clínica.",
+      "A sala é privativa.",
+      "O procedimento é agendado com antecedência.",
+    ]);
+    // As duas metades são texto que ninguém confirmou nessa forma: saem como
+    // do operador, com a data de confirmação do próprio serviço, que é como o
+    // construtor carimba todo campo de serviço. O parágrafo que sobreviveu
+    // inteiro continua sendo do cliente, na data dele.
+    expect(rebuilt.services[0].body[0].source).toBe("OPERADOR");
+    expect(rebuilt.services[0].body[1].source).toBe("OPERADOR");
+    expect(rebuilt.services[0].body[2]).toEqual(brief.services[0].body[1]);
+  });
+
+  it("um briefing v1 empresta o que tem: campos comuns e o nome do serviço", () => {
+    freezeClock();
+    const legacy = siteBriefSchema.parse({
+      schemaVersion: 1,
+      businessName: { value: "Padaria Aurora", source: "CLIENTE", confirmedAt: AT },
+      sector: fact("Padaria"),
+      city: null,
+      objective: fact("Apresentar informações confirmadas sobre o negócio."),
+      audience: fact("Pessoas que procuram uma padaria na região."),
+      positioning: fact("Comunicação clara sobre o negócio."),
+      services: [{ value: "Pães artesanais", source: "CLIENTE", confirmedAt: AT }],
+      differentiators: [],
+      desiredSections: ["Início", "Sobre", "Contato"],
+      visualDirection: fact("Layout sóbrio e legível."),
+      notes: null,
+    }) as SiteBrief;
+
+    const draft = briefToDraft(legacy);
+    // O que a v1 não guardava é preenchido agora, por quem está editando.
+    const rebuilt = rebuild({
+      ...draft,
+      about: authoredFact("A Padaria Aurora assa pães todos os dias, na própria loja.", NOW),
+      services: draft.services.map((service) => ({
+        ...service,
+        summary: "Pães assados na própria loja.",
+        body: "A produção começa de madrugada.",
+        confirmedAt: NOW,
+      })),
+    });
+
+    // Nome do negócio e nome do serviço não mudaram: continuam do cliente.
+    expect(rebuilt.businessName).toEqual({ value: "Padaria Aurora", source: "CLIENTE", confirmedAt: AT });
+    expect(rebuilt.services[0].name).toEqual({
+      value: "Pães artesanais",
+      source: "CLIENTE",
+      confirmedAt: AT,
+    });
+    // O resumo é novo, e é do operador.
+    expect(rebuilt.services[0].summary).toMatchObject({ source: "OPERADOR", confirmedAt: NOW });
+  });
+
+  it("sem briefing de origem não há o que reusar, e é isso que a criação faz", () => {
+    freezeClock();
+    const draft = briefToDraft(heterogeneousBrief());
+    const created = rebuild({ ...draft, stored: null });
+
+    // A semana sai como o construtor a escreve: agora, pelo operador, na ordem
+    // da semana.
+    expect(created.publicContact.openingHours).toMatchObject({
+      source: "OPERADOR",
+      confirmedAt: NOW,
+    });
+    expect(created.publicContact.openingHours?.value.map((entry) => entry.dayOfWeek)).toEqual([
+      "SEGUNDA",
+      "SABADO",
+    ]);
+    // E o diferencial do cliente sai como do operador — que é exatamente a
+    // perda que o reuso por valor desfaz quando existe briefing de origem.
+    expect(created.differentiators.every((entry) => entry.source === "OPERADOR")).toBe(true);
   });
 });

@@ -207,9 +207,15 @@ const SOCIAL_PLATFORM_LABELS: Record<BriefSocialPlatform, string> = {
 
 const SOCIAL_PLATFORMS = Object.keys(SOCIAL_PLATFORM_LABELS) as BriefSocialPlatform[];
 
-/** The draft keys that hold a single confirmable fact. */
+/**
+ * The draft keys that hold a single confirmable fact.
+ *
+ * `-?` because the draft also carries optional bookkeeping (the briefing it was
+ * read from); without it every optional key would contribute `undefined` and
+ * this union could no longer index the draft.
+ */
 type FactField = {
-  [K in keyof BriefDraft]: BriefDraft[K] extends DraftFact ? K : never;
+  [K in keyof BriefDraft]-?: BriefDraft[K] extends DraftFact ? K : never;
 }[keyof BriefDraft];
 
 export function describeApiError(error: unknown): string {
@@ -1655,10 +1661,9 @@ function ContactSection({
   );
 
   function onOpeningHoursChange(index: number, update: Partial<OpeningHoursDraft>) {
-    // Through `editOpeningHours`, which also drops the week's carried
-    // confirmation: whoever confirmed the old hours did not confirm these.
-    const edited = editOpeningHours(contact, index, update);
-    onContact({ openingHours: edited.openingHours, openingHoursFact: edited.openingHoursFact });
+    // Through `editOpeningHours`; whether the week keeps the confirmation it
+    // arrived with is decided by value, when the payload is built.
+    onContact({ openingHours: editOpeningHours(contact, index, update).openingHours });
   }
 
   return (
