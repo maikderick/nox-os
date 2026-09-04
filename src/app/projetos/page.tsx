@@ -102,7 +102,9 @@ export default async function ProjectsPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-xs uppercase tracking-[0.16em] text-nox-muted">{project.client.name}</p>
-                      <h3 className="mt-2 text-lg font-semibold text-white">{project.name}</h3>
+                      <h3 className="mt-2 text-lg font-semibold text-white">
+                        <Link href={`/projetos/${project.id}`} className="hover:underline">{project.name}</Link>
+                      </h3>
                     </div>
                     <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${STATUS_STYLES[state]}`}>
                       {SITE_PROJECT_STATE_LABELS[state]}
