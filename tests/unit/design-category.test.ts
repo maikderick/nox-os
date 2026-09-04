@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { CATEGORY_GROUPS } from "@/lib/categories";
@@ -41,9 +43,8 @@ describe("resolução de categoria a partir do setor", () => {
     expect(FALLBACK_CATEGORY_ID).toBe("services");
   });
 
-  it("é determinística e não toca o relógio", () => {
-    const first = resolveCategoryId("Padaria artesanal");
-    const second = resolveCategoryId("Padaria artesanal");
-    expect(first).toBe(second);
+  it("não toca relógio nem aleatoriedade", () => {
+    const source = readFileSync("src/lib/design/category.ts", "utf8");
+    expect(source).not.toMatch(/Date\.now|Math\.random|new Date/);
   });
 });

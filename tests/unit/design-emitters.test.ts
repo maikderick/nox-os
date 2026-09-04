@@ -24,7 +24,14 @@ describe("emissor de custom properties", () => {
   });
 
   it("é determinístico", () => {
-    expect(toCssVariables(direction)).toEqual(toCssVariables(direction));
+    // Os literais abaixo são valores observados para Barbearia/semente-fixa;
+    // uma mudança na paleta, no raio ou na fonte dessa direção os altera.
+    const vars = toCssVariables(direction);
+    expect(vars["--surface"]).toBe("#000000");
+    expect(vars["--ink"]).toBe("#F0F1F2");
+    expect(vars["--accent"]).toBe("#8FA3AD");
+    expect(vars["--radius"]).toBe("0px");
+    expect(vars["--font-display"]).toBe("var(--font-inter-tight)");
   });
 
   it("zera --motion-max quando a direção não tem movimento de entrada", () => {

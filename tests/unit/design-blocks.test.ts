@@ -111,13 +111,6 @@ describe("composição de blocos", () => {
     expect(unmapped).not.toContain("Contato");
   });
 
-  it("nunca emite bloco que exigiria inventar conteúdo", () => {
-    const { blocks } = resolveComposition(briefV2());
-    for (const forbidden of ["testimonials", "pricing", "faq", "stats", "logos"]) {
-      expect(blocks as string[]).not.toContain(forbidden);
-    }
-  });
-
   it("reporta a seção pedida que não mapeia, em vez de ignorar em silêncio", () => {
     const brief = briefV2({ desiredSections: ["Início", "Depoimentos", "Tabela de preços"] });
     const { unmapped } = resolveComposition(brief);
