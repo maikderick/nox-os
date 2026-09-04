@@ -55,3 +55,6 @@ next-env.d.ts
 
 # ferramentas locais de agente
 .claude/
+
+# capturas locais do hero (ferramenta de revisão visual)
+/.superpowers/
