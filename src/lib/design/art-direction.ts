@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { DIRECTION_CATALOG } from "./catalog";
+import { resolveCategoryId } from "./category";
 import type { CategoryId } from "./category";
 
 export type Hex = string;
@@ -74,4 +76,35 @@ export function pickVariant<T>(options: readonly T[], seed: string, axis: string
   }
   const digest = createHash("sha256").update(`${axis}:${seed}`).digest();
   return options[digest.readUInt32BE(0) % options.length]!;
+}
+
+/**
+ * The site's whole visual identity, from the sector text and a stable seed.
+ *
+ * Pure and total: every sector resolves, and the same pair always resolves to
+ * the same direction. That is what lets a generated site be reproducible and a
+ * preview be trusted as what the agent will build — and it is why no model is
+ * in this path.
+ */
+export function resolveArtDirection(input: { sector: string; seed: string }): ArtDirection {
+  const categoryId = resolveCategoryId(input.sector);
+  const entry = DIRECTION_CATALOG[categoryId];
+  const { seed } = input;
+
+  const paletteIndex = pickVariant(
+    entry.palettes.map((_, index) => index), seed, "palette",
+  );
+
+  return {
+    id: `${categoryId}/${entry.paletteNames[paletteIndex]}/v1`,
+    categoryId,
+    anchor: entry.anchor,
+    ground: entry.ground,
+    palette: entry.palettes[paletteIndex]!,
+    type: pickVariant(entry.types, seed, "type"),
+    radius: entry.radius,
+    rhythm: pickVariant(entry.rhythms, seed, "rhythm"),
+    motion: entry.motion,
+    device: entry.device,
+  };
 }
