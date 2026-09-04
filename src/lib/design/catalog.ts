@@ -68,7 +68,9 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     ],
     types: [
       { display: "inter-tight", body: "inter", scale: "compact", displayCase: "upper" },
-      { display: "inter-tight", body: "dm-mono", scale: "compact", displayCase: "upper" },
+      // Body face kept as inter: dm-mono feeds --font-body and would set
+      // running paragraph text in monospace across every page section.
+      { display: "inter-tight", body: "inter", scale: "compact", displayCase: "upper" },
     ],
     rhythms: ["tight", "regular"],
   },
@@ -266,7 +268,9 @@ export const DIRECTION_CATALOG: Record<CategoryId, CategoryDirection> = {
     ],
     types: [
       { display: "inter-tight", body: "inter", scale: "compact", displayCase: "none" },
-      { display: "inter-tight", body: "dm-mono", scale: "compact", displayCase: "none" },
+      // Body face kept as inter: dm-mono feeds --font-body and would set
+      // running paragraph text in monospace across every page section.
+      { display: "inter-tight", body: "inter", scale: "compact", displayCase: "none" },
     ],
     rhythms: ["regular", "tight"],
   },
