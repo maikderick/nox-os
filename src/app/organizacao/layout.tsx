@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
+import { AppShell } from "@/components/shell/app-shell";
 import { Providers } from "@/components/providers";
 import { requirePermission } from "@/lib/authz/dal";
+import { roleHasPermission } from "@/lib/authz/permissions";
 import { requireUser } from "@/lib/session";
+import { ensureDefaultSettings } from "@/lib/settings";
 
 export const metadata: Metadata = {
   title: "Organização",
@@ -15,64 +17,22 @@ export default async function OrganizationLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireUser();
+  const session = await requireUser();
   const actor = await requirePermission("org:read");
+  const settings = await ensureDefaultSettings();
 
   return (
     <Providers>
-      <div className="min-h-screen bg-nox-bg text-nox-text">
-        <header className="border-b border-nox-border bg-nox-surface/90 backdrop-blur">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
-            <div className="flex items-center gap-7">
-              <Link href="/projetos" className="font-semibold tracking-tight">
-                <span className="text-nox-cyan">NOX</span> OS · Organização
-              </Link>
-              <nav
-                className="hidden items-center gap-4 text-sm text-nox-muted md:flex"
-                aria-label="Organização"
-              >
-                <Link href="/organizacao/integracoes" className="hover:text-white">
-                  Integrações
-                </Link>
-                {actor.permissions.includes("job:read") ? (
-                  <Link href="/organizacao/fila" className="hover:text-white">
-                    Fila
-                  </Link>
-                ) : null}
-                <Link href="/projetos" className="hover:text-white">
-                  Fábrica
-                </Link>
-                <Link href="/leads" className="hover:text-white">
-                  Prospecção
-                </Link>
-              </nav>
-              <details className="relative md:hidden">
-                <summary className="list-none rounded-lg border border-nox-border px-3 py-2 text-sm text-nox-muted">
-                  Menu
-                </summary>
-                <nav
-                  className="absolute left-0 top-12 z-20 grid min-w-48 gap-1 rounded-lg border border-nox-border bg-nox-surface p-2 text-sm shadow-xl"
-                  aria-label="Navegação da organização"
-                >
-                  <Link href="/organizacao/integracoes" className="rounded px-3 py-2 hover:bg-nox-panel hover:text-white">Integrações</Link>
-                  {actor.permissions.includes("job:read") ? <Link href="/organizacao/fila" className="rounded px-3 py-2 hover:bg-nox-panel hover:text-white">Fila</Link> : null}
-                  <Link href="/projetos" className="rounded px-3 py-2 hover:bg-nox-panel hover:text-white">Fábrica</Link>
-                  <Link href="/leads" className="rounded px-3 py-2 hover:bg-nox-panel hover:text-white">Prospecção</Link>
-                </nav>
-              </details>
-            </div>
-            <div className="flex items-center gap-3 text-sm text-nox-muted">
-              <span className="hidden sm:inline">{actor.organizationName}</span>
-              <span className="rounded-full border border-nox-border px-2 py-1 text-xs text-nox-cyan">
-                {actor.role}
-              </span>
-            </div>
-          </div>
-        </header>
-        <main className="nox-grid min-h-[calc(100vh-57px)]">
-          <div className="mx-auto max-w-5xl px-4 py-8">{children}</div>
-        </main>
-      </div>
+      <AppShell
+        brandName={settings.brandName}
+        user={{ email: session.user?.email ?? actor.email, name: session.user?.name ?? actor.name }}
+        organizationName={actor.organizationName}
+        role={actor.role}
+        canManageUsers={roleHasPermission(actor.role, "org:manage_members")}
+        canManageOrganization
+      >
+        <div className="mx-auto max-w-5xl">{children}</div>
+      </AppShell>
     </Providers>
   );
 }

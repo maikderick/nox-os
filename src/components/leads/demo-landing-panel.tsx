@@ -1,7 +1,8 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   DEMO_CTA_LABELS,
   demoLandingContentSchema,
@@ -577,6 +578,9 @@ export function DemoLandingPanel({
             <h2 id="demo-title" className="font-medium text-white">
               Landing demonstrativa
             </h2>
+            <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-xs text-emerald-200">
+              Sem custo de API
+            </span>
             {landing && (
               <span className="rounded-full border border-nox-border px-2 py-0.5 text-xs text-nox-muted">
                 {STATUS_LABELS[landing.status]}
@@ -584,8 +588,8 @@ export function DemoLandingPanel({
             )}
           </div>
           <p className="mt-1 max-w-3xl text-sm text-nox-muted">
-            O conteúdo é criado por um gerador automático e fica marcado como demonstração não
-            oficial. Depois, se quiser, o Claude pode melhorar apenas os textos — sempre como
+            O conteúdo é criado por um gerador automático sem custo e fica marcado como demonstração
+            não oficial. Depois, se quiser, o Claude pode melhorar apenas os textos — sempre como
             rascunho. Revise e confirme cada informação antes de compartilhar.
           </p>
         </div>
@@ -610,7 +614,7 @@ export function DemoLandingPanel({
             O gerador de demonstrações entrou em modo de compatibilidade. Novos trabalhos começam
             na fábrica de sites, com briefing versionado e aprovação separada.
           </p>
-          <Link href="/projetos/novo" className="mt-4 inline-flex rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white hover:bg-violet-500">
+          <Link href="/projetos/novo" className="nox-btn-primary mt-4">
             Abrir novo projeto
           </Link>
         </div>
@@ -659,7 +663,7 @@ export function DemoLandingPanel({
               <p className="mt-3 rounded-lg border border-nox-border bg-nox-surface p-3 text-xs leading-5 text-nox-muted">
                 A melhoria com Claude não está configurada. Defina{" "}
                 <code className="text-nox-cyan">ANTHROPIC_API_KEY</code> nas variáveis de ambiente
-                da Vercel. O gerador automático continua funcionando normalmente.
+                da Vercel. O gerador automático gratuito continua funcionando normalmente.
               </p>
             )}
 
@@ -768,7 +772,7 @@ export function DemoLandingPanel({
                     type="button"
                     disabled={!lovablePrompt.trim()}
                     onClick={openInLovable}
-                    className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    className="nox-btn-primary disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Abrir no Lovable ↗
                   </button>
@@ -1368,7 +1372,7 @@ export function DemoLandingPanel({
                 type="button"
                 disabled={busy || expiryInvalid}
                 onClick={() => void updateLanding("APPROVED")}
-                className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                className="nox-btn-primary disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Aprovar demonstração
               </button>

@@ -433,7 +433,7 @@ export default function ImportPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Importação</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-white">Importação</h1>
         <p className="text-sm text-nox-muted">
           OpenStreetMap/Overpass + CSV. Sem scraping. Expansão 5→80 km até a meta ou limite.
           Empresas nunca são inventadas.
@@ -479,7 +479,7 @@ export default function ImportPage() {
             type="button"
             onClick={requestGeo}
             disabled={actionIsBusy}
-            className="rounded-lg bg-nox-cyan px-3 py-2 text-sm font-semibold text-nox-bg disabled:cursor-not-allowed disabled:opacity-50"
+            className="nox-btn-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busyAction === "geolocation" ? "Obtendo localização…" : "Usar minha localização"}
           </button>
@@ -570,7 +570,7 @@ export default function ImportPage() {
         </div>
         <button
           type="button"
-          className="mt-4 rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-4 nox-btn-primary disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => void startOverpass()}
           disabled={actionIsBusy || Boolean(activeOverpassJob)}
         >

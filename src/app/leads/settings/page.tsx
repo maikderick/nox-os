@@ -130,7 +130,7 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Configurações</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-white">Configurações</h1>
         <p className="text-sm text-nox-muted">
           Marca, consultor, meta, raios e mensagens. Segredos ficam apenas no `.env` do servidor.
         </p>
@@ -165,7 +165,7 @@ export default function SettingsPage() {
         <button
           type="submit"
           disabled={saving}
-          className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium disabled:cursor-wait disabled:opacity-60"
+          className="nox-btn-primary disabled:cursor-wait disabled:opacity-60"
         >
           {saving ? "Salvando…" : "Salvar"}
         </button>

@@ -107,7 +107,7 @@ export default function OpportunitiesPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-nox-cyan">
             Prioridade comercial
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-white">Melhores oportunidades</h1>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Melhores oportunidades</h1>
           <p className="mt-1 max-w-3xl text-sm text-nox-muted">
             Leads reais com maior prioridade estimada para abordagem, ordenados por score,
             confiança dos dados e proximidade. A posição ajuda a decidir por onde começar, mas
@@ -157,7 +157,7 @@ export default function OpportunitiesPage() {
           </div>
 
           <div className="text-right">
-            <p className="text-2xl font-semibold text-white">{loading ? "—" : total}</p>
+            <p className="text-3xl font-semibold tracking-tight text-white">{loading ? "—" : total}</p>
             <p className="text-xs text-nox-muted">
               {category ? `oportunidades em ${category}` : "oportunidades priorizadas"}
             </p>

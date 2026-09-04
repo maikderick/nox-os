@@ -12,6 +12,19 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  LayoutGrid,
+  MessageCircle,
+  Plus,
+  Search,
+  Table2,
+  Target,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 import { FUNNEL_LABELS, FUNNEL_STAGES } from "@/lib/funnel";
 import { cn, opportunityBand } from "@/lib/utils";
 import { hasOwnWebsite } from "@/lib/website";
@@ -55,6 +68,8 @@ type LeadItem = {
   doNotContact: boolean;
 };
 
+const SELECT_CLASS = "nox-input py-2.5";
+
 export default function LeadsDashboardPage() {
   const resultsRef = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -87,22 +102,31 @@ export default function LeadsDashboardPage() {
     return sp.toString();
   }, [filters, includeWithWebsite, page]);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const [sRes, lRes] = await Promise.all([
-      fetch(
-        includeWithWebsite
-          ? "/api/leads/stats?includeWithWebsite=true"
-          : "/api/leads/stats",
-      ),
-      fetch(`/api/leads?${query}`),
-    ]);
-    const s = (await sRes.json()) as Stats;
-    const l = (await lRes.json()) as { total: number; items: LeadItem[] };
-    setStats(s);
-    setTotal(l.total);
-    setItems(l.items);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [sRes, lRes] = await Promise.all([
+        fetch(
+          includeWithWebsite
+            ? "/api/leads/stats?includeWithWebsite=true"
+            : "/api/leads/stats",
+        ),
+        fetch(`/api/leads?${query}`),
+      ]);
+      if (!sRes.ok || !lRes.ok) throw new Error("A API de leads respondeu com erro.");
+      const s = (await sRes.json()) as Stats;
+      const l = (await lRes.json()) as { total: number; items: LeadItem[] };
+      setStats(s);
+      setTotal(l.total);
+      setItems(l.items);
+    } catch (reason) {
+      setLoadError(reason instanceof Error ? reason.message : "Não foi possível carregar os leads.");
+    } finally {
+      setLoading(false);
+    }
   }, [includeWithWebsite, query]);
 
   useEffect(() => {
@@ -131,61 +155,93 @@ export default function LeadsDashboardPage() {
     }));
   }, []);
 
+  const conversion = stats && stats.contatados > 0 ? Math.round((stats.respostas / stats.contatados) * 100) : 0;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Prospecção</h1>
-          <p className="text-sm text-nox-muted">
+          <p className="nox-eyebrow">Dashboard</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Prospecção</h1>
+          <p className="mt-1.5 text-sm text-nox-muted">
             {stats
-              ? `${stats.realTotal} empresas reais encontradas · meta ${stats.goal}`
+              ? `${stats.realTotal} empresas reais na base · meta de ${stats.goal}`
               : "Carregando…"}
-            {stats?.demoMode ? " · Dados de demonstração ativos" : ""}
-          </p>
-          <p className="mt-1 text-xs text-emerald-300">
-            Fila padrão: somente empresas sem site próprio
-            <span className="text-nox-muted">
-              {" "}· O contato abre pela ficha após telefone válido e opt-in verificado.
-            </span>
+            {stats?.demoMode ? " · dados de demonstração ativos" : ""}
           </p>
         </div>
-        <Link
-          href="/leads/import"
-          className="rounded-lg bg-nox-cyan px-4 py-2 text-sm font-semibold text-nox-bg"
-        >
-          Buscar / importar
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/leads/import" className="nox-btn-secondary">
+            <Search size={15} aria-hidden="true" /> Buscar negócios
+          </Link>
+          <Link href="/projetos/novo" className="nox-btn-primary">
+            <Plus size={15} aria-hidden="true" /> Novo projeto
+          </Link>
+        </div>
       </div>
+
+      {loadError ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => void load()} className="nox-btn-secondary px-3 py-1.5 text-xs">
+            Tentar de novo
+          </button>
+        </div>
+      ) : null}
 
       {stats && (
         <>
-          <div className="h-3 overflow-hidden rounded-full bg-nox-panel">
-            <div
-              className="h-full bg-nox-cyan transition-all"
-              style={{ width: `${stats.progressPct}%` }}
-              role="progressbar"
-              aria-valuenow={stats.progressPct}
-              aria-valuemin={0}
-              aria-valuemax={100}
+          <section className="nox-card p-5" aria-label="Meta de leads">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm">
+                <Target size={16} className="text-nox-cyan" aria-hidden="true" />
+                <span className="font-medium text-white">Meta de leads</span>
+                <span className="text-nox-muted">
+                  {stats.realTotal} de {stats.goal}
+                </span>
+              </div>
+              <span className="font-mono text-sm text-nox-cyan">{stats.progressPct}%</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-nox-panel">
+              <div
+                className="h-full rounded-full bg-linear-to-r from-nox-purple to-nox-cyan transition-all"
+                style={{ width: `${stats.progressPct}%` }}
+                role="progressbar"
+                aria-valuenow={stats.progressPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              />
+            </div>
+          </section>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Kpi
+              icon={<Users size={16} />}
+              label="Leads na fila"
+              value={stats.total}
+              detail={`${stats.high} alta · ${stats.mid} média · ${stats.low} baixa`}
+            />
+            <Kpi
+              icon={<MessageCircle size={16} />}
+              label="Aptos para WhatsApp"
+              value={stats.apto}
+              detail="Telefone válido e opt-in verificado"
+            />
+            <Kpi
+              icon={<TrendingUp size={16} />}
+              label="Contatados"
+              value={stats.contatados}
+              detail={`${stats.respostas} respostas · ${conversion}% de retorno`}
+            />
+            <Kpi
+              icon={<Target size={16} />}
+              label="Clientes"
+              value={stats.clientes}
+              detail={`${stats.reunioes} reuniões marcadas`}
+              accent
             />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-            {[
-              ["Total", stats.total],
-              ["Alta", stats.high],
-              ["Média", stats.mid],
-              ["Baixa", stats.low],
-              ["Aptos WA", stats.apto],
-              ["Contatados", stats.contatados],
-              ["Respostas", stats.respostas],
-              ["Clientes", stats.clientes],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-nox-border bg-nox-surface p-4">
-                <p className="text-xs text-nox-muted">{label}</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
-              </div>
-            ))}
-          </div>
+
           <div className="grid gap-4 lg:grid-cols-2">
             <ChartCard
               title="Por categoria"
@@ -198,19 +254,16 @@ export default function LeadsDashboardPage() {
         </>
       )}
 
-      <div
-        ref={resultsRef}
-        className="scroll-mt-20 rounded-xl border border-nox-border bg-nox-surface p-4"
-      >
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-nox-border bg-nox-bg/50 p-3">
+      <div ref={resultsRef} className="nox-card scroll-mt-20 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-medium text-white">Presença de site</p>
+            <h2 className="text-base font-semibold text-white">Oportunidades</h2>
             <p className="text-xs text-nox-muted">
               Redes sociais e páginas de diretórios não contam como site próprio.
             </p>
           </div>
           <div
-            className="inline-flex rounded-lg border border-nox-border p-1"
+            className="inline-flex rounded-xl border border-nox-border bg-nox-bg p-1"
             role="group"
             aria-label="Filtrar empresas pela presença de site"
           >
@@ -218,10 +271,8 @@ export default function LeadsDashboardPage() {
               type="button"
               aria-pressed={!includeWithWebsite}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                !includeWithWebsite
-                  ? "bg-emerald-400/15 text-emerald-200"
-                  : "text-nox-muted hover:text-white",
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                !includeWithWebsite ? "bg-emerald-400/15 text-emerald-200" : "text-nox-muted hover:text-white",
               )}
               onClick={() => {
                 setPage(1);
@@ -234,33 +285,37 @@ export default function LeadsDashboardPage() {
               type="button"
               aria-pressed={includeWithWebsite}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                includeWithWebsite
-                  ? "bg-nox-purple text-white"
-                  : "text-nox-muted hover:text-white",
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                includeWithWebsite ? "bg-nox-cyan/15 text-nox-cyan" : "text-nox-muted hover:text-white",
               )}
               onClick={() => {
                 setPage(1);
                 setIncludeWithWebsite(true);
               }}
             >
-              Incluir leads com site
+              Incluir com site
             </button>
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
-          <input
-            placeholder="Buscar nome…"
-            className="rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-sm"
-            value={filters.q}
-            onChange={(e) => {
-              setPage(1);
-              setFilters((f) => ({ ...f, q: e.target.value }));
-            }}
-          />
+
+        <div className="mt-4 grid gap-2.5 md:grid-cols-3 lg:grid-cols-5">
+          <div className="relative md:col-span-2 lg:col-span-2">
+            <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-nox-muted" aria-hidden="true" />
+            <input
+              placeholder="Buscar por nome"
+              aria-label="Buscar por nome"
+              className={cn(SELECT_CLASS, "pl-10")}
+              value={filters.q}
+              onChange={(e) => {
+                setPage(1);
+                setFilters((f) => ({ ...f, q: e.target.value }));
+              }}
+            />
+          </div>
           <input
             placeholder="Categoria"
-            className="rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-sm"
+            aria-label="Categoria"
+            className={SELECT_CLASS}
             value={filters.category}
             onChange={(e) => {
               setPage(1);
@@ -269,7 +324,8 @@ export default function LeadsDashboardPage() {
           />
           <input
             placeholder="Cidade"
-            className="rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-sm"
+            aria-label="Cidade"
+            className={SELECT_CLASS}
             value={filters.city}
             onChange={(e) => {
               setPage(1);
@@ -277,14 +333,15 @@ export default function LeadsDashboardPage() {
             }}
           />
           <select
-            className="rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-sm"
+            aria-label="Etapa do funil"
+            className={SELECT_CLASS}
             value={filters.funnelStage}
             onChange={(e) => {
               setPage(1);
               setFilters((f) => ({ ...f, funnelStage: e.target.value }));
             }}
           >
-            <option value="">Funil</option>
+            <option value="">Funil: todos</option>
             {FUNNEL_STAGES.map((s) => (
               <option key={s} value={s}>
                 {FUNNEL_LABELS[s]}
@@ -292,46 +349,53 @@ export default function LeadsDashboardPage() {
             ))}
           </select>
           <select
-            className="rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-sm"
+            aria-label="Ordenação"
+            className={SELECT_CLASS}
             value={filters.sort}
-            onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}
+            onChange={(e) => {
+              setPage(1);
+              setFilters((f) => ({ ...f, sort: e.target.value }));
+            }}
           >
-            <option value="score_desc">Score ↓</option>
-            <option value="score_asc">Score ↑</option>
-            <option value="distance_asc">Distância ↑</option>
-            <option value="confidence_desc">Confiança ↓</option>
-            <option value="name_asc">Nome</option>
+            <option value="score_desc">Maior score</option>
+            <option value="score_asc">Menor score</option>
+            <option value="distance_asc">Mais próximos</option>
+            <option value="confidence_desc">Maior confiança</option>
+            <option value="name_asc">Nome (A–Z)</option>
             <option value="verified_desc">Última verificação</option>
           </select>
           <select
-            className="rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-sm"
+            aria-label="Telefone"
+            className={SELECT_CLASS}
             value={filters.hasPhone}
             onChange={(e) => {
               setPage(1);
               setFilters((f) => ({ ...f, hasPhone: e.target.value }));
             }}
           >
-            <option value="">Telefone</option>
+            <option value="">Telefone: todos</option>
             <option value="true">Com telefone</option>
             <option value="false">Sem telefone</option>
           </select>
           <select
-            className="rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-sm"
+            aria-label="Opt-in"
+            className={SELECT_CLASS}
             value={filters.optIn}
             onChange={(e) => {
               setPage(1);
               setFilters((f) => ({ ...f, optIn: e.target.value }));
             }}
           >
-            <option value="">Opt-in</option>
-            <option value="unknown">unknown</option>
-            <option value="pending">pending</option>
-            <option value="verified">verified</option>
-            <option value="refused">refused</option>
+            <option value="">Opt-in: todos</option>
+            <option value="unknown">Desconhecido</option>
+            <option value="pending">Pendente</option>
+            <option value="verified">Verificado</option>
+            <option value="refused">Recusado</option>
           </select>
           <input
-            placeholder="Raio máx. km"
-            className="rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-sm"
+            placeholder="Raio máx. (km)"
+            aria-label="Raio máximo em km"
+            className={SELECT_CLASS}
             value={filters.maxDistance}
             onChange={(e) => {
               setPage(1);
@@ -339,63 +403,63 @@ export default function LeadsDashboardPage() {
             }}
           />
           <select
-            className="rounded-lg border border-nox-border bg-nox-bg px-3 py-2 text-sm"
+            aria-label="Fonte"
+            className={SELECT_CLASS}
             value={filters.source}
             onChange={(e) => {
               setPage(1);
               setFilters((f) => ({ ...f, source: e.target.value }));
             }}
           >
-            <option value="">Fonte</option>
-            <option value="overpass">overpass</option>
-            <option value="csv">csv</option>
-            <option value="demo">demo</option>
+            <option value="">Fonte: todas</option>
+            <option value="overpass">OpenStreetMap</option>
+            <option value="csv">CSV</option>
+            <option value="demo">Demonstração</option>
           </select>
         </div>
 
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-nox-muted">
             {loading
               ? "Carregando…"
-              : `${total} resultados ${
-                  includeWithWebsite ? "com e sem site" : "sem site próprio"
-                } · página ${page}/${pageCount}`}
+              : `${total} resultados ${includeWithWebsite ? "com e sem site" : "sem site próprio"} · página ${page} de ${pageCount}`}
           </p>
-          <div className="flex gap-2">
+          <div className="inline-flex rounded-xl border border-nox-border bg-nox-bg p-1" role="group" aria-label="Modo de exibição">
             <button
               type="button"
+              aria-pressed={view === "table"}
               className={cn(
-                "rounded-lg px-3 py-1 text-sm",
-                view === "table" ? "bg-nox-purple text-white" : "border border-nox-border",
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium",
+                view === "table" ? "bg-nox-panel text-white" : "text-nox-muted hover:text-white",
               )}
               onClick={() => setView("table")}
             >
-              Tabela
+              <Table2 size={13} aria-hidden="true" /> Tabela
             </button>
             <button
               type="button"
+              aria-pressed={view === "cards"}
               className={cn(
-                "rounded-lg px-3 py-1 text-sm",
-                view === "cards" ? "bg-nox-purple text-white" : "border border-nox-border",
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium",
+                view === "cards" ? "bg-nox-panel text-white" : "text-nox-muted hover:text-white",
               )}
               onClick={() => setView("cards")}
             >
-              Cards
+              <LayoutGrid size={13} aria-hidden="true" /> Cards
             </button>
           </div>
         </div>
 
         {view === "table" ? (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="text-nox-muted">
+          <div className="nox-scroll mt-4 overflow-x-auto">
+            <table className="nox-table min-w-[960px]">
+              <thead>
                 <tr>
-                  <th className="p-2">Nome</th>
-                  <th className="p-2">Categoria</th>
-                  <th className="p-2">Cidade</th>
-                  <th className="p-2">km</th>
+                  <th>Nome</th>
+                  <th>Categoria</th>
+                  <th>Cidade</th>
+                  <th>km</th>
                   <th
-                    className="p-2"
                     aria-sort={
                       filters.sort === "score_desc"
                         ? "descending"
@@ -406,7 +470,7 @@ export default function LeadsDashboardPage() {
                   >
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-nox-panel hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nox-cyan"
+                      className="inline-flex items-center gap-1 rounded px-1 py-0.5 uppercase tracking-[0.14em] hover:text-white"
                       onClick={toggleScoreSort}
                       title="Ordenar pelo score"
                       aria-label={
@@ -419,62 +483,61 @@ export default function LeadsDashboardPage() {
                     >
                       Score
                       <span aria-hidden="true">
-                        {filters.sort === "score_desc"
-                          ? "↓"
-                          : filters.sort === "score_asc"
-                            ? "↑"
-                            : "↕"}
+                        {filters.sort === "score_desc" ? (
+                          <ArrowDown size={12} />
+                        ) : filters.sort === "score_asc" ? (
+                          <ArrowUp size={12} />
+                        ) : (
+                          <ArrowUpDown size={12} />
+                        )}
                       </span>
                     </button>
                   </th>
-                  <th className="p-2">Conf.</th>
-                  <th className="p-2">Funil</th>
-                  <th className="p-2">Site</th>
-                  <th className="p-2">Opt-in</th>
-                  <th className="p-2">Contato</th>
+                  <th>Conf.</th>
+                  <th>Funil</th>
+                  <th>Site</th>
+                  <th>Opt-in</th>
+                  <th>Contato</th>
                 </tr>
               </thead>
               <tbody>
                 {!loading && items.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="p-8 text-center text-nox-muted">
+                    <td colSpan={10} className="p-10 text-center text-nox-muted">
                       Nenhum lead encontrado com os filtros atuais.
                     </td>
                   </tr>
                 )}
                 {items.map((item) => (
-                  <tr key={item.id} className="border-t border-nox-border/70 hover:bg-nox-panel/50">
-                    <td className="p-2">
-                      <Link href={`/leads/${item.id}`} className="text-nox-cyan hover:underline">
+                  <tr key={item.id}>
+                    <td>
+                      <Link href={`/leads/${item.id}`} className="font-medium text-white hover:text-nox-cyan">
                         {item.name}
                       </Link>
-                      {item.isDemo && (
-                        <span className="ml-2 text-xs text-amber-300">demo</span>
-                      )}
+                      {item.isDemo && <span className="ml-2 text-xs text-amber-300">demo</span>}
                     </td>
-                    <td className="p-2">{item.category}</td>
-                    <td className="p-2">{item.city ?? "—"}</td>
-                    <td className="p-2">{item.distanceKm ?? "—"}</td>
-                    <td className="p-2">
+                    <td className="text-nox-muted">{item.category}</td>
+                    <td className="text-nox-muted">{item.city ?? "—"}</td>
+                    <td className="font-mono text-nox-muted">{item.distanceKm ?? "—"}</td>
+                    <td>
                       <ScorePill score={item.opportunityScore} />
                     </td>
-                    <td className="p-2">{item.confidenceScore}</td>
-                    <td className="p-2">
-                      {FUNNEL_LABELS[item.funnelStage as keyof typeof FUNNEL_LABELS] ??
-                        item.funnelStage}
+                    <td className="font-mono text-nox-muted">{item.confidenceScore}</td>
+                    <td className="text-nox-muted">
+                      {FUNNEL_LABELS[item.funnelStage as keyof typeof FUNNEL_LABELS] ?? item.funnelStage}
                     </td>
-                    <td className="p-2">
+                    <td>
                       <WebsiteBadge item={item} />
                     </td>
-                    <td className="p-2">{item.optInStatus}</td>
-                    <td className="p-2">
-                      <Link
-                        href={`/leads/${item.id}#whatsapp`}
-                        className="rounded border border-nox-border px-2 py-1 text-xs text-nox-cyan hover:border-nox-cyan"
-                      >
+                    <td>
+                      <OptInBadge status={item.optInStatus} />
+                    </td>
+                    <td>
+                      <Link href={`/leads/${item.id}#whatsapp`} className="nox-btn-secondary px-2.5 py-1.5 text-xs">
+                        <MessageCircle size={12} aria-hidden="true" />
                         {item.phoneE164 && item.optInStatus === "verified" && !item.doNotContact
-                          ? "Abrir WhatsApp"
-                          : "Preparar contato"}
+                          ? "WhatsApp"
+                          : "Preparar"}
                       </Link>
                     </td>
                   </tr>
@@ -485,15 +548,12 @@ export default function LeadsDashboardPage() {
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {!loading && items.length === 0 && (
-              <p className="py-8 text-center text-sm text-nox-muted md:col-span-2 xl:col-span-3">
+              <p className="py-10 text-center text-sm text-nox-muted md:col-span-2 xl:col-span-3">
                 Nenhum lead encontrado com os filtros atuais.
               </p>
             )}
             {items.map((item) => (
-              <article
-                key={item.id}
-                className="rounded-xl border border-nox-border bg-nox-panel p-4 hover:border-nox-purple"
-              >
+              <article key={item.id} className="nox-card-raised p-4 transition hover:border-nox-border-strong">
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-medium text-white">
                     <Link href={`/leads/${item.id}`} className="hover:text-nox-cyan">
@@ -505,23 +565,19 @@ export default function LeadsDashboardPage() {
                 <p className="mt-1 text-xs text-nox-muted">
                   {item.category} · {item.city ?? "—"} · {item.distanceKm ?? "?"} km
                 </p>
-                <div className="mt-2">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   <WebsiteBadge item={item} />
+                  <OptInBadge status={item.optInStatus} />
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1">
                   {item.scoreReasons.slice(0, 3).map((r) => (
-                    <span
-                      key={r}
-                      className="rounded-full border border-nox-border px-2 py-0.5 text-[11px] text-nox-muted"
-                    >
+                    <span key={r} className="rounded-full border border-nox-border px-2 py-0.5 text-[11px] text-nox-muted">
                       {r}
                     </span>
                   ))}
                 </div>
-                <Link
-                  href={`/leads/${item.id}#whatsapp`}
-                  className="mt-4 inline-flex rounded-lg border border-nox-border px-3 py-1.5 text-xs text-nox-cyan hover:border-nox-cyan"
-                >
+                <Link href={`/leads/${item.id}#whatsapp`} className="nox-btn-secondary mt-4 px-3 py-1.5 text-xs">
+                  <MessageCircle size={12} aria-hidden="true" />
                   {item.phoneE164 && item.optInStatus === "verified" && !item.doNotContact
                     ? "Abrir WhatsApp"
                     : "Preparar contato"}
@@ -531,19 +587,22 @@ export default function LeadsDashboardPage() {
           </div>
         )}
 
-        <div className="mt-4 flex justify-between">
+        <div className="mt-4 flex items-center justify-between">
           <button
             type="button"
             disabled={page <= 1}
-            className="rounded-lg border border-nox-border px-3 py-1 text-sm disabled:opacity-40"
+            className="nox-btn-secondary px-3 py-1.5 text-xs"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
             Anterior
           </button>
+          <span className="text-xs text-nox-muted">
+            Página {page} de {pageCount}
+          </span>
           <button
             type="button"
             disabled={page >= pageCount}
-            className="rounded-lg border border-nox-border px-3 py-1 text-sm disabled:opacity-40"
+            className="nox-btn-secondary px-3 py-1.5 text-xs"
             onClick={() => setPage((p) => p + 1)}
           >
             Próxima
@@ -554,11 +613,46 @@ export default function LeadsDashboardPage() {
   );
 }
 
+function Kpi({
+  icon,
+  label,
+  value,
+  detail,
+  accent = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  detail: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className={cn("nox-kpi", accent && "border-nox-cyan/30 bg-nox-cyan/5")}>
+      <div className="flex items-center justify-between">
+        <p className="nox-kpi-label">{label}</p>
+        <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", accent ? "bg-nox-cyan text-nox-bg" : "bg-nox-panel text-nox-cyan")}>
+          {icon}
+        </span>
+      </div>
+      <p className="nox-kpi-value">{value}</p>
+      <p className="mt-1.5 text-xs text-nox-muted">{detail}</p>
+    </div>
+  );
+}
+
 function ScorePill({ score }: { score: number }) {
   const band = opportunityBand(score);
   const color =
-    band === "alta" ? "text-emerald-300" : band === "media" ? "text-amber-300" : "text-nox-muted";
-  return <span className={cn("font-mono font-semibold", color)}>{score}</span>;
+    band === "alta"
+      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+      : band === "media"
+        ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+        : "border-nox-border bg-nox-panel text-nox-muted";
+  return (
+    <span className={cn("inline-flex min-w-[2.75rem] justify-center rounded-lg border px-2 py-0.5 font-mono text-xs font-semibold", color)}>
+      {score}
+    </span>
+  );
 }
 
 function WebsiteBadge({ item }: { item: LeadItem }) {
@@ -566,13 +660,36 @@ function WebsiteBadge({ item }: { item: LeadItem }) {
   return (
     <span
       className={cn(
-        "inline-flex rounded-full border px-2 py-0.5 text-[11px]",
+        "inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium",
         hasWebsite
           ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
           : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
       )}
     >
       {hasWebsite ? "Com site" : "Sem site próprio"}
+    </span>
+  );
+}
+
+const OPT_IN_LABELS: Record<string, string> = {
+  unknown: "Desconhecido",
+  pending: "Pendente",
+  verified: "Verificado",
+  refused: "Recusado",
+};
+
+function OptInBadge({ status }: { status: string }) {
+  const tone =
+    status === "verified"
+      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+      : status === "refused"
+        ? "border-red-400/30 bg-red-400/10 text-red-200"
+        : status === "pending"
+          ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+          : "border-nox-border bg-nox-panel text-nox-muted";
+  return (
+    <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium", tone)}>
+      {OPT_IN_LABELS[status] ?? status}
     </span>
   );
 }
@@ -589,27 +706,28 @@ function ChartCard({
   onSelect?: (name: string) => void;
 }) {
   return (
-    <div className="rounded-xl border border-nox-border bg-nox-surface p-4">
+    <div className="nox-card p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-medium text-white">{title}</h2>
-        {onSelect && (
-          <p className="text-xs text-nox-muted">Clique para filtrar</p>
-        )}
+        <h2 className="text-sm font-semibold text-white">{title}</h2>
+        {onSelect && <p className="text-xs text-nox-muted">Clique para filtrar</p>}
       </div>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a2f3d" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#232735" vertical={false} />
             <XAxis dataKey="name" hide />
-            <YAxis stroke="#9aa3b5" fontSize={11} />
+            <YAxis stroke="#8b93a7" fontSize={11} axisLine={false} tickLine={false} width={28} />
             <Tooltip
-              contentStyle={{ background: "#151822", border: "1px solid #2a2f3d" }}
+              cursor={{ fill: "rgba(255,255,255,0.04)" }}
+              contentStyle={{ background: "#151821", border: "1px solid #232735", borderRadius: 12 }}
               labelStyle={{ color: "#fff" }}
+              itemStyle={{ color: "#22d3ee" }}
             />
             <Bar
               dataKey="count"
+              name="Leads"
               fill="#8b5cf6"
-              radius={[4, 4, 0, 0]}
+              radius={[6, 6, 0, 0]}
               className={onSelect ? "cursor-pointer" : undefined}
               onClick={
                 onSelect
@@ -635,29 +753,26 @@ function ChartCard({
           </BarChart>
         </ResponsiveContainer>
       </div>
-      {onSelect && (
-        <div className="mt-3 flex flex-wrap gap-2" aria-label="Filtrar por categoria">
-          {data.map((item) => {
-            const selected = selectedName === item.name;
-            return (
-              <button
-                key={item.name}
-                type="button"
-                aria-pressed={selected}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nox-cyan",
-                  selected
-                    ? "border-nox-cyan bg-nox-cyan/10 text-nox-cyan"
-                    : "border-nox-border text-nox-muted hover:border-nox-purple hover:text-white",
-                )}
-                onClick={() => onSelect(item.name)}
-              >
-                {item.name} ({item.count})
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div className="mt-3 flex flex-wrap gap-2" aria-label={onSelect ? "Filtrar por categoria" : "Legenda"}>
+        {data.map((item) => {
+          const selected = selectedName === item.name;
+          return onSelect ? (
+            <button
+              key={item.name}
+              type="button"
+              aria-pressed={selected}
+              className={cn("nox-chip", selected && "nox-chip-active")}
+              onClick={() => onSelect(item.name)}
+            >
+              {item.name} <span className="opacity-70">({item.count})</span>
+            </button>
+          ) : (
+            <span key={item.name} className="nox-chip cursor-default hover:border-nox-border hover:text-nox-muted">
+              {item.name} <span className="opacity-70">({item.count})</span>
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }

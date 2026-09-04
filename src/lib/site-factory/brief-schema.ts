@@ -178,6 +178,12 @@ export const briefServiceSchema = z
     name: shortFactSchema,
     summary: confirmedFactSchema.extend({ value: plainText(320) }),
     body: z.array(confirmedFactSchema.extend({ value: plainText(1_500) })).min(1).max(12),
+    /**
+     * The price as the business states it ("R$ 28,00", "a partir de R$ 90",
+     * "sob consulta"). A confirmed fact like any other: typed by the operator,
+     * never derived. Free text because businesses price in many shapes.
+     */
+    price: confirmedFactSchema.extend({ value: plainText(40) }).nullable().default(null),
     relatedIds: z.array(serviceIdSchema).max(6).default([]),
     featured: z.boolean().default(false),
   })

@@ -34,24 +34,24 @@ const siteUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "NOX OS — Sites personalizados para negócios locais",
+    default: "NOX OS — Sites profissionais para negócios locais",
     template: "%s · NOX OS",
   },
   description:
-    "A NOX OS organiza informações confirmadas de negócios locais em sites próprios, com prévia e revisão antes da publicação.",
+    "A NOX OS cria sites profissionais para negócios locais: páginas rápidas, WhatsApp integrado e conteúdo baseado só no que o negócio realmente oferece.",
   openGraph: {
     type: "website",
     locale: "pt_BR",
     url: siteUrl,
     siteName: "NOX OS",
-    title: "NOX OS — Sites personalizados para negócios locais",
+    title: "NOX OS — Sites profissionais para negócios locais",
     description:
-      "Sites para negócios locais, construídos a partir de informações confirmadas e revisados antes da publicação.",
+      "Sites profissionais para negócios locais, com WhatsApp integrado e conteúdo confirmado.",
   },
   twitter: {
     card: "summary_large_image",
     title: "NOX OS",
-    description: "Sites para negócios locais, com briefing factual e revisão antes da publicação.",
+    description: "Sites profissionais para negócios locais.",
   },
   robots: { index: true, follow: true },
 };

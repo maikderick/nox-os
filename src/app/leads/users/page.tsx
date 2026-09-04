@@ -111,7 +111,7 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Usuários</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-white">Usuários</h1>
         <p className="text-sm text-nox-muted">
           Crie acessos, escolha o perfil, redefina senhas e desative contas.
         </p>
@@ -168,7 +168,7 @@ export default function UsersPage() {
         <button
           type="submit"
           disabled={creating}
-          className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium disabled:opacity-50"
+          className="nox-btn-primary disabled:opacity-50"
         >
           {creating ? "Criando…" : "Criar usuário"}
         </button>

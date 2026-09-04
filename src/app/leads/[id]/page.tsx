@@ -205,7 +205,7 @@ export default function LeadDetailPage() {
           <Link href="/leads" className="text-sm text-nox-cyan">
             ← Voltar
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold text-white">{lead.name}</h1>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">{lead.name}</h1>
           <p className="text-sm text-nox-muted">
             {lead.category} · {lead.neighborhood ?? "—"} · {lead.city ?? "—"}/{lead.state ?? "—"}
             {lead.isDemo ? " · Dados de demonstração" : ""}
@@ -385,7 +385,7 @@ export default function LeadDetailPage() {
             disabled={waBlocked || whatsappBusy || !message.trim()}
             aria-describedby={waBlocked ? "whatsapp-block-reason" : undefined}
             title={waBlocked ? whatsappGate.reason : "Abre nesta aba para evitar bloqueadores"}
-            className="rounded-lg bg-nox-purple px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+            className="nox-btn-primary disabled:cursor-not-allowed disabled:opacity-40"
           >
             Abrir WhatsApp
           </button>

@@ -115,6 +115,8 @@ export type ServiceDraft = {
   summary: string;
   /** One paragraph per line. Split on the way out. */
   body: string;
+  /** Optional, as the business states it. Empty means "not shown". */
+  price: string;
   featured: boolean;
   relatedIds: string[];
   confirmedAt: string;
@@ -157,6 +159,7 @@ export function createServiceDraft(key: string, at: string = nowIso()): ServiceD
     name: "",
     summary: "",
     body: "",
+    price: "",
     featured: false,
     relatedIds: [],
     confirmedAt: at,
@@ -224,6 +227,12 @@ export function validateServices(services: ServiceDraft[]): DraftIssue[] {
       issues.push({
         field: `${field}.summary`,
         message: `Serviço ${index + 1}: o resumo tem no máximo 320 caracteres.`,
+      });
+    }
+    if (service.price.trim().length > 40) {
+      issues.push({
+        field: `${field}.price`,
+        message: `Serviço ${index + 1}: o preço tem no máximo 40 caracteres.`,
       });
     }
     if (paragraphs.length === 0) {
@@ -728,6 +737,9 @@ export function buildBriefV2(draft: BriefDraft): BriefDraftBuild {
       source: "OPERADOR" as const,
       confirmedAt: service.confirmedAt,
     })),
+    price: service.price.trim()
+      ? { value: service.price.trim(), source: "OPERADOR" as const, confirmedAt: service.confirmedAt }
+      : null,
     relatedIds: [...service.relatedIds],
     featured: service.featured,
   }));
