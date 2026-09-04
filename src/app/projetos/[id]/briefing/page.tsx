@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { ArrowLeft, TriangleAlert } from "lucide-react";
 
 import { BriefEditor } from "@/components/projetos/brief-editor";
-import { requirePermission } from "@/lib/authz/dal";
+import { requirePermission, type Actor } from "@/lib/authz/dal";
+import { isAuthorizationError } from "@/lib/authz/errors";
 import {
   briefDraftLosses,
   briefToDraft,
@@ -13,6 +15,7 @@ import { parseSiteBrief } from "@/lib/site-factory/brief-schema";
 import { getSiteProject } from "@/lib/site-factory/project-service";
 import {
   canTransition,
+  hasInternalPreview,
   isSiteProjectState,
   SITE_PROJECT_STATE_LABELS,
 } from "@/lib/site-factory/states";
@@ -24,6 +27,23 @@ export const metadata: Metadata = {
 };
 
 type PageProps = { params: Promise<{ id: string }> };
+
+/**
+ * The project, or nothing.
+ *
+ * `getSiteProject` scopes the read to the caller's organization and refuses
+ * anything outside it the same way it refuses a project that does not exist —
+ * which is the right answer for both, and the right answer is 404. Answering
+ * anything else here would tell a stranger which ids are real.
+ */
+async function findProject(actor: Actor, id: string) {
+  try {
+    return await getSiteProject(actor, id);
+  } catch (error) {
+    if (isAuthorizationError(error)) return null;
+    throw error;
+  }
+}
 
 /**
  * The briefing of an existing project, open for a second answer.
@@ -45,9 +65,8 @@ export default async function ProjectBriefingPage({ params }: PageProps) {
   // twenty fields, not after.
   const actor = await requirePermission("brief:write");
   const { id } = await params;
-  // Refuses a project from another organization the same way every other read
-  // does — there is no briefing here to find.
-  const project = await getSiteProject(actor, id);
+  const project = await findProject(actor, id);
+  if (!project) notFound();
 
   const state = isSiteProjectState(project.status) ? project.status : "RASCUNHO";
   const currentBrief = project.briefVersions.find(
@@ -67,6 +86,11 @@ export default async function ProjectBriefingPage({ params }: PageProps) {
    */
   const editable = state === "BRIEFING_PRONTO" || canTransition(state, "BRIEFING_PRONTO");
 
+  // The same gate `/sites/[id]` applies. Saving moves the project back to
+  // BRIEFING_PRONTO, which closes that address — so when it is open right now,
+  // the operator has to be told before they save, not after the client calls.
+  const publicLinkOpen = hasInternalPreview(state);
+
   // A v1 briefing loads with its new fields empty; anything the form cannot
   // represent is named here rather than normalised in silence.
   const losses = brief ? briefDraftLosses(brief) : [];
@@ -85,8 +109,8 @@ export default async function ProjectBriefingPage({ params }: PageProps) {
         </h1>
         <p className="mt-1.5 max-w-3xl text-sm leading-6 text-nox-muted">
           Salvar cria a versão v{nextVersion} e volta o projeto para “
-          {SITE_PROJECT_STATE_LABELS.BRIEFING_PRONTO}” — o site publicado continua o anterior até
-          você gerar de novo.
+          {SITE_PROJECT_STATE_LABELS.BRIEFING_PRONTO}”, e o link público fica indisponível até
+          você clicar em “Gerar site” de novo — um clique, na página do projeto.
         </p>
         {currentBrief ? (
           <p className="mt-1 text-xs text-nox-muted">
@@ -101,6 +125,19 @@ export default async function ProjectBriefingPage({ params }: PageProps) {
           </p>
         )}
       </div>
+
+      {publicLinkOpen ? (
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100"
+        >
+          <TriangleAlert size={16} className="mt-0.5 shrink-0 text-amber-300" aria-hidden="true" />
+          <span>
+            O endereço público deste projeto está no ar agora. Ao salvar, ele sai do ar até você
+            gerar o site de novo.
+          </span>
+        </p>
+      ) : null}
 
       {losses.length > 0 ? (
         <section

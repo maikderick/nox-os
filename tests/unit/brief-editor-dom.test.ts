@@ -157,12 +157,49 @@ describe("editor de briefing, no DOM", () => {
     expect({ ...sent, about: brief.about }).toEqual(brief);
   });
 
+  it("volta para o projeto mesmo quando o briefing salvo ainda tem lacunas", async () => {
+    // A tela de lacunas é do fluxo de criação, onde é a única vez que elas
+    // aparecem. Editando, a própria página do projeto as reporta ao lado do
+    // link que as resolve — parar aqui só colocaria uma tela no caminho.
+    mount();
+    advance();
+    advance();
+
+    const fetchMock = stubFetch({
+      ok: true,
+      status: 201,
+      body: {
+        capabilities: {
+          schemaVersion: 2,
+          canGenerateServicePages: false,
+          hasConfirmedPublicContact: false,
+          gaps: ["Nenhum serviço confirmado: o site será gerado sem hub."],
+        },
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Salvar e voltar/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/projetos/proj-1"));
+    expect(router.refresh).toHaveBeenCalled();
+    expect(screen.queryByText(/ainda tem lacunas/)).toBeNull();
+  });
+
   it("diz o que fazer quando o agente está construindo o projeto", async () => {
     mount();
     advance();
     advance();
 
-    stubFetch({ ok: false, status: 409, body: { error: "transição inválida" } });
+    stubFetch({
+      ok: false,
+      status: 409,
+      body: {
+        error: "Transição inválida",
+        code: "SITE_PROJECT_INVALID_TRANSITION",
+        from: "GERANDO",
+        to: "BRIEFING_PRONTO",
+      },
+    });
     fireEvent.click(screen.getByRole("button", { name: /Salvar e voltar/ }));
 
     const alert = await screen.findByRole("alert");
@@ -170,6 +207,32 @@ describe("editor de briefing, no DOM", () => {
       "Este projeto está em construção pelo agente; aguarde ou cancele antes de editar.",
     );
     // Ninguém é levado embora de um formulário que não foi salvo.
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("nomeia o estado quando a recusa não é o agente construindo", async () => {
+    // O mesmo 409, vindo de outro lugar do ciclo. Dizer "o agente está
+    // construindo" aqui seria mandar o operador esperar por nada.
+    mount();
+    advance();
+    advance();
+
+    stubFetch({
+      ok: false,
+      status: 409,
+      body: {
+        error: "Transição inválida",
+        code: "SITE_PROJECT_INVALID_TRANSITION",
+        from: "PUBLICADO",
+        to: "BRIEFING_PRONTO",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Salvar e voltar/ }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("O projeto está em “Publicado”");
+    expect(alert.textContent).toContain("reabrir o ciclo");
+    expect(alert.textContent).not.toContain("em construção pelo agente");
     expect(router.push).not.toHaveBeenCalled();
   });
 

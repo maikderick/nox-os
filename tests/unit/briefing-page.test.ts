@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +14,15 @@ vi.mock("@/lib/site-factory/project-service", () => ({ getSiteProject: mocks.get
 // The form under the page is a client component; in a test nothing routes.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  // `notFound()` signals by throwing a sentinel Next catches upstream; here the
+  // sentinel is ours, and seeing it thrown is seeing the page refuse to render.
+  notFound: () => {
+    throw new Error("NEXT_NOT_FOUND");
+  },
 }));
+
+import ProjectPage from "@/app/projetos/[id]/page";
+import { AuthorizationError } from "@/lib/authz/errors";
 
 import BriefingPage from "@/app/projetos/[id]/briefing/page";
 
@@ -32,6 +38,8 @@ function project(overrides: ProjectOverrides = {}) {
   return {
     id: "proj-1",
     name: "Site Zen",
+    sector: "Restaurante japonês",
+    client: { id: "client-1", name: "Zen Comida Japonesa", businessId: "lead-1" },
     status: "PREVIA_PRONTA",
     currentBriefVersionId: "brief-2",
     // As `getSiteProject` returns them: newest first.
@@ -80,8 +88,41 @@ describe("página de edição do briefing", () => {
     // Two versions stored, so the next one is the third.
     expect(html).toContain("Salvar cria a versão v3");
     expect(html).toContain("Pronto para gerar");
-    expect(html).toContain("o site publicado continua o anterior até você gerar de novo");
+    // O que salvar custa, dito como é: `/sites/[id]` só serve o site a partir
+    // de PREVIA_PRONTA, e salvar devolve o projeto para BRIEFING_PRONTO.
+    expect(html).toContain("o link público fica indisponível até você clicar em “Gerar site”");
+    expect(html).not.toContain("o site publicado continua o anterior");
     expect(html).toContain("Editando a partir da v2");
+  });
+
+  it("avisa em destaque quando o endereço público está no ar agora", async () => {
+    // PREVIA_PRONTA: o cliente já pode abrir o link. Salvar o derruba.
+    expect(await renderPage({ status: "PREVIA_PRONTA" })).toContain(
+      "O endereço público deste projeto está no ar agora",
+    );
+    // BRIEFING_PRONTO: não há link aberto para derrubar, então não há aviso.
+    expect(await renderPage({ status: "BRIEFING_PRONTO" })).not.toContain(
+      "está no ar agora",
+    );
+  });
+
+  it("responde 404 para um projeto inexistente ou de outra organização", async () => {
+    mocks.getSiteProject.mockRejectedValue(AuthorizationError.missingPermission("project:read"));
+
+    // `notFound()` sinaliza lançando; o que importa é que a página não vaza a
+    // diferença entre "não existe" e "não é seu".
+    await expect(
+      BriefingPage({ params: Promise.resolve({ id: "de-outra-org" }) }),
+    ).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("deixa a recusa da DAL passar para quem não pode escrever briefing", async () => {
+    const denied = AuthorizationError.missingPermission("brief:write");
+    mocks.requirePermission.mockRejectedValue(denied);
+
+    await expect(BriefingPage({ params: Promise.resolve({ id: "proj-1" }) })).rejects.toBe(denied);
+    // E nem chega a ler o projeto.
+    expect(mocks.getSiteProject).not.toHaveBeenCalled();
   });
 
   it("abre no passo Negócio, com o que o projeto já confirmou", async () => {
@@ -150,26 +191,90 @@ describe("página de edição do briefing", () => {
 });
 
 describe("entrada para o editor, no painel do projeto", () => {
-  const PAGE = readFileSync("src/app/projetos/[id]/page.tsx", "utf8");
+  /**
+   * Rendered, not grepped.
+   *
+   * The first version of this block asserted that the page's *source* named
+   * the four states, and it passed while the link was reachable from three of
+   * them — the state list was right and the element was written into the wrong
+   * branches. Only rendering can tell those two apart.
+   */
+  async function renderProject(
+    overrides: ProjectOverrides & { permissions?: string[] } = {},
+  ): Promise<string> {
+    const { permissions, ...projectOverrides } = overrides;
+    if (permissions) {
+      mocks.requirePermission.mockResolvedValue({
+        userId: "user-1",
+        organizationId: "org-1",
+        permissions,
+      });
+    }
+    mocks.getSiteProject.mockResolvedValue(project(projectOverrides));
+    const element = (await ProjectPage({
+      params: Promise.resolve({ id: "proj-1" }),
+    })) as React.ReactElement;
+    return renderToStaticMarkup(element);
+  }
 
-  it("oferece o link só nos estados em que uma nova versão é aceita", () => {
-    // Exactly the states `createSiteBriefVersion` can reach BRIEFING_PRONTO
-    // from. Anywhere else the link would end in 409.
-    expect(PAGE).toContain("Editar briefing");
-    expect(PAGE).toContain("href={briefingHref}");
-    expect(PAGE).toContain('state === "RASCUNHO" ||');
-    expect(PAGE).toContain('state === "BRIEFING_PRONTO" ||');
-    expect(PAGE).toContain('state === "PREVIA_PRONTA" ||');
-    expect(PAGE).toContain('state === "FALHOU"');
-    // And only to someone who could save it.
-    expect(PAGE).toContain("canWriteBrief &&");
+  const EDIT_LINK = 'href="/projetos/proj-1/briefing"';
+
+  const withoutBrief = { briefVersions: [], currentBriefVersionId: null };
+
+  it("aparece nos quatro estados em que uma versão nova é aceita", async () => {
+    for (const status of ["RASCUNHO", "BRIEFING_PRONTO", "PREVIA_PRONTA", "FALHOU"]) {
+      expect(await renderProject({ status }), status).toContain(EDIT_LINK);
+    }
   });
 
-  it("liga o aviso de composição ao briefing que o resolve", () => {
-    expect(PAGE).toContain("Complete no briefing");
-    // The warning that already existed, plus what the brief itself reports as
-    // missing — both pointing at the same form.
-    expect(PAGE).toContain("composition.unmapped.map");
-    expect(PAGE).toContain("briefCapabilities(brief).gaps");
+  it("aparece também num RASCUNHO que nunca teve briefing", async () => {
+    const html = await renderProject({ status: "RASCUNHO", ...withoutBrief });
+
+    expect(html).toContain(EDIT_LINK);
+    // E a única instrução na tela é essa; o assistente de projeto novo não
+    // resolve o briefing deste projeto.
+    expect(html).toContain("Este projeto ainda não tem briefing.");
+    expect(html).not.toContain("projeto novo");
+  });
+
+  it("some enquanto uma máquina segura o projeto, e depois que o ciclo avança", async () => {
+    for (const status of ["GERANDO", "PUBLICANDO", "EM_REVISAO", "APROVADO", "PUBLICADO"]) {
+      expect(await renderProject({ status }), status).not.toContain(EDIT_LINK);
+    }
+  });
+
+  it("some para quem não pode salvar um briefing", async () => {
+    const html = await renderProject({
+      status: "BRIEFING_PRONTO",
+      permissions: ["project:read", "project:write"],
+    });
+
+    expect(html).not.toContain(EDIT_LINK);
+    // A ação principal do estado continua lá: some o link, não o painel.
+    expect(html).toContain("Gerar o site");
+  });
+
+  it("liga o aviso de composição ao briefing que o resolve", async () => {
+    // Um briefing sem serviços nem contato: o painel diz o que falta e leva ao
+    // formulário onde se completa.
+    const bare = storedBrief();
+    bare.services = [];
+    bare.publicContact = {
+      phone: null,
+      whatsapp: null,
+      email: null,
+      address: null,
+      coordinates: null,
+      openingHours: null,
+      socialLinks: [],
+    };
+    const html = await renderProject({
+      currentBriefVersionId: "brief-bare",
+      briefVersions: [{ id: "brief-bare", version: 1, contentJson: JSON.stringify(bare) }],
+    });
+
+    expect(html).toContain("Nenhum serviço confirmado");
+    expect(html).toContain("Nenhum canal de contato confirmado");
+    expect(html).toContain("Complete no briefing");
   });
 });

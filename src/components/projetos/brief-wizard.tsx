@@ -544,13 +544,20 @@ export function BriefWizard({
       // The project page carries the primary action, so the form hands the
       // operator straight to it instead of to the agent pipeline.
       setDestination(result.destination);
-      if (!result.capabilities || result.capabilities.gaps.length === 0) {
+
+      // Gaps are plain sentences about what the site will be missing, and on
+      // the way out of the wizard they are the only place they appear — a
+      // project created with no contact channel would otherwise ship with no
+      // way to call it. Editing ends on the project page, which reports the
+      // same gaps next to the link that fixes them and keeps reporting them
+      // for as long as they are true, so stopping here would only put a screen
+      // between the operator and the page they asked for.
+      const gaps = mode === "create" ? (result.capabilities?.gaps ?? []) : [];
+      if (gaps.length === 0) {
         router.push(result.destination);
         router.refresh();
         return;
       }
-      // Gaps are plain sentences about what the site will be missing. Walking
-      // away without reading them is how a site ships without contact buttons.
       setOutcome(result.capabilities);
       setSubmitting(false);
     } catch {
@@ -1209,7 +1216,7 @@ export function BriefWizard({
               <p>
                 {mode === "create"
                   ? "Ao criar, o sistema gera o cliente, o projeto e a primeira versão imutável do briefing, e informa o que ainda falta para o site ficar completo."
-                  : "Ao salvar, o sistema grava uma nova versão imutável do briefing e devolve o projeto para “Pronto para gerar”. As versões anteriores continuam no histórico, e o site publicado só muda quando você gerar de novo."}
+                  : "Ao salvar, o sistema grava uma nova versão imutável do briefing e devolve o projeto para “Pronto para gerar”. As versões anteriores continuam no histórico, e o link público fica indisponível até você clicar em “Gerar site” de novo — um clique, na página do projeto."}
               </p>
             </div>
           </Step>

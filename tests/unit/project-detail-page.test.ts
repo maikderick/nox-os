@@ -85,9 +85,14 @@ describe("raiz do projeto", () => {
     expect(source).toContain("Concluir briefing");
     expect(source).toContain('targetStatus="BRIEFING_PRONTO"');
     expect(source).toContain('actor.permissions.includes("brief:write")');
-    // The legacy edge case — RASCUNHO with no brief at all — gets a plain
-    // sentence, not a link, since there is no per-project brief editor.
-    expect(source).toContain("Crie o site por um projeto novo");
+    // The legacy edge case — RASCUNHO with no brief at all — used to be told
+    // to start a second project, because there was no per-project brief
+    // editor. There is one now, so the sentence sends the operator to it and
+    // says nothing else; two instructions for one button is worse than none.
+    // Which states actually render that link is proved by rendering the page,
+    // in briefing-page.test.ts.
+    expect(source).toContain("Este projeto ainda não tem briefing.");
+    expect(source).not.toContain("Crie o site por um projeto novo");
     // And the wizard link this finding was about is gone from this page
     // entirely, not merely out of the RASCUNHO branch.
     expect(source).not.toContain("/projetos/novo");

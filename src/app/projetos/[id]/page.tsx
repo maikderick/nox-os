@@ -147,7 +147,15 @@ export default async function ProjectPage({ params }: PageProps) {
 
       {/* The one thing to do next, before anything explanatory. Which action it
           is comes from the state, so the page never offers a button the state
-          machine would refuse. */}
+          machine would refuse.
+
+          The explanation and the actions are separate on purpose. They used to
+          be nested together, one action row per explanatory branch, and
+          "Editar briefing" was written into three of the four — so a failed
+          project, which is the state where someone most wants to fix a
+          briefing, reached the fourth branch and got no link at all. One row,
+          each action gated by the state it belongs to, and adding a branch of
+          prose can no longer remove a button. */}
       <section className="nox-card p-6" aria-label="Próximo passo">
         {brief && state === "BRIEFING_PRONTO" ? (
           <>
@@ -155,16 +163,6 @@ export default async function ProjectPage({ params }: PageProps) {
             <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
               Gera o site a partir das informações confirmadas. Leva alguns segundos.
             </p>
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              {canWrite ? (
-                <GenerateSiteButton projectId={project.id} />
-              ) : (
-                <p className="text-sm text-nox-muted">
-                  Seu papel não permite gerar o site. Peça a um operador da organização.
-                </p>
-              )}
-              {editBriefLink}
-            </div>
           </>
         ) : previewReady ? (
           <>
@@ -173,79 +171,75 @@ export default async function ProjectPage({ params }: PageProps) {
               O endereço de apresentação abre sem login e sempre mostra a versão atual do
               briefing confirmado.
             </p>
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <Link href={`/sites/${project.id}`} className="nox-btn-primary px-6 py-3 text-base">
-                Ver site
-              </Link>
-              <Link href={`/projetos/${project.id}/preview`} className="nox-btn-secondary">
-                Prévia interna
-              </Link>
-              {editBriefLink}
-              {canWrite && state === "PREVIA_PRONTA" ? (
-                <SendToReviewButton projectId={project.id} />
-              ) : null}
-            </div>
           </>
         ) : (
           <>
             <h2 className="text-xl font-semibold text-white">Confirmar o briefing</h2>
-            {state === "RASCUNHO" && !brief ? (
-              // A project reaches RASCUNHO only through `BRIEFING_PRONTO -> RASCUNHO`
-              // or `PUBLICADO -> RASCUNHO`, and both keep the current brief version —
-              // so a RASCUNHO with no brief at all is a legacy record from before
-              // brief versioning. It is answerable in place now: the briefing editor
-              // opens on an empty form and the first save becomes version 1.
-              <>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
-                  Este projeto não tem briefing confirmado. Preencha-o aqui e depois gere o
-                  site. Crie o site por um projeto novo no assistente apenas se este projeto
-                  não for mais o negócio certo.
-                </p>
-                {editBriefLink ? <div className="mt-5">{editBriefLink}</div> : null}
-              </>
-            ) : (
-              <>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
-                  O site é calculado a partir dos fatos confirmados. Sem briefing confirmado não
-                  há o que gerar.
-                </p>
-                <div className="mt-5 flex flex-wrap items-center gap-3">
-                  {state === "RASCUNHO" ? (
-                    canWriteBrief ? (
-                      <TransitionButton
-                        projectId={project.id}
-                        targetStatus="BRIEFING_PRONTO"
-                        label="Concluir briefing"
-                        busyLabel="Concluindo"
-                        failure="O briefing não pôde ser concluído agora."
-                        icon={<CheckCircle size={16} aria-hidden="true" />}
-                        className="nox-btn-primary px-6 py-3 text-base"
-                      />
-                    ) : (
-                      <p className="text-sm text-nox-muted">
-                        Seu papel não permite concluir o briefing. Peça a um operador da
-                        organização.
-                      </p>
-                    )
-                  ) : null}
-                  {brief ? (
-                    <Link href={`/projetos/${project.id}/preview`} className="nox-btn-secondary">
-                      Prévia interna
-                    </Link>
-                  ) : null}
-                </div>
-              </>
-            )}
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-nox-muted">
+              {brief
+                ? "O site é calculado a partir dos fatos confirmados. Sem briefing confirmado não há o que gerar."
+                : // A project reaches RASCUNHO only through `BRIEFING_PRONTO -> RASCUNHO`
+                  // or `PUBLICADO -> RASCUNHO`, and both keep the current brief version — so
+                  // a project with no brief at all is a legacy record from before brief
+                  // versioning. It is answerable in place now: the editor opens on an empty
+                  // form and the first save becomes version 1.
+                  "Este projeto ainda não tem briefing. Preencha-o em “Editar briefing”."}
+            </p>
           </>
         )}
 
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          {brief && state === "BRIEFING_PRONTO" ? (
+            canWrite ? (
+              <GenerateSiteButton projectId={project.id} />
+            ) : (
+              <p className="text-sm text-nox-muted">
+                Seu papel não permite gerar o site. Peça a um operador da organização.
+              </p>
+            )
+          ) : null}
+
+          {previewReady ? (
+            <>
+              <Link href={`/sites/${project.id}`} className="nox-btn-primary px-6 py-3 text-base">
+                Ver site
+              </Link>
+              {canWrite && state === "PREVIA_PRONTA" ? (
+                <SendToReviewButton projectId={project.id} />
+              ) : null}
+            </>
+          ) : null}
+
+          {brief && state === "RASCUNHO" ? (
+            canWriteBrief ? (
+              <TransitionButton
+                projectId={project.id}
+                targetStatus="BRIEFING_PRONTO"
+                label="Concluir briefing"
+                busyLabel="Concluindo"
+                failure="O briefing não pôde ser concluído agora."
+                icon={<CheckCircle size={16} aria-hidden="true" />}
+                className="nox-btn-primary px-6 py-3 text-base"
+              />
+            ) : (
+              <p className="text-sm text-nox-muted">
+                Seu papel não permite concluir o briefing. Peça a um operador da organização.
+              </p>
+            )
+          ) : null}
+
+          {/* Gated by the state on its own, never by which paragraph rendered. */}
+          {editBriefLink}
+
+          {brief ? (
+            <Link href={`/projetos/${project.id}/preview`} className="nox-btn-secondary">
+              Prévia interna
+            </Link>
+          ) : null}
+        </div>
+
         {!previewReady ? (
           <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-nox-border pt-4 text-sm">
-            {brief && state === "BRIEFING_PRONTO" ? (
-              <Link href={`/projetos/${project.id}/preview`} className="text-nox-cyan hover:underline">
-                Prévia interna
-              </Link>
-            ) : null}
             <span className="text-nox-muted">
               Site público: disponível depois de gerar o site
             </span>

@@ -166,8 +166,10 @@ seguinte e opcional.
 Para melhorar um site já gerado, abra o projeto → **Editar briefing** → **Salvar e voltar** →
 **Gerar site**. O editor (`/projetos/[id]/briefing`) é o mesmo formulário do assistente, já
 preenchido com o briefing confirmado: salvar grava a versão N+1 — as anteriores continuam no
-histórico, porque uma versão é imutável — e devolve o projeto para `BRIEFING_PRONTO`. O site
-publicado continua servindo a versão anterior até você gerar de novo. O link aparece em
+histórico, porque uma versão é imutável — e devolve o projeto para `BRIEFING_PRONTO`. **O
+endereço público de `/sites/[id]` fica indisponível enquanto o projeto está em
+`BRIEFING_PRONTO`**: depois de salvar, clique em "Gerar site" outra vez para reabri-lo — é um
+clique, na própria página do projeto. O link aparece em
 `RASCUNHO`, `BRIEFING_PRONTO`, `PREVIA_PRONTA` e `FALHOU`, e some enquanto o agente constrói.
 Briefings v1 também abrem: os campos que a v1 não guardava chegam em branco, e salvar grava
 uma v2.
