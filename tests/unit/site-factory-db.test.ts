@@ -7,7 +7,7 @@ import { permissionsForRole } from "@/lib/authz/permissions";
 import { prisma } from "@/lib/db";
 import { createSiteBriefVersion } from "@/lib/site-factory/brief-service";
 import { convertBusinessToClient } from "@/lib/site-factory/client-service";
-import { createSiteProject } from "@/lib/site-factory/project-service";
+import { createSiteProject, transitionSiteProject } from "@/lib/site-factory/project-service";
 
 function pointsToLocalPostgres(databaseUrl: string | undefined): boolean {
   if (!databaseUrl) return false;
@@ -159,5 +159,61 @@ describeLocalDatabase("site factory database integration", () => {
     expect(storedProject.briefVersions).toHaveLength(2);
     expect(storedProject.briefVersions[0]?.contentJson).toContain('"Sobre"');
     expect(storedProject.briefVersions[0]?.contentJson).not.toContain('"Produtos"');
+  });
+
+  /**
+   * The loop the briefing editor closes.
+   *
+   * A project whose site is already generated sits in `PREVIA_PRONTA`. Saving
+   * an improved briefing has to be accepted from there and has to put the
+   * project back in `BRIEFING_PRONTO` — otherwise the operator saves and the
+   * panel still shows "site gerado", with no way to generate the new one.
+   */
+  it("aceita uma nova versão a partir de PREVIA_PRONTA e devolve o projeto para BRIEFING_PRONTO", async () => {
+    const client = await convertBusinessToClient({ actor, businessId });
+    const project = await createSiteProject({
+      actor,
+      clientId: client.id,
+      name: `Site Aurora revisado ${token}`,
+      sector: "Padaria",
+    });
+
+    const confirmedAt = "2026-08-25T12:00:00.000Z";
+    const fact = (value: string) => ({ value, source: "OPERADOR" as const, confirmedAt });
+    const brief = (desiredSections: string[]) => ({
+      schemaVersion: 1,
+      businessName: fact("Padaria Aurora"),
+      sector: fact("Padaria"),
+      city: null,
+      objective: fact("Apresentar informações confirmadas sobre o negócio."),
+      audience: fact("Pessoas que procuram uma padaria na região."),
+      positioning: fact("Comunicação clara sobre o negócio."),
+      services: [],
+      differentiators: [],
+      desiredSections,
+      visualDirection: fact("Layout sóbrio e legível."),
+      notes: null,
+    });
+
+    await createSiteBriefVersion({
+      actor,
+      siteProjectId: project.id,
+      brief: brief(["Início", "Contato"]),
+    });
+    // O site foi gerado: é neste estado que o operador reabre o briefing.
+    await transitionSiteProject({ actor, siteProjectId: project.id, to: "PREVIA_PRONTA" });
+
+    const improved = await createSiteBriefVersion({
+      actor,
+      siteProjectId: project.id,
+      brief: brief(["Início", "Serviços", "Contato"]),
+    });
+
+    expect(improved.version).toBe(2);
+    const stored = await prisma.siteProject.findUniqueOrThrow({ where: { id: project.id } });
+    // De volta a "pronto para gerar", apontando para a versão nova. O site
+    // publicado continua o anterior até alguém gerar de novo.
+    expect(stored.status).toBe("BRIEFING_PRONTO");
+    expect(stored.currentBriefVersionId).toBe(improved.id);
   });
 });

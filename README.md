@@ -163,6 +163,15 @@ prévia interna autenticada depende apenas de existir briefing confirmado. A ger
 agente (`GERANDO`) continua sendo o caminho que constrói o repositório real — etapa
 seguinte e opcional.
 
+Para melhorar um site já gerado, abra o projeto → **Editar briefing** → **Salvar e voltar** →
+**Gerar site**. O editor (`/projetos/[id]/briefing`) é o mesmo formulário do assistente, já
+preenchido com o briefing confirmado: salvar grava a versão N+1 — as anteriores continuam no
+histórico, porque uma versão é imutável — e devolve o projeto para `BRIEFING_PRONTO`. O site
+publicado continua servindo a versão anterior até você gerar de novo. O link aparece em
+`RASCUNHO`, `BRIEFING_PRONTO`, `PREVIA_PRONTA` e `FALHOU`, e some enquanto o agente constrói.
+Briefings v1 também abrem: os campos que a v1 não guardava chegam em branco, e salvar grava
+uma v2.
+
 `GERANDO` é conduzido pela fila e pelos observadores de checks e prévia. `PUBLICANDO`
 continua fechado: publicação real exige a etapa de aprovação e operação em provedores
 `LIVE`, que não está habilitada neste release.
