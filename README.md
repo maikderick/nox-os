@@ -198,7 +198,7 @@ nome do negócio em display fluido à esquerda, uma luz de spotlight que entra u
 cozinha, poste e navalha para a barbearia, placar para a academia: catorze motivos em
 SVG inline, sem foto de banco e sem cena 3D. Cinco categorias (comida, academia,
 oficina, loja e eventos) abrem em preto puro sobre um corpo claro; as outras nove seguem
-o chão da direção. São os dois únicos chãos da página. Essa abertura reverte, só dentro
+o chão da direção. O cabeçalho acompanha o hero, não o corpo, para que a abertura seja uma peça só. São os dois únicos chãos da página. Essa abertura reverte, só dentro
 do hero, três das regras anti-slop e o orçamento de movimento — e a isenção é de markup,
 recortada elemento a elemento, de modo que um segundo gradiente uma seção abaixo continua
 reprovando. O pedido do dono e o que exatamente mudou estão na errata §13 da
