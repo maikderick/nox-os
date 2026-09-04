@@ -64,22 +64,22 @@ function gearPath(cx: number, cy: number, outer: number, inner: number, teeth: n
 /** One paw: a pad and four toes, turned by `tilt` degrees. */
 function paw(x: number, y: number, tilt: number, index: number): ReactNode {
   const toes: [number, number][] = [
-    [-24, -26],
-    [-9, -37],
-    [9, -37],
-    [24, -26],
+    [-30, -32],
+    [-11, -45],
+    [11, -45],
+    [30, -32],
   ];
   return (
     <g key={`paw-${index}`} className={`m-pt-paw m-pt-paw-${index}`} transform={`rotate(${tilt} ${x} ${y})`}>
-      <ellipse cx={x} cy={y} rx={27} ry={22} fill="var(--hero-accent)" fillOpacity={0.42} />
+      <ellipse cx={x} cy={y} rx={33} ry={27} fill="var(--hero-accent)" fillOpacity={0.55} />
       {toes.map(([dx, dy], toe) => (
         <circle
           key={toe}
           cx={x + dx}
           cy={y + dy}
-          r={10}
+          r={12}
           fill="var(--hero-accent)"
-          fillOpacity={0.42}
+          fillOpacity={0.55}
         />
       ))}
     </g>
@@ -279,10 +279,12 @@ const placar: Motif = {
 };
 
 const patas: Motif = {
-  // The prints arrive in order, as if something just walked across.
+  // The whole trail is always there; the emphasis walks along it. Fading each
+  // print out entirely left the motif empty for most of the loop.
   css: motion(
-    "@keyframes motif-patas{0%{opacity:0}8%{opacity:1}52%{opacity:1}72%{opacity:0}100%{opacity:0}}" +
-      '[data-motif="patas"] .m-pt-paw{opacity:0;animation:motif-patas 12s ease-in-out infinite}' +
+    "@keyframes motif-patas{0%{opacity:0.4}10%{opacity:1}30%{opacity:1}" +
+      "48%{opacity:0.4}100%{opacity:0.4}}" +
+      '[data-motif="patas"] .m-pt-paw{opacity:0.4;animation:motif-patas 12s ease-in-out infinite}' +
       '[data-motif="patas"] .m-pt-paw-1{animation-delay:1.6s}' +
       '[data-motif="patas"] .m-pt-paw-2{animation-delay:3.2s}' +
       '[data-motif="patas"] .m-pt-paw-3{animation-delay:4.8s}' +
@@ -290,7 +292,7 @@ const patas: Motif = {
   ),
   art: (
     <>
-      {[236, 182, 128, 74].map((r, index) => (
+      {[234, 170, 106].map((r, index) => (
         <circle
           key={r}
           cx={240}
@@ -298,15 +300,15 @@ const patas: Motif = {
           r={r}
           fill="none"
           stroke="var(--hero-accent)"
-          strokeOpacity={0.22 + index * 0.04}
-          strokeWidth={2}
+          strokeOpacity={0.3 + index * 0.08}
+          strokeWidth={2.4}
         />
       ))}
-      {paw(126, 402, -14, 0)}
-      {paw(196, 344, -6, 1)}
-      {paw(152, 282, -14, 2)}
-      {paw(228, 226, -4, 3)}
-      {paw(186, 158, -12, 4)}
+      {paw(112, 424, -18, 0)}
+      {paw(200, 368, -4, 1)}
+      {paw(182, 286, -18, 2)}
+      {paw(272, 228, -4, 3)}
+      {paw(256, 146, -18, 4)}
     </>
   ),
 };
