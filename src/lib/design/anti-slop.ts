@@ -12,6 +12,14 @@
  *
  * Rules 10 to 13 exist because the markup they describe was in this repository.
  *
+ * Rules 1, 2, 8 and 15 were rewritten on 2026-09-04, when the owner reversed
+ * them for the hero and only for the hero (spec §13, errata 6). The grant is
+ * scoped by markup, not by prose: `findSlop` removes the one element marked
+ * `data-hero-spotlight` and the one `<svg data-category-motif>` before it
+ * measures anything, so the gradient, the blur and the slow loop those two
+ * carry are invisible to the rules — and a second gradient one section down
+ * still fails, which is the only reason the exception is safe to grant.
+ *
  * `markup` regexes cover both the Tailwind-class form and the React inline
  * `style` attribute form, because the site renderer emits inline styles: a
  * rule that only matched Tailwind class patterns would pass trivially against
@@ -27,7 +35,8 @@ export type AntiSlopRule = {
 export const ANTI_SLOP_RULES: AntiSlopRule[] = [
   {
     id: "gradient-ground",
-    text: "Sem gradiente radial ou cônico como fundo de seção.",
+    text:
+      "Sem gradiente radial ou cônico fora do hero. O spotlight do hero é permitido uma vez.",
     // Requires the opening `(` — CSS gradient syntax, never present in a
     // filename like `radial-gradient.svg` — so this covers both
     // `bg-[radial-gradient(...)]` (Tailwind class) and
@@ -37,7 +46,7 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
   },
   {
     id: "glow",
-    text: "Sem glow: nenhum elemento borrado atrás do conteúdo.",
+    text: "Sem glow fora do hero e do motivo.",
     // Tailwind: `blur-2xl`/`blur-3xl` utility classes (the negative
     // lookbehind rejects a preceding `/`, word char, or `-`, so a path
     // segment like `/assets/blur-2xl.jpg` cannot match while a class token,
@@ -75,7 +84,7 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
     markup: /rounded-\[\d/,
   },
   { id: "type-soup", text: "No máximo quatro tamanhos e três pesos de tipo." },
-  { id: "two-grounds", text: "Um chão por site. Nada de hero escuro sobre corpo claro." },
+  { id: "two-grounds", text: "No máximo dois chãos: o hero e o corpo." },
   { id: "cta-crowd", text: "Um CTA primário por viewport." },
   {
     id: "eyebrow-caps",
@@ -120,9 +129,72 @@ export const ANTI_SLOP_RULES: AntiSlopRule[] = [
   },
   {
     id: "motion-budget",
-    text: "Um momento de movimento por site, no hero, até 200ms. Fora isso, movimento só responde a ação da pessoa.",
+    text: "Um momento no hero (entrada) + a animação lenta do motivo e do spotlight. Nada anima fora do hero; nada anima ao scroll; nada anima em hover.",
   },
 ];
+
+/**
+ * Removes an element and everything inside it, found by a marker attribute.
+ *
+ * Depth-counted rather than lazily matched to the first closing tag: the
+ * spotlight and the motif both nest elements of their own tag, and a
+ * `[\s\S]*?</svg>` would cut at the first inner close and leave the tail of
+ * the subtree behind — the half that carries the blur.
+ */
+function stripElement(html: string, tag: string, attribute: string): string {
+  const tags = new RegExp(`</?${tag}\\b[^>]*>`, "gi");
+  const marker = new RegExp(`\\b${attribute}(?=[\\s=>])`, "i");
+  let out = html;
+
+  for (;;) {
+    tags.lastIndex = 0;
+    let start = -1;
+    let end = -1;
+    let depth = 0;
+
+    for (let match = tags.exec(out); match; match = tags.exec(out)) {
+      const closing = match[0].startsWith("</");
+      const selfClosing = match[0].endsWith("/>");
+
+      if (start === -1) {
+        if (closing || !marker.test(match[0])) continue;
+        start = match.index;
+        if (selfClosing) {
+          end = match.index + match[0].length;
+          break;
+        }
+        depth = 1;
+        continue;
+      }
+
+      if (selfClosing) continue;
+      depth += closing ? -1 : 1;
+      if (depth === 0) {
+        end = match.index + match[0].length;
+        break;
+      }
+    }
+
+    if (start === -1) return out;
+    // An unbalanced marked element takes the rest of the document with it;
+    // that is malformed markup, and this linter is not the place to guess.
+    out = out.slice(0, start) + (end === -1 ? "" : out.slice(end));
+  }
+}
+
+/**
+ * The two elements the rules above deliberately do not see.
+ *
+ * The owner's 2026-09-04 reversal (spec §13, errata 6) grants the hero one
+ * spotlight and one generated motif, and grants them the radial gradient, the
+ * blur and the slow loop that make those two things what they are. The grant
+ * is scoped by *markup*, not by prose: everything outside these two elements
+ * is still measured by the same fifteen rules, so a second gradient one
+ * section down still fails.
+ */
+function withoutHeroExceptions(html: string): string {
+  return stripElement(stripElement(html, "div", "data-hero-spotlight"), "svg", "data-category-motif");
+}
 
 export function antiSlopMarkdown(): string {
   return ["### Don't", ...ANTI_SLOP_RULES.map((rule) => `- ${rule.text}`)].join("\n");
@@ -130,7 +202,8 @@ export function antiSlopMarkdown(): string {
 
 /** Reports every mechanically checkable rule a piece of rendered HTML trips. */
 export function findSlop(html: string): { id: string; text: string }[] {
-  return ANTI_SLOP_RULES.filter((rule) => rule.markup?.test(html)).map((rule) => ({
+  const measured = withoutHeroExceptions(html);
+  return ANTI_SLOP_RULES.filter((rule) => rule.markup?.test(measured)).map((rule) => ({
     id: rule.id,
     text: rule.text,
   }));

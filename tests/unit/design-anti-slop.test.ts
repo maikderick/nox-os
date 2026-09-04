@@ -112,6 +112,49 @@ describe("regras anti-slop", () => {
     expect(findSlop(current).length).toBeGreaterThanOrEqual(4);
   });
 
+  it("deixa passar o gradiente do spotlight do hero, uma vez", () => {
+    const hero =
+      '<section class="site-hero"><div data-hero-spotlight="" aria-hidden="true" ' +
+      'style="background:radial-gradient(58% 46% at 74% 24%, var(--hero-spotlight), transparent 68%)">' +
+      '<svg viewBox="0 0 3787 2842"><ellipse fill="var(--hero-spotlight)"></ellipse></svg>' +
+      "</div><h1>Aurora</h1></section>";
+    expect(findSlop(hero)).toEqual([]);
+  });
+
+  it("reprova um segundo gradiente radial fora do hero: a exceção é só do hero", () => {
+    const page =
+      '<section class="site-hero"><div data-hero-spotlight="" ' +
+      'style="background:radial-gradient(58% 46% at 74% 24%, white, transparent)"></div></section>' +
+      '<section id="servicos" style="background: radial-gradient(circle at 20% 20%, white, transparent)">x</section>';
+    expect(findSlop(page).map((r) => r.id)).toContain("gradient-ground");
+  });
+
+  it("deixa passar o blur de dentro do motivo, e só o de dentro dele", () => {
+    const motif =
+      '<svg data-category-motif="" data-motif="luz-difusa" aria-hidden="true">' +
+      '<g style="filter: blur(18px)"><circle></circle></g></svg>';
+    expect(findSlop(motif)).toEqual([]);
+    expect(findSlop(`${motif}<div style="filter: blur(40px)"></div>`).map((r) => r.id)).toContain(
+      "glow",
+    );
+  });
+
+  it("recorta o elemento inteiro, não até o primeiro fechamento aninhado", () => {
+    // O spotlight tem um `<svg>` dentro e o motivo tem `<g>` dentro de `<g>`.
+    // Um recorte preguiçoso até o primeiro `</div>`/`</svg>` deixaria a cauda
+    // do elemento no markup medido — justamente a metade que carrega o blur.
+    const html =
+      '<div data-hero-spotlight=""><div><span>x</span></div>' +
+      '<i style="filter: blur(9px)"></i></div>' +
+      '<svg data-category-motif=""><svg></svg><g style="filter: blur(9px)"></g></svg>';
+    expect(findSlop(html)).toEqual([]);
+  });
+
+  it("não isenta um elemento que só parece marcado", () => {
+    const html = '<div data-hero-spotlight-x="" style="background:radial-gradient(circle,#fff,#000)"></div>';
+    expect(findSlop(html).map((r) => r.id)).toContain("gradient-ground");
+  });
+
   it("rende uma seção Don't para o DESIGN.md", () => {
     const markdown = antiSlopMarkdown();
     expect(markdown).toContain("### Don't");
