@@ -467,6 +467,63 @@ describe("expediente do contato público", () => {
     });
   });
 
+  it("recusa abertura igual ao fechamento", () => {
+    const contact = emptyContactDraft();
+    contact.openingHours[0] = {
+      dayOfWeek: "SEGUNDA",
+      isOpen: true,
+      opens: "09:00",
+      closes: "09:00",
+    };
+
+    expect(validatePublicContact(contact)).toContainEqual({
+      field: "publicContact.openingHours.0",
+      message: "Segunda-feira: o horário de abertura precisa ser anterior ao de fechamento.",
+    });
+  });
+
+  it("recusa um horário sem zero à esquerda", () => {
+    const contact = emptyContactDraft();
+    contact.openingHours[0] = {
+      dayOfWeek: "SEGUNDA",
+      isOpen: true,
+      opens: "9:00",
+      closes: "18:00",
+    };
+
+    expect(validatePublicContact(contact)).toContainEqual({
+      field: "publicContact.openingHours.0",
+      message: "Segunda-feira: Use o formato HH:MM.",
+    });
+  });
+
+  it("recusa um horário fora do intervalo de 24 horas", () => {
+    const contact = emptyContactDraft();
+    contact.openingHours[0] = {
+      dayOfWeek: "SEGUNDA",
+      isOpen: true,
+      opens: "25:00",
+      closes: "18:00",
+    };
+
+    expect(validatePublicContact(contact)).toContainEqual({
+      field: "publicContact.openingHours.0",
+      message: "Segunda-feira: Use o formato HH:MM.",
+    });
+  });
+
+  it("aceita um horário válido no formato HH:MM", () => {
+    const contact = emptyContactDraft();
+    contact.openingHours[0] = {
+      dayOfWeek: "SEGUNDA",
+      isOpen: true,
+      opens: "09:00",
+      closes: "18:00",
+    };
+
+    expect(validatePublicContact(contact)).toEqual([]);
+  });
+
   it("converte apenas os dois dias abertos para uma única confirmação", () => {
     const draft = wizardDraft();
     draft.contact.openingHours = [

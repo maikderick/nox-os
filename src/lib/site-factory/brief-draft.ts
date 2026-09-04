@@ -367,6 +367,13 @@ export type OpeningHoursDraft = {
   closes: string;
 };
 
+// Mirrors `clockTimeSchema`'s regex in brief-schema.ts. Not exported from there,
+// so it is re-declared here to keep the draft validation in lockstep with what
+// the server actually enforces.
+const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const BRIEF_DAY_SET: ReadonlySet<string> = new Set(BRIEF_DAYS);
+
 /** Portuguese day labels, shared by the weekly editor and its validation messages. */
 export const OPENING_HOURS_DAY_LABELS: Record<BriefDayOfWeek, string> = {
   SEGUNDA: "Segunda-feira",
@@ -506,11 +513,28 @@ export function validatePublicContact(contact: ContactDraft): DraftIssue[] {
 
   contact.openingHours.forEach((day, index) => {
     if (!day.isOpen) return;
+    if (!BRIEF_DAY_SET.has(day.dayOfWeek)) {
+      issues.push({
+        field: `publicContact.openingHours.${index}`,
+        message: "Dia da semana inválido.",
+      });
+      return;
+    }
     const label = OPENING_HOURS_DAY_LABELS[day.dayOfWeek];
     if (!day.opens.trim() || !day.closes.trim()) {
       issues.push({
         field: `publicContact.openingHours.${index}`,
         message: `${label}: informe os horários de abertura e fechamento.`,
+      });
+      return;
+    }
+    // Mirrors clockTimeSchema's regex (brief-schema.ts): the draft must reject
+    // the same malformed times the server would, with an inline message instead
+    // of a generic error after a round trip.
+    if (!CLOCK_TIME_PATTERN.test(day.opens) || !CLOCK_TIME_PATTERN.test(day.closes)) {
+      issues.push({
+        field: `publicContact.openingHours.${index}`,
+        message: `${label}: Use o formato HH:MM.`,
       });
       return;
     }

@@ -1786,7 +1786,10 @@ function ContactSection({
                   onChange={(event) => onOpeningHoursChange(index, { isOpen: event.target.checked })}
                   className="size-4 accent-emerald-400"
                 />
-                {OPENING_HOURS_DAY_LABELS[day.dayOfWeek]}
+                <span>
+                  {OPENING_HOURS_DAY_LABELS[day.dayOfWeek]}
+                  <span className="ml-1 text-xs text-nox-muted">aberto</span>
+                </span>
               </label>
               <label
                 htmlFor={`horario-${day.dayOfWeek}-abre`}
