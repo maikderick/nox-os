@@ -103,19 +103,29 @@ const HERO_ENTRANCE_CSS =
  */
 const HERO_CSS =
   ".site-hero{position:relative;isolation:isolate;overflow:hidden;display:flex;" +
-  "align-items:center;padding-block:var(--space-section)}" +
-  ".site-hero-spotlight{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}" +
-  // A hue at the same alpha reads far stronger over white than a neutral does
-  // over black: the reference's 20% white on black is a shaft of light, while
-  // the accent at 18% over an off-white ground is a stain. The colour stays
-  // the one the token names; only the strength answers to the ground.
-  '.site-hero[data-hero-ground="light"] .site-hero-spotlight{opacity:0.45}' +
+  // Not `--space-section`: on an `airy` direction that is 9rem top and bottom,
+  // which alone is a fifth of a phone screen. The hero's own vertical budget
+  // is what keeps the stacked layout inside the fold.
+  "align-items:center;padding-block:clamp(2rem,8vw,3.5rem)}" +
+  // Bled past the section on every side, because the 12s drift translates this
+  // box: at `inset:0` the movement pulled its own edge into view and left an
+  // unlit strip down the left of the hero, which read as a seam between the
+  // header and the opening. The section clips whatever spills.
+  ".site-hero-spotlight{position:absolute;inset:-10%;z-index:0;pointer-events:none}" +
   // Kept off-square and off-canvas, as in the reference: the light has to
   // arrive from somewhere outside the frame, or it reads as a painted blob.
   ".site-hero-beam{position:absolute;top:-42%;left:-14%;width:86%;height:150%}" +
+  // On a light ground the same geometry is not light, it is a stain: a beam
+  // covering half the section reads as dirt in the JPEG, and a hue at 18%
+  // reads far stronger over white than a neutral at 20% does over black. So
+  // the light ground gets a small neutral focus behind the object instead —
+  // `--hero-spotlight` resolves to the ink at 6% there, not to the accent.
+  '.site-hero[data-hero-ground="light"] .site-hero-beam{top:-4%;left:auto;right:2%;' +
+  "width:44%;height:90%}" +
   ".site-hero-inner{position:relative;z-index:1;width:100%;max-width:64rem;margin-inline:auto;" +
-  "padding-inline:1.5rem;display:grid;gap:var(--space-block);align-items:center}" +
-  ".site-hero-title{margin:0;font-family:var(--font-display);font-size:clamp(3rem,8vw,7rem);" +
+  "padding-inline:1.5rem;display:grid;gap:2rem;align-items:center}" +
+  ".site-hero-title{margin:0;font-family:var(--font-display);" +
+  "font-size:clamp(2.6rem,12vw,4rem);" +
   "line-height:0.95;letter-spacing:var(--tracking-display);color:var(--hero-ink)}" +
   ".site-hero-lede{margin:var(--space-block) 0 0;font-family:var(--font-body);" +
   "font-size:var(--text-body);line-height:var(--leading-body);color:var(--hero-ink-muted);" +
@@ -123,25 +133,41 @@ const HERO_CSS =
   ".site-hero-cta{display:inline-block;margin-top:var(--space-block);padding:0.75rem 1.5rem;" +
   "border:1px solid var(--hero-accent);border-radius:var(--radius);font-family:var(--font-body);" +
   "font-size:var(--text-small);line-height:var(--leading-small);color:var(--hero-ink)}" +
+  // The motif is square, so capping the box's width caps its height too. On a
+  // phone that is the whole point: a 320px drawing under three lines of
+  // display type pushed the object past the fold and the bottom of it was
+  // cut off — and a motif sliced by the screen edge is worse than none.
   ".site-hero-art{display:flex;align-items:center;justify-content:center;width:100%;" +
-  "max-width:20rem;margin-inline:auto}" +
+  "max-width:min(15rem,34vh);margin-inline:auto}" +
   // `facade-symmetry` is a device about a symmetric shopfront, and a headline
   // pushed to one side is the opposite of that. It keeps the single centred
   // column it has always had; the motif stands under the copy, on the axis.
-  // A stacked hero is taller than a two-column one by the whole height of the
-  // motif, and a hero that does not fit the fold is not a hero. The symmetric
-  // device pays for its axis with a tighter block and a smaller object.
-  '.site-hero[data-hero-centred=""]{padding-block:var(--space-block)}' +
   '.site-hero[data-hero-centred=""] .site-hero-inner{max-width:46rem;text-align:center;' +
-  "justify-items:center;gap:var(--space-block)}" +
+  "justify-items:center}" +
   '.site-hero[data-hero-centred=""] .site-hero-lede{margin-inline:auto}' +
   "@media (min-width:900px){" +
-  ".site-hero{min-height:88vh}" +
-  ".site-hero-inner{grid-template-columns:1.1fr 0.9fr;gap:var(--space-section)}" +
+  ".site-hero{min-height:88vh;padding-block:var(--space-section)}" +
+  // A fixed gap, not `--space-section`: on the two `airy` directions a 9rem
+  // gutter ate the right column and the object came out at 232px, reading as
+  // an icon rather than as the thing the owner wanted to see. At 4rem every
+  // direction gives the motif the same ~410px.
+  // `minmax(0, …)` on the copy track and a floor on the art track, because a
+  // bare `1.1fr` is `minmax(auto, 1.1fr)`: the longest word of the business
+  // name became the column's minimum, and a name like "Consultório" grew the
+  // left column past its share and squeezed the object down to 261px, where
+  // it reads as an icon. The type now wraps — hyphenated where the language
+  // allows it — and the object keeps its column.
+  ".site-hero-inner{grid-template-columns:minmax(0,1.1fr) minmax(24rem,0.9fr);gap:4rem}" +
+  ".site-hero-title{hyphens:auto;overflow-wrap:break-word}" +
+  ".site-hero-title{font-size:clamp(3rem,8vw,7rem)}" +
   ".site-hero-art{max-width:none;min-height:24rem}" +
+  // The stacked hero pays for its axis: it is taller than a two-column one by
+  // the whole height of the object, so it takes the block step instead of the
+  // section step and still opens inside a laptop's fold.
+  '.site-hero[data-hero-centred=""]{padding-block:var(--space-block)}' +
   '.site-hero[data-hero-centred=""] .site-hero-inner{grid-template-columns:1fr;' +
   "gap:var(--space-block)}" +
-  '.site-hero[data-hero-centred=""] .site-hero-art{max-width:18rem;min-height:0}' +
+  '.site-hero[data-hero-centred=""] .site-hero-art{max-width:24rem;min-height:0}' +
   "}" +
   // The one entrance the reversal grants, and the one slow loop that keeps the
   // light from looking painted on. Both stop dead under reduced motion.
@@ -402,9 +428,12 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
   const upper = direction.type.displayCase === "upper";
   const centred = direction.device === "facade-symmetry";
   const moves = direction.motion.moment !== "none";
-  // Only for the `data-hero-ground` marker: every colour the hero paints with
-  // reaches it as a custom property, so the ground itself is never branched on.
+  // The hero's own palette. Every colour it paints with reaches it as a custom
+  // property, so nothing branches on the ground itself — only the header's
+  // bottom border, which exists to hide a seam that an inverted hero does not
+  // have.
   const hero = resolveHeroPalette(direction);
+  const heroInverted = hero.ground !== direction.ground;
 
   // The two dense families drop the summary to `--text-small` so the structure,
   // not the prose, carries the row. Everything else — `large-body` above all —
@@ -641,11 +670,25 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
       {has("hero") ? <style>{HERO_CSS}</style> : null}
       {moves ? <style>{HERO_ENTRANCE_CSS}</style> : null}
 
+      {/* The header stands on the hero's ground, not the body's.
+          On a direction whose hero inherits, the two are the same colour and
+          nothing changes. On the five inverted ones, painting it `--surface`
+          left a white band pasted over a black hero — three grounds down the
+          page instead of two, and the opposite of a full-bleed opening. The
+          rule below is the whole difference; the body keeps its own ground.
+          The bottom border goes with it: over a black hero there is no seam to
+          draw, and a `--line` rule from a light palette would be a bright
+          scratch across the top of the page. */}
       {has("navbar") ? (
-        <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--line)" }}>
+        <header
+          style={{
+            background: "var(--hero-surface)",
+            borderBottom: heroInverted ? "none" : "1px solid var(--line)",
+          }}
+        >
           <div
             className="mx-auto flex max-w-5xl items-baseline justify-between gap-6 px-6 py-5"
-            style={{ color: "var(--ink)" }}
+            style={{ color: "var(--hero-ink)" }}
           >
             <a
               href="#inicio"
@@ -663,7 +706,7 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
             <nav
               aria-label="Seções"
               className="flex gap-6"
-              style={{ ...SMALL_TEXT, color: "var(--ink-muted)" }}
+              style={{ ...SMALL_TEXT, color: "var(--hero-ink-muted)" }}
             >
               {has("about") ? <a href="#sobre">Sobre</a> : null}
               {has("services") ? <a href="#servicos">Serviços</a> : null}
@@ -677,6 +720,10 @@ export function ProjectSite({ brief, seed }: { brief: SiteBrief; seed: string })
         <section
           id="inicio"
           className="site-hero"
+          // The anchor for two readers: `findSlop`, which only grants the
+          // gradient and the blur to a spotlight or a motif found *inside*
+          // this element, and the fold measurement in `scripts/`.
+          data-hero=""
           data-hero-ground={hero.ground}
           {...(centred ? { "data-hero-centred": "" } : {})}
           style={{ background: "var(--hero-surface)", color: "var(--hero-ink)" }}

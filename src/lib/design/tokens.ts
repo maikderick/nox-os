@@ -125,10 +125,14 @@ export function resolveHeroPalette(direction: ArtDirection): HeroPalette {
       contrastRatio(palette.accent, surface) >= HERO_ACCENT_MIN_CONTRAST
         ? palette.accent
         : ink,
-    // On black the light is white, as in the reference. On a light ground a
-    // white wash is invisible, so the accent carries the light instead — at a
-    // lower alpha, because a hue reads stronger than a neutral at the same one.
-    spotlight: ground === "dark" ? "#FFFFFF33" : `${palette.accent}2E`,
+    // On black the light is white at 20%, as in the reference. On a light
+    // ground the accent was tried there and read as a stain, not as light: a
+    // hue carries far more weight over white than a neutral does over black,
+    // and the eye reads a large tinted area as dirt in the image rather than
+    // as a source. So the light ground gets the direction's own ink at 6% —
+    // a neutral shadow-side, which is what light on a pale surface actually
+    // looks like. The geometry answers too, in the hero stylesheet.
+    spotlight: ground === "dark" ? "#FFFFFF33" : `${palette.ink}0F`,
   };
 }
 

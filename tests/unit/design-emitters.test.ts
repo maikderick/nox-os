@@ -56,11 +56,14 @@ describe("emissor de custom properties", () => {
     expect(vars["--surface"]).toBe(food.palette.surface);
   });
 
-  it("acende o spotlight com o acento quando o hero é claro", () => {
+  it("acende o hero claro com um neutro, não com o acento", () => {
+    // Um matiz a 18% sobre off-white lê como mancha, não como luz. No chão
+    // claro o spotlight é a própria tinta da direção a 6% — o lado de sombra,
+    // que é o que a luz sobre uma superfície pálida realmente parece.
     const light = resolveArtDirection({ sector: "Advocacia", seed: "semente-fixa" });
     expect(light.hero.ground).toBe("inherit");
     expect(light.ground).toBe("light");
-    expect(toCssVariables(light)["--hero-spotlight"]).toBe(`${light.palette.accent}2E`);
+    expect(toCssVariables(light)["--hero-spotlight"]).toBe(`${light.palette.ink}0F`);
   });
 
   it("zera --motion-max quando a direção não tem movimento de entrada", () => {
@@ -114,6 +117,13 @@ describe("emissor de DESIGN.md", () => {
     expect(hero).toContain("data-category-motif");
     expect(hero).toContain(direction.hero.motif);
     expect(hero).toContain("--hero-ink-muted");
+    // O agente precisa do CTA e do papel do quinto token: lendo só o
+    // documento, ele usaria `--accent` e reproduziria o objeto invisível que
+    // `--hero-accent` existe para evitar.
+    expect(hero).toContain("**CTA**");
+    expect(hero).toContain("--hero-accent");
+    expect(hero).toContain("2:1");
+    expect(hero).toContain("**Cabeçalho**");
   });
 
   it("conta ao agente que o gradiente e o glow valem uma vez, no hero", () => {
