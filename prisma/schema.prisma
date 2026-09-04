@@ -1,0 +1,1016 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String           @id @default(cuid())
+  email        String           @unique
+  name         String
+  passwordHash String
+  role         String           @default("operator")
+  active       Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  notes        Note[]
+  audits       AuditLog[]
+  contacts     ContactAttempt[]
+  demoLandings DemoLanding[]
+
+  memberships           OrganizationMembership[]
+  createdProjects       SiteProject[]            @relation("SiteProjectCreatedBy")
+  createdBriefVersions  SiteBriefVersion[]       @relation("SiteBriefVersionCreatedBy")
+  requestedRuns         GenerationRun[]          @relation("GenerationRunRequestedBy")
+  requestedDeployments  Deployment[]             @relation("DeploymentRequestedBy")
+  approvedDeployments   Deployment[]             @relation("DeploymentApprovedBy")
+  uploadedAssets        Asset[]                  @relation("AssetUploadedBy")
+  enabledIntegrations   IntegrationSetting[]     @relation("IntegrationSettingEnabledBy")
+  usageEntries          UsageLedger[]            @relation("UsageLedgerRecordedBy")
+  CreditLedgerEntry     CreditLedgerEntry[]
+  /// Reservas que esta pessoa conciliou. Ver `reconciledById`.
+  creditReconciliations CreditReservation[]      @relation("CreditReservationReconciledBy")
+}
+
+// ---------------------------------------------------------------------------
+// Fábrica de sites — organizações, clientes e projetos
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships     OrganizationMembership[]
+  integrations    IntegrationSetting[]
+  secretRefs      SecretRef[]
+  clients         Client[]
+  siteProjects    SiteProject[]
+  repositories    Repository[]
+  hostingProjects HostingProject[]
+  domains         Domain[]
+  assets          Asset[]
+  usageEntries    UsageLedger[]
+  jobs            Job[]
+  IdempotencyKey  IdempotencyKey[]
+  CreditAccount   CreditAccount[]
+}
+
+model OrganizationMembership {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // OWNER | ADMIN | OPERADOR | LEITOR
+  role           String       @default("LEITOR")
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, role])
+}
+
+/// O cliente aponta para o lead de origem em vez de copiar seus dados:
+/// endereço, telefone, coordenadas e redes sociais continuam vivendo em
+/// Business e são lidos pela relação.
+model Client {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  businessId       String?      @unique
+  business         Business?    @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  name             String
+  slug             String
+  // ATIVO | ARQUIVADO
+  status           String       @default("ATIVO")
+  contactName      String?
+  contactEmail     String?
+  contactPhoneE164 String?
+  notes            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  siteProjects SiteProject[]
+  assets       Asset[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model SiteProject {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientId       String
+  client         Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  sector         String?
+  // RASCUNHO | BRIEFING_PRONTO | GERANDO | PREVIA_PRONTA | EM_REVISAO
+  // | APROVADO | PUBLICANDO | PUBLICADO | FALHOU
+  status         String       @default("RASCUNHO")
+  statusMessage  String?
+  createdById    String?
+  createdBy      User?        @relation("SiteProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  currentBriefVersionId String?           @unique
+  currentBriefVersion   SiteBriefVersion? @relation("SiteProjectCurrentBrief", fields: [currentBriefVersionId], references: [id], onDelete: SetNull)
+
+  approvedRevisionId String?       @unique
+  approvedRevision   SiteRevision? @relation("SiteProjectApprovedRevision", fields: [approvedRevisionId], references: [id], onDelete: SetNull)
+
+  publishedDeploymentId String?     @unique
+  publishedDeployment   Deployment? @relation("SiteProjectPublishedDeployment", fields: [publishedDeploymentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  briefVersions  SiteBriefVersion[] @relation("SiteBriefVersionProject")
+  generationRuns GenerationRun[]
+  revisions      SiteRevision[]     @relation("SiteRevisionProject")
+  deployments    Deployment[]       @relation("DeploymentProject")
+  domains        Domain[]
+  assets         Asset[]
+  usageEntries   UsageLedger[]
+  repository     Repository?
+  hostingProject HostingProject?
+  provisioning   SiteProvisioning?
+  jobs           Job[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status])
+  @@index([clientId])
+}
+
+/// Versão imutável do briefing. Editar cria uma nova versão; nada é sobrescrito.
+model SiteBriefVersion {
+  id            String      @id @default(cuid())
+  siteProjectId String
+  siteProject   SiteProject @relation("SiteBriefVersionProject", fields: [siteProjectId], references: [id], onDelete: Cascade)
+  version       Int
+  contentJson   String
+  /// Impressão digital dos fatos confirmados, para detectar adulteração.
+  factsHash     String
+  createdById   String?
+  createdBy     User?       @relation("SiteBriefVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+
+  currentOfProject SiteProject[]   @relation("SiteProjectCurrentBrief")
+  generationRuns   GenerationRun[]
+
+  @@unique([siteProjectId, version])
+  @@index([siteProjectId])
+}
+
+model GenerationRun {
+  id             String           @id @default(cuid())
+  siteProjectId  String
+  siteProject    SiteProject      @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  briefVersionId String
+  briefVersion   SiteBriefVersion @relation(fields: [briefVersionId], references: [id], onDelete: Restrict)
+  /// Identificador do CodeGenerationProvider (ex.: "manual"). Nunca guarda credenciais.
+  provider       String
+  providerRunId  String?
+  // PENDENTE | EXECUTANDO | CONCLUIDO | FALHOU | CANCELADO
+  status         String           @default("PENDENTE")
+  requestJson    String
+  resultJson     String?
+  errorMessage   String?
+  requestedById  String?
+  requestedBy    User?            @relation("GenerationRunRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  /// Branch e PR que a geração produziu. Nulos até o agente concluir.
+  branch         String?
+  pullRequestUrl String?
+
+  /// Carimbo da tentativa de início. Não decide nada — quem decide é a
+  /// disposição, porque "houve tentativa" não separa as três coisas que
+  /// importam: não chamou, chamou e não pegou, chamou e não soube.
+  startAttemptedAt DateTime?
+
+  /// NAO_TENTADO | EM_TENTATIVA | SEM_EFEITO_COMPROVADO | INICIADO | AMBIGUO.
+  /// Domínio fechado, com CHECK no banco. Nenhum texto de provedor entra aqui.
+  startDisposition String @default("NAO_TENTADO")
+
+  /// A chave que mandamos ao provedor, e a que `findRunByKey` recebe de volta.
+  providerIdempotencyKey String?
+
+  /// Um run produz **uma** revisão, e quem sustenta isso é o índice único em
+  /// `SiteRevision.generationRunId`. A FK continua de um lado só.
+  revision    SiteRevision?      @relation("SiteRevisionRun")
+  jobs        Job[]
+  reservation CreditReservation?
+
+  @@index([siteProjectId, status])
+  @@index([provider, providerRunId])
+}
+
+/// Resultado imutável de uma geração. Toda publicação aponta para uma revisão,
+/// e a revisão carrega o commit que a originou.
+model SiteRevision {
+  id              String         @id @default(cuid())
+  siteProjectId   String
+  siteProject     SiteProject    @relation("SiteRevisionProject", fields: [siteProjectId], references: [id], onDelete: Cascade)
+  generationRunId String?        @unique
+  generationRun   GenerationRun? @relation("SiteRevisionRun", fields: [generationRunId], references: [id], onDelete: SetNull)
+  version         Int
+  commitSha       String?
+  repositoryUrl   String?
+  summary         String?
+  manifestJson    String
+  createdAt       DateTime       @default(now())
+
+  approvedOfProject SiteProject[]     @relation("SiteProjectApprovedRevision")
+  deployments       Deployment[]      @relation("DeploymentRevision")
+  checks            GenerationCheck[]
+
+  @@unique([siteProjectId, version])
+  @@index([siteProjectId])
+  @@index([commitSha])
+}
+
+/// O que o provedor respondeu sobre um check, gravado para a barreira ler.
+///
+/// Sem esta tabela a barreira leria um fato que não existe em lugar nenhum: um
+/// observador teria de contar ao outro o que viu, na memória de um processo que
+/// morre entre um ciclo do consumidor e o seguinte.
+model GenerationCheck {
+  id             String       @id @default(cuid())
+  siteRevisionId String
+  siteRevision   SiteRevision @relation(fields: [siteRevisionId], references: [id], onDelete: Cascade)
+
+  /// Redundante com a revisão de propósito: a barreira confere os dois, e é
+  /// essa redundância que faz um fato de outro commit ser recusado em vez de
+  /// fechar a geração errada.
+  commitSha String
+
+  /// `verify`, de REQUIRED_CHECK.
+  name String
+
+  // PENDENTE | EM_EXECUCAO | SUCESSO | FALHA | AUSENTE
+  conclusion String
+
+  externalId String?
+  observedAt DateTime @default(now())
+
+  @@unique([siteRevisionId, name])
+  @@index([commitSha])
+}
+
+model Deployment {
+  id                   String       @id @default(cuid())
+  siteProjectId        String
+  siteProject          SiteProject  @relation("DeploymentProject", fields: [siteProjectId], references: [id], onDelete: Cascade)
+  siteRevisionId       String
+  siteRevision         SiteRevision @relation("DeploymentRevision", fields: [siteRevisionId], references: [id], onDelete: Restrict)
+  // PREVIA | PRODUCAO
+  environment          String       @default("PREVIA")
+  // PENDENTE | EM_ANDAMENTO | PRONTO | FALHOU | CANCELADO
+  status               String       @default("PENDENTE")
+  provider             String       @default("vercel")
+  providerDeploymentId String?
+  /// O commit que a plataforma diz ter construído.
+  ///
+  /// Redundante com a revisão de propósito, como em GenerationCheck: a barreira
+  /// confere os dois. Sem ele, "a prévia ficou pronta" seria um fato sobre a
+  /// revisão e não sobre o código — e uma prévia de um commit anterior fecharia
+  /// a geração sobre trabalho que ninguém publicou.
+  commitSha            String?
+  url                  String?
+  errorMessage         String?
+  requestedById        String?
+  requestedBy          User?        @relation("DeploymentRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  approvedById         String?
+  approvedBy           User?        @relation("DeploymentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt           DateTime?
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  publishedOfProject SiteProject[] @relation("SiteProjectPublishedDeployment")
+
+  @@index([commitSha])
+  @@index([siteProjectId, environment])
+  @@index([status])
+}
+
+model Domain {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId     String?
+  siteProject       SiteProject? @relation(fields: [siteProjectId], references: [id], onDelete: SetNull)
+  hostname          String       @unique
+  // PREVIA | PRODUCAO
+  environment       String       @default("PRODUCAO")
+  // PENDENTE | VERIFICANDO | ATIVO | FALHOU
+  status            String       @default("PENDENTE")
+  verificationToken String?
+  verifiedAt        DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([siteProjectId])
+  @@index([status])
+}
+
+model Asset {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientId       String?
+  client         Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  siteProjectId  String?
+  siteProject    SiteProject? @relation(fields: [siteProjectId], references: [id], onDelete: SetNull)
+  // IMAGEM | LOGO | DOCUMENTO | VIDEO
+  kind           String
+  url            String
+  storageKey     String?
+  mimeType       String?
+  byteSize       Int?
+  checksum       String?
+  /// FORNECIDA | ILUSTRATIVA — a origem decide como a peça pode ser exibida.
+  license        String       @default("FORNECIDA")
+  credit         String?
+  creditUrl      String?
+  uploadedById   String?
+  uploadedBy     User?        @relation("AssetUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([siteProjectId])
+  @@index([clientId])
+}
+
+/// Livro-razão de consumo. Só acrescenta linhas; nada é editado ou removido.
+model UsageLedger {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId  String?
+  siteProject    SiteProject? @relation(fields: [siteProjectId], references: [id], onDelete: SetNull)
+  // GERACAO | DEPLOY | ARMAZENAMENTO | IA_TOKENS | DOMINIO
+  kind           String
+  quantity       Int          @default(1)
+  unit           String       @default("execucao")
+  reference      String?
+  metaJson       String?
+  occurredAt     DateTime     @default(now())
+  recordedById   String?
+  recordedBy     User?        @relation("UsageLedgerRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, occurredAt])
+  @@index([siteProjectId])
+  @@index([kind])
+}
+
+// ---------------------------------------------------------------------------
+// Prospecção B2B (domínio existente)
+// ---------------------------------------------------------------------------
+
+model Business {
+  id               String   @id @default(cuid())
+  externalId       String?
+  source           String
+  name             String
+  nameNormalized   String
+  category         String
+  address          String?
+  neighborhood     String?
+  city             String?
+  state            String?
+  postalCode       String?
+  country          String   @default("BR")
+  latitude         Float?
+  longitude        Float?
+  distanceKm       Float?
+  phoneRaw         String?
+  phoneE164        String?
+  website          String?
+  websiteStatus    String   @default("unknown")
+  socialLinks      String   @default("[]")
+  sourceUrl        String?
+  collectedAt      DateTime @default(now())
+  lastVerifiedAt   DateTime @default(now())
+  opportunityScore Int      @default(0)
+  confidenceScore  Int      @default(0)
+  scoreReasons     String   @default("[]")
+  funnelStage      String   @default("novo")
+  doNotContact     Boolean  @default(false)
+  isDemo           Boolean  @default(false)
+  notesText        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  sources      BusinessSource[]
+  scores       ScoreResult[]
+  consents     ConsentRecord[]
+  contacts     ContactAttempt[]
+  notes        Note[]
+  suppressions SuppressionEntry[]
+  demoLanding  DemoLanding?
+  client       Client?
+
+  @@unique([source, externalId])
+  @@index([city])
+  @@index([category])
+  @@index([opportunityScore])
+  @@index([funnelStage])
+  @@index([phoneE164])
+  @@index([nameNormalized])
+  @@index([distanceKm])
+  @@index([doNotContact])
+  @@index([isDemo])
+  @@index([lastVerifiedAt])
+}
+
+model DemoLanding {
+  id          String    @id @default(cuid())
+  businessId  String    @unique
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  slug        String    @unique
+  status      String    @default("DRAFT")
+  contentJson String
+  expiresAt   DateTime
+  approvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([expiresAt])
+  @@index([createdById])
+}
+
+model BusinessSource {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  source      String
+  externalId  String?
+  fieldName   String
+  fieldValue  String
+  collectedAt DateTime @default(now())
+  rawPayload  String?
+
+  @@index([businessId])
+  @@index([source, externalId])
+}
+
+model ImportJob {
+  id              String    @id @default(cuid())
+  provider        String
+  status          String    @default("pending")
+  originLat       Float?
+  originLng       Float?
+  originLabel     String?
+  radiiKm         String    @default("[5,10,20,40,80]")
+  currentRadiusKm Float?
+  categories      String    @default("[]")
+  progressJson    String    @default("{}")
+  foundCount      Int       @default(0)
+  acceptedCount   Int       @default(0)
+  duplicateCount  Int       @default(0)
+  rejectedCount   Int       @default(0)
+  errorMessage    String?
+  pausedAt        DateTime?
+  cancelledAt     DateTime?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model ScoreResult {
+  id               String   @id @default(cuid())
+  businessId       String
+  business         Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  opportunityScore Int
+  confidenceScore  Int
+  reasonsJson      String
+  breakdownJson    String
+  createdAt        DateTime @default(now())
+
+  @@index([businessId])
+}
+
+model ConsentRecord {
+  id          String    @id @default(cuid())
+  businessId  String
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  optInStatus String    @default("unknown")
+  source      String?
+  purpose     String?
+  evidence    String?
+  optedInAt   DateTime?
+  refusedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([businessId])
+  @@index([optInStatus])
+}
+
+model ContactAttempt {
+  id             String   @id @default(cuid())
+  businessId     String
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id])
+  channel        String   @default("whatsapp")
+  messagePreview String?
+  confirmedSent  Boolean  @default(false)
+  outcome        String?
+  createdAt      DateTime @default(now())
+
+  @@index([businessId])
+}
+
+model Note {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([businessId])
+}
+
+model SuppressionEntry {
+  id         String    @id @default(cuid())
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  phoneE164  String?
+  reason     String
+  evidence   String?
+  createdAt  DateTime  @default(now())
+
+  @@index([phoneE164])
+  @@index([businessId])
+}
+
+model AppSettings {
+  id                String   @id @default("default")
+  brandName         String   @default("NOX OS")
+  sellerName        String   @default("[SEU NOME]")
+  defaultCity       String   @default("[SUA CIDADE/UF]")
+  leadGoal          Int      @default(1000)
+  initialRadiusKm   Float    @default(5)
+  maxRadiusKm       Float    @default(80)
+  privacyEmail      String   @default("[SEU E-MAIL]")
+  portfolioUrl      String   @default("[URL DO PORTFÓLIO]")
+  whatsappPhone     String   @default("[SEU WHATSAPP]")
+  whatsappTemplate  String   @default("Olá, equipe da {{businessName}}! Sou {{sellerName}}, da NOX OS. Conforme sua autorização para contato, gostaria de apresentar uma ideia de site personalizado para fortalecer a presença digital da empresa e gerar mais contatos. Posso te enviar uma proposta inicial sem compromisso? Se preferir não receber novas mensagens, é só me avisar.")
+  originLat         Float?
+  originLng         Float?
+  originLabel       String?
+  franchisePenalty  Int      @default(15)
+  modernSitePenalty Int      @default(20)
+  staleDataPenalty  Int      @default(10)
+  enabledCategories String   @default("[]")
+  retentionDays     Int      @default(365)
+  updatedAt         DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String?
+  entityId  String?
+  metaJson  String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+}
+
+// ---------------------------------------------------------------------------
+// Integrações externas — nascem desligadas
+// ---------------------------------------------------------------------------
+
+/// Modo de uma integração por organização. O padrão é DESLIGADO, e a variável
+/// NOX_INTEGRATIONS=disabled força DESLIGADO para toda a instalação.
+model IntegrationSetting {
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // github | vercel | cursor
+  provider       String
+  // DESLIGADO | FALSO | SANDBOX | LIVE
+  mode           String       @default("DESLIGADO")
+  enabledById    String?
+  enabledBy      User?        @relation("IntegrationSettingEnabledBy", fields: [enabledById], references: [id], onDelete: SetNull)
+  enabledAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@id([organizationId, provider])
+  @@index([provider, mode])
+}
+
+/// Referência a um segredo. Guarda onde o valor está, nunca o valor.
+model SecretRef {
+  id             String        @id @default(cuid())
+  /// PLATAFORMA: credencial do NOX OS, uma para toda a instalação.
+  /// ORGANIZACAO: credencial de um cliente, escopada a uma organização.
+  scope          String        @default("PLATAFORMA")
+  /// Nulo quando scope = PLATAFORMA.
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// github.provisioner.appId | github.reconciler.privateKey | vercel.token | ...
+  purpose        String
+  /// Nome da variável de ambiente que carrega o valor.
+  envVarName     String
+  /// SHA-256 do valor, só para detectar rotação. Não reverte ao segredo.
+  fingerprint    String?
+  lastRotatedAt  DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  /// A unicidade real vive em índices parciais criados por SQL, junto de um
+  /// CHECK que amarra escopo e dono — ver
+  /// 20260825233000_secretref_escopo_coerente. O Prisma não expressa nenhum dos
+  /// dois, e o índice composto que ele geraria não valeria para PLATAFORMA,
+  /// porque NULL não é igual a NULL.
+  @@index([purpose])
+}
+
+// ---------------------------------------------------------------------------
+// Provisionamento — repositório, hospedagem e o andamento retomável
+// ---------------------------------------------------------------------------
+
+/// O repositório privado de um site. Um por SiteProject.
+model Repository {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId     String       @unique
+  siteProject       SiteProject  @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  provider          String       @default("github")
+  owner             String
+  name              String
+  /// Nulo até a criação remota acontecer; sintético no modo FALSO.
+  externalId        String?
+  url               String?
+  defaultBranch     String       @default("main")
+  installationId    String?
+  /// Marcado imediatamente antes de chamar a criação remota. Distingue "nunca
+  /// tentei" de "tentei e não sei se completou" — sem isso, uma repetição
+  /// adotaria um repositório homônimo que nunca foi nosso.
+  creationStartedAt DateTime?
+  /// Só está concluído com externalId e protectedAt preenchidos.
+  protectedAt       DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([provider, owner, name])
+  @@index([organizationId])
+}
+
+/// O projeto de hospedagem de um site. Um por SiteProject.
+model HostingProject {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId     String       @unique
+  siteProject       SiteProject  @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  provider          String       @default("vercel")
+  externalId        String?
+  name              String
+  url               String?
+  /// Mesma ideia do Repository: marca a tentativa antes da chamada remota.
+  creationStartedAt DateTime?
+  /// Só está concluído com linkedAt preenchido.
+  linkedAt          DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([organizationId])
+}
+
+/// O andamento do provisionamento, para que cada etapa seja retomável.
+model SiteProvisioning {
+  id                String      @id @default(cuid())
+  siteProjectId     String      @unique
+  siteProject       SiteProject @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  // PENDENTE | REPOSITORIO_PRONTO | CONTEUDO_PRONTO | HOSPEDAGEM_PRONTA
+  // | PREVIA_RECONCILIADA | FALHOU
+  status            String      @default("PENDENTE")
+  lastStep          String?
+  /// Redigido por allowlist antes de gravar: erro de provedor ecoa cabeçalho.
+  lastError         String?
+  /// SHA-256 do snapshot commitado, para saber se precisa commitar de novo.
+  contentSha256     String?
+  commitSha         String?
+  previewUrl        String?
+  previewExternalId String?
+  previewCheckedAt  DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Créditos — dinheiro comprometido antes de qualquer operação paga
+// ---------------------------------------------------------------------------
+
+/// A conta de uma organização.
+///
+/// Três números, e a diferença entre eles é o desenho todo. `balanceCents` é
+/// tudo que existe; `reservedCents` é o que está comprometido em reservas vivas
+/// e **não** foi descontado; `consumedThisMonthCents` é o que já saiu no
+/// período. Disponível é `balance − reserved`, exposição ao teto é
+/// `consumed + reserved`.
+///
+/// Reservar não desconta. Se descontasse, uma geração que falha antes de
+/// começar devolveria dinheiro que nunca deveria ter saído, e o extrato ficaria
+/// cheio de pares que não descrevem movimento nenhum.
+model CreditAccount {
+  organizationId String       @id
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// Tudo que a organização tem. Reserva não desconta daqui.
+  balanceCents           Int @default(0)
+  /// Comprometido em reservas vivas. Disponível = balance − reserved.
+  reservedCents          Int @default(0)
+  /// Gasto no período. Exposição ao teto = consumed + reserved.
+  consumedThisMonthCents Int @default(0)
+  monthlyCapCents        Int @default(0)
+
+  /// Início do período vigente. O rollover avança isto, preguiçosamente.
+  periodStartedAt DateTime @default(now())
+
+  /// Preço por geração. Nulo significa não configurado, e recusa a geração.
+  generationPriceCents Int?
+
+  blockedAt         DateTime?
+  blockedReasonCode String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reservations CreditReservation[]
+  ledger       CreditLedgerEntry[]
+
+  /// Os invariantes de verdade — nenhum negativo, e reserva nunca acima do
+  /// saldo — vivem em CHECKs criados por SQL, que o Prisma não expressa. Ver
+  /// 20260826200000_creditos.
+}
+
+/// Dinheiro comprometido por uma operação, antes de ela acontecer.
+model CreditReservation {
+  id             String        @id @default(cuid())
+  organizationId String
+  account        CreditAccount @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
+
+  /// Uma reserva por operação — `generation:<generationRunId>`.
+  operationKey String
+  jobId        String?
+  job          Job?    @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  /// **A única** ligação entre run e reserva. `GenerationRun` não aponta de volta.
+  generationRunId String?        @unique
+  generationRun   GenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: SetNull)
+
+  amountCents Int
+  // RESERVADA | CONSUMIDA | LIBERADA | CONCILIACAO
+  status      String @default("RESERVADA")
+  /// Como o valor foi estimado. Conjunto fechado, nunca texto de provedor.
+  estimatedBy String
+
+  reconciledCents Int?
+  /// Quem conciliou. `SetNull` de propósito: apagar uma pessoa não pode
+  /// apagar a reserva que ela examinou — perder o nome é ruim, perder o
+  /// registro do dinheiro é pior. A linha de auditoria guarda o resto.
+  reconciledById  String?
+  reconciledBy    User?     @relation("CreditReservationReconciledBy", fields: [reconciledById], references: [id], onDelete: SetNull)
+  reconciledAt    DateTime?
+
+  /// Limiar renovável. Vencer não libera nada por si só.
+  expiresAt DateTime
+  renewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ledger CreditLedgerEntry[]
+
+  @@unique([organizationId, operationKey])
+  @@index([organizationId, status])
+  @@index([status, expiresAt])
+}
+
+/// Toda movimentação de dinheiro, com os três saldos posteriores.
+///
+/// Gravar os "depois" em cada linha é o que torna o saldo reconstruível sem
+/// recalcular a série inteira, e o que faz uma divergência apontar a linha
+/// exata em que ela apareceu.
+model CreditLedgerEntry {
+  id String @id @default(cuid())
+
+  /// A ordem em que as linhas realmente aconteceram.
+  ///
+  /// `createdAt` não serve, e por um motivo pior do que empate: o Prisma
+  /// preenche `@default(now())` **no cliente** — o valor viaja como parâmetro
+  /// do INSERT, e o `DEFAULT CURRENT_TIMESTAMP` da coluna nunca é usado.
+  /// Conferido lendo o SQL emitido. Então a ordem por `createdAt` seria a
+  /// ordem do relógio deste processo: milissegundos, que empatam entre duas
+  /// escritas rápidas, e que andam para trás num passo de NTP. Nenhuma ordem
+  /// sobrevive a um relógio que volta.
+  ///
+  /// Esta sequência é atribuída pelo banco, na escrita. Não empata, não volta,
+  /// e é o mesmo relógio lógico para todos os processos.
+  seq BigInt @unique @default(autoincrement())
+
+  organizationId String
+  account        CreditAccount      @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
+  reservationId  String?
+  reservation    CreditReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  // RESERVA | CONSUMO | LIBERACAO | AJUSTE | BLOQUEIO | ROLLOVER | APORTE
+  movement    String
+  /// Assinado. Reserva não move saldo e grava zero, com os "depois" contando a
+  /// história.
+  amountCents Int
+
+  balanceAfterCents  Int
+  reservedAfterCents Int
+  consumedAfterCents Int
+
+  /// Razão de conjunto fechado, nunca texto de provedor.
+  reasonCode String
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([reservationId])
+}
+
+// ---------------------------------------------------------------------------
+// Idempotência de requisição — a chave que impede o segundo trabalho
+// ---------------------------------------------------------------------------
+
+/// Uma intenção declarada pelo cliente, e o que respondemos a ela.
+///
+/// Existe para responder "isto já foi pedido?" **antes** de qualquer trabalho
+/// começar. Uma chave derivada de algo que a própria transação cria chegaria
+/// tarde: duas transações concorrentes derivariam chaves diferentes e as duas
+/// criariam trabalho. Por isso a chave vem de fora, e a linha é reservada
+/// primeiro.
+model IdempotencyKey {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// generation.request | ...
+  scope       String
+  /// Fornecida pelo cliente. Única dentro do escopo, dentro da organização.
+  key         String
+  /// Impressão do corpo. Mesma chave com corpo diferente é bug de quem chamou.
+  requestHash String
+
+  // EM_ANDAMENTO | CONCLUIDA | CONCILIACAO
+  //
+  /// `CONCILIACAO` é estado persistido, não uma exceção em voo: uma chave
+  /// externa cujo trabalho caiu sem deixar resposta não pode ser repetida por
+  /// nenhuma chamada comum, e isso precisa sobreviver ao processo que a pôs
+  /// nesse estado. O domínio é fechado por CHECK no banco — ver
+  /// 20260826180000_idempotencia_posse.
+  status String @default("EM_ANDAMENTO")
+
+  /// Quem detém a execução desta chave, agora.
+  ///
+  /// Renovado a cada tomada de posse. Concluir, liberar e conciliar conferem
+  /// este token: um executor antigo que termine depois de o seu lugar ter
+  /// sido tomado não sobrescreve o resultado de quem o tomou.
+  ownerToken String?
+
+  /// LOCAL — trabalho puro; vencer autoriza assumir.
+  /// EXTERNO_RECONCILIAVEL — o provedor responde o que existe para a chave.
+  /// EXTERNO_AMBIGUO — vencer **não** autoriza repetir; vai a conciliação.
+  ///
+  /// O padrão é o mais restritivo de propósito: quem não declarou o efeito
+  /// externo do que está fazendo não deve ter o benefício da dúvida.
+  sideEffect String @default("EXTERNO_AMBIGUO")
+
+  /// A resposta gravada, já passada pela allowlist. Nunca o objeto cru.
+  responseJson String?
+
+  /// Até quando a reserva desta chave vale. Ver `idempotency.ts`.
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, scope, key])
+  @@index([status, expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Fila durável — uma etapa por job, e nada roda fora dela
+// ---------------------------------------------------------------------------
+
+/// Uma etapa de trabalho durável.
+///
+/// Serverless não sustenta laço vivo, então não existe worker em processo: o
+/// consumidor é uma rota com orçamento que adquire um job por vez, sob demanda.
+/// O que torna isso seguro é a chave por etapa — cada etapa de um trabalho
+/// lógico tem a sua, e por isso a cadeia inteira cabe na mesma fila sem que uma
+/// etapa impeça a seguinte de ser enfileirada.
+model Job {
+  id String @id @default(cuid())
+
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteProjectId   String?
+  siteProject     SiteProject?   @relation(fields: [siteProjectId], references: [id], onDelete: Cascade)
+  /// O job aponta para a intenção que já existe. O handler nunca cria outra.
+  generationRunId String?
+  generationRun   GenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: Cascade)
+
+  // generation.start | generation.poll | checks.poll | preview.poll | credit.threshold
+  kind   String
+  // PENDENTE | EM_EXECUCAO | PAUSADO | CONCILIACAO | CONCLUIDO | FALHOU | CARTA_MORTA
+  status String @default("PENDENTE")
+
+  /// Identifica **uma etapa** de um trabalho lógico, nunca o trabalho inteiro.
+  idempotencyKey String
+  /// Só para trabalho que muta. Nulo para observadores, que não se excluem.
+  concurrencyKey String?
+
+  /// Só identificadores que esta aplicação produziu — ver `payload.ts`.
+  payloadJson String
+
+  /// Tentativas de falha real. Espera não conta aqui.
+  attempts           Int @default(0)
+  maxAttempts        Int @default(5)
+  /// Quantas vezes um consumidor morreu segurando este job.
+  ///
+  /// Separado de `attempts` de propósito: consumidor morto não é job falhado.
+  /// Mas um job que derruba TODO consumidor que o executa também não é a
+  /// plataforma caindo, e nada além deste contador distingue os dois.
+  leaseRecoveryCount Int @default(0)
+
+  /// Voltas de espera. Não consomem tentativa nem aplicam backoff de falha.
+  pollCount      Int       @default(0)
+  pollDeadlineAt DateTime?
+
+  runAfter       DateTime  @default(now())
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  pausedReason   String?
+
+  /// Redigido por allowlist antes de gravar, como em `SiteProvisioning`.
+  lastError     String?
+  lastErrorCode String?
+  correlationId String?
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  finishedAt        DateTime?
+  CreditReservation CreditReservation[]
+
+  /// A outra metade da unicidade não cabe aqui: `Job_concurrency_ativo_uniq` é
+  /// um índice PARCIAL, que o Prisma 5 não expressa, e vive só na migration
+  /// 20260826120000_fila_durable. Um índice total sobre `concurrencyKey`
+  /// impediria o segundo trabalho do mesmo projeto para sempre, não apenas
+  /// enquanto o primeiro estivesse vivo.
+  ///
+  /// Esta metade, sim, é um índice único comum, e por isso está declarada. O
+  /// `map` fixa o nome que a migration usa, para que os dois sejam o mesmo
+  /// objeto. Sem esta linha, o próximo `migrate diff` escreveria um
+  /// `DROP INDEX` dela.
+  ///
+  /// O cabeçalho daquela migration diz que os dois são escritos à mão. Está
+  /// errado, e continua lá: arquivo aplicado não se edita, nem no comentário —
+  /// o checksum é do arquivo inteiro. A correção vive em `docs/errata-migrations.md`.
+  @@unique([organizationId, idempotencyKey], map: "Job_idempotency_uniq")
+  @@index([status, runAfter])
+  @@index([organizationId, kind, status])
+  @@index([leaseExpiresAt])
+}

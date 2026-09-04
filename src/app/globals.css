@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+:root {
+  --nox-bg: #050508;
+  --nox-surface: #0f1117;
+  --nox-panel: #151822;
+  --nox-border: #2a2f3d;
+  --nox-text: #f4f6fb;
+  --nox-muted: #9aa3b5;
+  --nox-purple: #8b5cf6;
+  --nox-cyan: #22d3ee;
+  --nox-blue: #3b82f6;
+  --background: var(--nox-bg);
+  --foreground: var(--nox-text);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-nox-bg: var(--nox-bg);
+  --color-nox-surface: var(--nox-surface);
+  --color-nox-panel: var(--nox-panel);
+  --color-nox-border: var(--nox-border);
+  --color-nox-muted: var(--nox-muted);
+  --color-nox-purple: var(--nox-purple);
+  --color-nox-cyan: var(--nox-cyan);
+  --color-nox-blue: var(--nox-blue);
+  --font-sans: var(--font-display);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--nox-bg);
+  color: var(--nox-text);
+  font-family: var(--font-display), "Segoe UI", sans-serif;
+  min-height: 100vh;
+}
+
+button,
+a,
+input,
+select,
+textarea,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a,
+button,
+summary,
+select {
+  cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--nox-cyan);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--nox-purple) 40%, transparent);
+}
+
+.nox-grid {
+  background-color: var(--nox-bg);
+}
+
+.nox-glow {
+  background: var(--nox-surface);
+}
+
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #0b0d12;
+  border-radius: 0.75rem;
+}
+
+/* Public demonstration pages: a heavier display voice and a wider body face
+   than the admin panel, matching the studio's own site. */
+.demo-page {
+  font-family: var(--font-demo-body), "Segoe UI", sans-serif;
+}
+
+.demo-page h1,
+.demo-page h2,
+.demo-page h3,
+.demo-page .demo-display {
+  font-family: var(--font-demo-display), var(--font-demo-body), "Segoe UI", sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.022em;
+}
+
+.demo-page h1 {
+  letter-spacing: -0.03em;
+  line-height: 0.98;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

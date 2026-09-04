@@ -1,0 +1,231 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# Agendador externo da fila durável do NOX OS.
+#
+# Versionado e NÃO APLICADO por este repositório. Nenhum recurso é criado por
+# nenhum comando aqui: quem aplica é uma pessoa, deliberadamente, com a conta
+# certa em mãos. O arquivo existe para que a infraestrutura pare de morar só na
+# memória de quem a criou pelo console.
+#
+# Os números vêm de `limits.json`, que é a fonte única — o handler lê o mesmo
+# arquivo, e há teste dos dois lados conferindo que continuam de acordo. Mantê-los
+# aqui a mão significaria dois lugares para mudar e um para esquecer.
+
+Description: >-
+  EventBridge Scheduler + Lambda que acorda o consumidor da fila do NOX OS a
+  cada minuto. Ver infra/aws-cron/README.md.
+
+Parameters:
+  Ambiente:
+    Type: String
+    Default: production
+    AllowedValues: [production]
+
+  ConsumidorUrl:
+    Type: String
+    Default: https://nox-os-pi.vercel.app/api/jobs/run
+    Description: >-
+      Precisa bater exatamente com allowedScheme/allowedHost/allowedPath de
+      limits.json. O handler recusa qualquer outro destino ANTES de resolver o
+      segredo, então um valor errado aqui falha fechado — nunca vaza o Bearer.
+
+  # --- de limits.json. O teste `jobs-cron-limits` confere que continuam iguais.
+  TempoLimiteLambda:
+    Type: Number
+    Default: 330
+  MemoriaMb:
+    Type: Number
+    Default: 256
+  ConcorrenciaReservada:
+    Type: Number
+    Default: 6
+
+Resources:
+  # O segredo NÃO é criado aqui. Um `SecureString` em template vira texto claro
+  # no histórico do CloudFormation; ele é criado fora, uma vez, e este stack só
+  # recebe o nome dele.
+  ParametroSegredo:
+    Type: AWS::SSM::Parameter
+    Condition: NuncaCriar
+    Properties:
+      Name: !Sub "/nox-os/${Ambiente}/cron-secret"
+      Type: String
+      Value: "nao-usar"
+
+  PapelDaFuncao:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "NoxOs${Ambiente}CronLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LerApenasOSegredoDoCron
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # O ARN exato, não um prefixo. `/nox-os/production/*` deixaria esta
+              # função ler qualquer segredo futuro da instalação, e ela só precisa
+              # de um.
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/nox-os/${Ambiente}/cron-secret"
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+        - PolicyName: EscreverLogsProprios
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt GrupoDeLogs.Arn
+
+  GrupoDeLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/nox-os-${Ambiente}-cron"
+      RetentionInDays: 30
+
+  Funcao:
+    Type: AWS::Lambda::Function
+    DependsOn: GrupoDeLogs
+    Properties:
+      FunctionName: !Sub "nox-os-${Ambiente}-cron"
+      Runtime: python3.12
+      Handler: handler.handler
+      Role: !GetAtt PapelDaFuncao.Arn
+      # Acima do timeout do cliente HTTP (310s), com folga para ler o SSM e
+      # responder. Ver a ordem inteira em limits.json.
+      Timeout: !Ref TempoLimiteLambda
+      MemorySize: !Ref MemoriaMb
+      # Um disparo por minuto e invocações que podem durar o timeout inteiro:
+      # a sobreposição máxima é ceil(330/60) = 6. Reservar menos faria o
+      # Scheduler ser barrado justamente quando a fila está cheia.
+      ReservedConcurrentExecutions: !Ref ConcorrenciaReservada
+      Environment:
+        Variables:
+          CRON_URL: !Ref ConsumidorUrl
+          CRON_SECRET_PARAMETER: !Sub "/nox-os/${Ambiente}/cron-secret"
+      Code:
+        ZipFile: |
+          # Placeholder. O código real é infra/aws-cron/handler.py + limits.json,
+          # empacotados no deploy. Um template que carrega o handler inline
+          # duplicaria a fonte, e as duas cópias divergiriam na primeira correção.
+          def handler(event, context):
+              raise RuntimeError("Pacote nao publicado.")
+
+  FilaDeFalhas:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "nox-os-${Ambiente}-cron-dlq"
+      MessageRetentionPeriod: 1209600 # 14 dias
+
+  PapelDoAgendador:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "NoxOs${Ambiente}CronSchedulerRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref "AWS::AccountId" }
+      Policies:
+        - PolicyName: InvocarApenasEstaFuncao
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt Funcao.Arn
+        - PolicyName: EscreverNaDlq
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt FilaDeFalhas.Arn
+
+  Agenda:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub "nox-os-${Ambiente}-jobs-every-minute"
+      ScheduleExpression: rate(1 minute)
+      FlexibleTimeWindow: { Mode: "OFF" }
+      State: ENABLED
+      Target:
+        Arn: !GetAtt Funcao.Arn
+        RoleArn: !GetAtt PapelDoAgendador.Arn
+        # ZERO retentativas, e é uma decisão, não um esquecimento.
+        #
+        # A fila já tem retentativa com backoff full-jitter, lease e carta
+        # morta. Uma retentativa aqui só acrescentaria um consumidor a mais —
+        # seguro, porque os leases impedem trabalho duplicado, e inútil, porque
+        # o próximo disparo vem em sessenta segundos de qualquer jeito. O que
+        # ela realmente faria é esconder uma queda real atrás de ruído de retry,
+        # e o alarme abaixo depende de a falha aparecer.
+        RetryPolicy:
+          MaximumRetryAttempts: 0
+          MaximumEventAgeInSeconds: 60
+        DeadLetterConfig:
+          Arn: !GetAtt FilaDeFalhas.Arn
+
+  # Um erro isolado é esperado: deploy da Vercel, instância reciclada, rede.
+  # Cinco em cinco minutos é outra coisa — é a fila parada sem ninguém saber.
+  AlarmeDeFalhas:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "nox-os-${Ambiente}-cron-falhando"
+      AlarmDescription: >-
+        O agendador da fila falhou repetidamente. A fila durável não está sendo
+        acordada, e nenhuma geração avança enquanto isso durar.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref Funcao
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # A fila de falhas com mensagens dentro é o sinal mais direto de que invocações
+  # estão sendo perdidas — sem retry, cada uma que chega aqui é um minuto que não
+  # aconteceu.
+  AlarmeDlq:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "nox-os-${Ambiente}-cron-dlq"
+      AlarmDescription: Invocações do agendador chegaram à fila de falhas.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt FilaDeFalhas.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Conditions:
+  # Nunca verdadeira. O parâmetro do segredo está declarado para documentar o
+  # recurso que o stack espera encontrar, e não para ser criado por ele.
+  NuncaCriar: !Equals ["sim", "nao"]
+
+Outputs:
+  NomeDaFuncao:
+    Value: !Ref Funcao
+  ArnDaDlq:
+    Value: !GetAtt FilaDeFalhas.Arn

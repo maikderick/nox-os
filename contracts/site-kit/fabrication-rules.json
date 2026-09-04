@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 2,
+  "rules": [
+    {
+      "id": "contato",
+      "label": "telefone, documento ou sequência numérica de contato",
+      "pattern": "\\d(?:[\\s().-]*\\d){7,}"
+    },
+    {
+      "id": "email",
+      "label": "endereço de e-mail",
+      "pattern": "[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}"
+    },
+    {
+      "id": "link",
+      "label": "endereço de site ou imagem",
+      "pattern": "https?:\\/\\/|www\\."
+    },
+    {
+      "id": "avaliacao",
+      "label": "avaliação, nota ou estrelas",
+      "pattern": "★|⭐|\\b(avaliac|estrela|reviews?\\b|nota\\s*\\d|classificac|bem avaliad)"
+    },
+    {
+      "id": "depoimento",
+      "label": "depoimento ou fala de cliente",
+      "pattern": "\\b(depoiment|testemunh|clientes? (dizem|adoram|amam|aprovam|elogiam)|feedback dos clientes)"
+    },
+    {
+      "id": "premio",
+      "label": "prêmio, certificação ou selo",
+      "pattern": "\\b(premi(o|os|ada|ado|ados)|galardo|certificad|selo de qualidade|reconhecid[oa] como)"
+    },
+    {
+      "id": "preco",
+      "label": "preço, promoção ou condição comercial",
+      "pattern": "(r\\$|\\bprec(o|os)\\b|\\bvalor(es)? a partir|\\bpromoc|\\bdesconto|\\bgratis\\b|\\bgratuit|\\bparcelament|\\ba partir de\\b|\\d+\\s*%|\\bcupom|\\borcamento sem custo)"
+    },
+    {
+      "id": "horario",
+      "label": "horário de funcionamento",
+      "pattern": "\\b(horario|funcionament|aberto (de|das|todos)|\\d{1,2}\\s*h(oras)?\\b|\\d{1,2}\\s*:\\s*\\d{2}|segunda a (sexta|sabado|domingo)|24\\s*horas|plantao|atendimento (das|de) \\d)"
+    },
+    {
+      "id": "experiencia",
+      "label": "tempo de mercado, volume de clientes ou histórico",
+      "pattern": "\\b(anos de (experiencia|mercado|atuacao|tradicao|historia)|desde \\d{4}|fundad[oa]|ha (mais de )?\\d+ anos|mais de \\d+\\s*(anos|clientes|atendimentos|pacientes|alunos)|\\d+\\s*\\+?\\s*(clientes|atendimentos|pacientes|alunos))"
+    },
+    {
+      "id": "garantia",
+      "label": "garantia ou promessa de resultado",
+      "pattern": "\\b(garant(ia|ias|imos|ido|ida)|sem risco|100\\s*%|\\bcura\\b|tratamento eficaz|comprovad|cientificamente|aprovado pela anvisa|resultado assegurado)"
+    },
+    {
+      "id": "superlativo",
+      "label": "superlativo sem comprovação",
+      "pattern": "\\b(o melhor|a melhor|os melhores|as melhores|numero 1|n[.ºo°]?\\s*1\\b|lider (de|do|em|no|na)|referencia (em|na|no) |imbativel|insuperavel)"
+    },
+    {
+      "id": "equipe",
+      "label": "qualificação de equipe não confirmada",
+      "pattern": "\\b(equipe (altamente )?(qualificada|especializada|certificada|treinada)|especialistas certificados|profissionais premiados)"
+    }
+  ]
+}

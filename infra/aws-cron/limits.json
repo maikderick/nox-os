@@ -1,0 +1,19 @@
+{
+  "_": "Fonte única dos limites do agendador. Lida pelo handler, pelo template e pelos testes dos dois lados.",
+
+  "consumerBudgetSeconds": 235,
+  "functionMaxDurationSeconds": 300,
+  "httpTimeoutSeconds": 310,
+  "lambdaTimeoutSeconds": 330,
+  "secretCacheTtlSeconds": 300,
+
+  "scheduleExpression": "rate(1 minute)",
+  "scheduleRetryAttempts": 0,
+  "reservedConcurrency": 6,
+  "memoryMb": 256,
+  "runtime": "python3.12",
+
+  "allowedScheme": "https",
+  "allowedHost": "nox-os-pi.vercel.app",
+  "allowedPath": "/api/jobs/run"
+}

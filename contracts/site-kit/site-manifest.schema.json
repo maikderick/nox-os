@@ -1,0 +1,83 @@
+{
+  "$ref": "#/definitions/SiteManifest",
+  "definitions": {
+    "SiteManifest": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "projectRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "briefVersion": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "factsHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "contentSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "template": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "commitSha": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            }
+          },
+          "required": [
+            "repository",
+            "commitSha"
+          ],
+          "additionalProperties": false
+        },
+        "siteKit": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "version",
+            "sha256"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "generatedAt",
+        "projectRef",
+        "briefVersion",
+        "factsHash",
+        "contentSha256",
+        "template",
+        "siteKit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

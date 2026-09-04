@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: nox
+          POSTGRES_PASSWORD: nox
+          POSTGRES_DB: nox_os
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nox -d nox_os"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://nox:nox@127.0.0.1:5432/nox_os?schema=public
+      NEXTAUTH_URL: http://127.0.0.1:3000
+      NEXTAUTH_SECRET: ci-only-secret-with-at-least-thirty-two-characters
+      CRON_SECRET: ci-only-cron-secret-with-at-least-thirty-two-characters
+      ADMIN_EMAIL: admin@noxos.local
+      ADMIN_PASSWORD: ci-only-admin-password
+      E2E_ADMIN_EMAIL: admin@noxos.local
+      E2E_ADMIN_PASSWORD: ci-only-admin-password
+      BRAND_NAME: NOX OS
+      SELLER_NAME: Equipe NOX
+      DEFAULT_CITY: Fortaleza/CE
+      PRIVACY_EMAIL: privacidade@noxos.local
+      PORTFOLIO_URL: https://example.invalid
+      NOX_WHATSAPP: "+5585999999999"
+      NOX_INTEGRATIONS: disabled
+      ALLOW_LEGACY_DEMO_LANDING_CREATION: "false"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Migrate and seed
+        run: |
+          npx prisma migrate deploy
+          npm run db:seed
+
+      - name: Verify application
+        run: npm run verify
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore

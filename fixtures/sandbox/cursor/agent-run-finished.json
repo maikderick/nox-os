@@ -1,0 +1,20 @@
+{
+  "id": "bc_01JEXAMPLE0000000000000000",
+  "name": "Gerar site do cliente",
+  "status": "FINISHED",
+  "source": {
+    "repository": "https://github.com/nox-sites-exemplo/site-exemplo",
+    "ref": "main"
+  },
+  "target": {
+    "branchName": "cursor/gerar-site-exemplo-0a1b",
+    "url": "https://github.com/nox-sites-exemplo/site-exemplo/pull/7",
+    "prUrl": "https://github.com/nox-sites-exemplo/site-exemplo/pull/7",
+    "autoCreatePr": true
+  },
+  "summary": {
+    "commitSha": "7f3a19c4b28d5e60a1f9c2b8d47e05a3619c8d2f"
+  },
+  "createdAt": "2026-08-26T12:00:00.000Z",
+  "finishedAt": "2026-08-26T12:04:31.000Z"
+}

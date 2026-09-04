@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: nox-os-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nox
+      POSTGRES_PASSWORD: nox
+      POSTGRES_DB: nox_os
+    ports:
+      - "5432:5432"
+    volumes:
+      - nox_os_pg:/var/lib/postgresql/data
+
+volumes:
+  nox_os_pg:

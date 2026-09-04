@@ -1,0 +1,22 @@
+{
+  "id": 862341097,
+  "node_id": "R_kgDOMuEXaQ",
+  "name": "site-exemplo",
+  "full_name": "nox-sites-exemplo/site-exemplo",
+  "private": true,
+  "owner": {
+    "login": "nox-sites-exemplo",
+    "id": 199283746,
+    "type": "Organization"
+  },
+  "html_url": "https://github.com/nox-sites-exemplo/site-exemplo",
+  "default_branch": "main",
+  "is_template": false,
+  "visibility": "private",
+  "template_repository": {
+    "name": "nox-site-template",
+    "owner": {
+      "login": "maikderick"
+    }
+  }
+}

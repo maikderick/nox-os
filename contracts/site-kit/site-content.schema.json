@@ -1,0 +1,1404 @@
+{
+  "$ref": "#/definitions/SiteContent",
+  "definitions": {
+    "SiteContent": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 2
+        },
+        "about": {
+          "type": "object",
+          "properties": {
+            "heading": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "body": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1500
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "LEAD",
+                      "OPERADOR",
+                      "CLIENTE",
+                      "IMPORTACAO"
+                    ]
+                  },
+                  "confirmedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source",
+                  "confirmedAt"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 10
+            }
+          },
+          "required": [
+            "heading",
+            "body"
+          ],
+          "additionalProperties": false
+        },
+        "business": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "LEAD",
+                    "OPERADOR",
+                    "CLIENTE",
+                    "IMPORTACAO"
+                  ]
+                },
+                "confirmedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "value",
+                "source",
+                "confirmedAt"
+              ],
+              "additionalProperties": false
+            },
+            "legalName": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 180
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "LEAD",
+                        "OPERADOR",
+                        "CLIENTE",
+                        "IMPORTACAO"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source",
+                    "confirmedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "description": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 600
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "LEAD",
+                    "OPERADOR",
+                    "CLIENTE",
+                    "IMPORTACAO"
+                  ]
+                },
+                "confirmedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "value",
+                "source",
+                "confirmedAt"
+              ],
+              "additionalProperties": false
+            },
+            "sector": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "LEAD",
+                    "OPERADOR",
+                    "CLIENTE",
+                    "IMPORTACAO"
+                  ]
+                },
+                "confirmedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "value",
+                "source",
+                "confirmedAt"
+              ],
+              "additionalProperties": false
+            },
+            "logo": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "src": {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    "alt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 180
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "CLIENTE",
+                        "OPERADOR",
+                        "BANCO_DE_IMAGENS"
+                      ]
+                    },
+                    "license": {
+                      "type": "string",
+                      "enum": [
+                        "PROPRIA",
+                        "LICENCIADA"
+                      ]
+                    },
+                    "credit": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 180
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "creditUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "width": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 10000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "height": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 10000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    }
+                  },
+                  "required": [
+                    "src",
+                    "alt",
+                    "source",
+                    "license"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "sector"
+          ],
+          "additionalProperties": false
+        },
+        "contact": {
+          "type": "object",
+          "properties": {
+            "phone": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "pattern": "^\\+[1-9]\\d{7,14}$"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "LEAD",
+                        "OPERADOR",
+                        "CLIENTE",
+                        "IMPORTACAO"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source",
+                    "confirmedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "whatsapp": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "pattern": "^\\+[1-9]\\d{7,14}$"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "LEAD",
+                        "OPERADOR",
+                        "CLIENTE",
+                        "IMPORTACAO"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source",
+                    "confirmedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "email": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 254,
+                      "format": "email"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "LEAD",
+                        "OPERADOR",
+                        "CLIENTE",
+                        "IMPORTACAO"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source",
+                    "confirmedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "address": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "street": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 180
+                        },
+                        "number": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 20
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null
+                        },
+                        "complement": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null
+                        },
+                        "neighborhood": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null
+                        },
+                        "city": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "state": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "postalCode": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 20
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null
+                        },
+                        "country": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "default": "Brasil"
+                        }
+                      },
+                      "required": [
+                        "street",
+                        "city",
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "LEAD",
+                        "OPERADOR",
+                        "CLIENTE",
+                        "IMPORTACAO"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source",
+                    "confirmedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "coordinates": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "latitude": {
+                          "type": "number",
+                          "minimum": -90,
+                          "maximum": 90
+                        },
+                        "longitude": {
+                          "type": "number",
+                          "minimum": -180,
+                          "maximum": 180
+                        }
+                      },
+                      "required": [
+                        "latitude",
+                        "longitude"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "LEAD",
+                        "OPERADOR",
+                        "CLIENTE",
+                        "IMPORTACAO"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source",
+                    "confirmedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "openingHours": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "dayOfWeek": {
+                            "type": "string",
+                            "enum": [
+                              "SEGUNDA",
+                              "TERCA",
+                              "QUARTA",
+                              "QUINTA",
+                              "SEXTA",
+                              "SABADO",
+                              "DOMINGO"
+                            ]
+                          },
+                          "opens": {
+                            "type": "string",
+                            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                          },
+                          "closes": {
+                            "type": "string",
+                            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                          }
+                        },
+                        "required": [
+                          "dayOfWeek",
+                          "opens",
+                          "closes"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "minItems": 1,
+                      "maxItems": 14
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "LEAD",
+                        "OPERADOR",
+                        "CLIENTE",
+                        "IMPORTACAO"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source",
+                    "confirmedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "socialLinks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "object",
+                    "properties": {
+                      "platform": {
+                        "type": "string",
+                        "enum": [
+                          "INSTAGRAM",
+                          "FACEBOOK",
+                          "LINKEDIN",
+                          "YOUTUBE",
+                          "TIKTOK",
+                          "X"
+                        ]
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 2048
+                      },
+                      "label": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 60
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null
+                      }
+                    },
+                    "required": [
+                      "platform",
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "LEAD",
+                      "OPERADOR",
+                      "CLIENTE",
+                      "IMPORTACAO"
+                    ]
+                  },
+                  "confirmedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source",
+                  "confirmedAt"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 12,
+              "default": []
+            }
+          },
+          "additionalProperties": false
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "name": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "LEAD",
+                      "OPERADOR",
+                      "CLIENTE",
+                      "IMPORTACAO"
+                    ]
+                  },
+                  "confirmedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source",
+                  "confirmedAt"
+                ],
+                "additionalProperties": false
+              },
+              "summary": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 320
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "LEAD",
+                      "OPERADOR",
+                      "CLIENTE",
+                      "IMPORTACAO"
+                    ]
+                  },
+                  "confirmedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source",
+                  "confirmedAt"
+                ],
+                "additionalProperties": false
+              },
+              "body": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1500
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "LEAD",
+                        "OPERADOR",
+                        "CLIENTE",
+                        "IMPORTACAO"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source",
+                    "confirmedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 12
+              },
+              "image": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "src": {
+                        "type": "string",
+                        "maxLength": 2048
+                      },
+                      "alt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 180
+                      },
+                      "source": {
+                        "type": "string",
+                        "enum": [
+                          "CLIENTE",
+                          "OPERADOR",
+                          "BANCO_DE_IMAGENS"
+                        ]
+                      },
+                      "license": {
+                        "type": "string",
+                        "enum": [
+                          "PROPRIA",
+                          "LICENCIADA"
+                        ]
+                      },
+                      "credit": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 180
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null
+                      },
+                      "creditUrl": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2048
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null
+                      },
+                      "width": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 10000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null
+                      },
+                      "height": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 10000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null
+                      }
+                    },
+                    "required": [
+                      "src",
+                      "alt",
+                      "source",
+                      "license"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "featured": {
+                "type": "boolean",
+                "default": false
+              },
+              "relatedSlugs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "maxItems": 6,
+                "default": []
+              }
+            },
+            "required": [
+              "slug",
+              "name",
+              "summary",
+              "body"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 40,
+          "default": []
+        },
+        "gallery": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "src": {
+                "type": "string",
+                "maxLength": 2048
+              },
+              "alt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 180
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "CLIENTE",
+                  "OPERADOR",
+                  "BANCO_DE_IMAGENS"
+                ]
+              },
+              "license": {
+                "type": "string",
+                "enum": [
+                  "PROPRIA",
+                  "LICENCIADA"
+                ]
+              },
+              "credit": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 180
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "creditUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 10000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "height": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 10000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "src",
+              "alt",
+              "source",
+              "license"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 24,
+          "default": []
+        },
+        "callsToAction": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "INTERNO",
+                  "WHATSAPP",
+                  "TELEFONE",
+                  "EMAIL"
+                ]
+              },
+              "target": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^\\/(?![/\\\\])[A-Za-z0-9\\-._~/]*$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "location": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60,
+                "default": "geral"
+              },
+              "primary": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": [
+              "label",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 12,
+          "default": []
+        },
+        "branding": {
+          "type": "object",
+          "properties": {
+            "primaryColor": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#1d4ed8"
+            },
+            "accentColor": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#0f766e"
+            },
+            "surfaceColor": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#ffffff"
+            },
+            "textColor": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#111827"
+            },
+            "fontFamily": {
+              "type": "string",
+              "enum": [
+                "sans",
+                "serif"
+              ],
+              "default": "sans"
+            },
+            "radius": {
+              "type": "string",
+              "enum": [
+                "none",
+                "sm",
+                "md",
+                "lg"
+              ],
+              "default": "md"
+            }
+          },
+          "additionalProperties": false
+        },
+        "seo": {
+          "type": "object",
+          "properties": {
+            "siteUrl": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "defaultTitle": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 70
+            },
+            "titleTemplate": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 70
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180
+            },
+            "ogImage": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "src": {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    "alt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 180
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "CLIENTE",
+                        "OPERADOR",
+                        "BANCO_DE_IMAGENS"
+                      ]
+                    },
+                    "license": {
+                      "type": "string",
+                      "enum": [
+                        "PROPRIA",
+                        "LICENCIADA"
+                      ]
+                    },
+                    "credit": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 180
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "creditUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "width": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 10000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "height": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 10000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    }
+                  },
+                  "required": [
+                    "src",
+                    "alt",
+                    "source",
+                    "license"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "localBusinessType": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "LocalBusiness",
+                    "ProfessionalService",
+                    "Store",
+                    "Restaurant",
+                    "Bakery",
+                    "CafeOrCoffeeShop",
+                    "BeautySalon",
+                    "HairSalon",
+                    "HealthAndBeautyBusiness",
+                    "MedicalClinic",
+                    "Dentist",
+                    "Physician",
+                    "AutoRepair",
+                    "LegalService",
+                    "RealEstateAgent",
+                    "HomeAndConstructionBusiness",
+                    "Electrician",
+                    "Plumber"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "locale": {
+              "type": "string",
+              "enum": [
+                "pt_BR"
+              ],
+              "default": "pt_BR"
+            }
+          },
+          "required": [
+            "siteUrl",
+            "defaultTitle",
+            "description"
+          ],
+          "additionalProperties": false
+        },
+        "analytics": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "none",
+                "ga4"
+              ],
+              "default": "none"
+            },
+            "measurementId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^G-[A-Z0-9]{4,20}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "consentMode": {
+              "type": "string",
+              "enum": [
+                "required",
+                "not_required"
+              ],
+              "default": "required"
+            }
+          },
+          "additionalProperties": false
+        },
+        "privacy": {
+          "type": "object",
+          "properties": {
+            "controllerName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180
+            },
+            "contactEmail": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 254,
+                  "format": "email"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "sections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "heading": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "body": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1500
+                    },
+                    "minItems": 1,
+                    "maxItems": 10
+                  }
+                },
+                "required": [
+                  "heading",
+                  "body"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 20
+            }
+          },
+          "required": [
+            "controllerName",
+            "updatedAt",
+            "sections"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "about",
+        "business",
+        "contact",
+        "branding",
+        "seo",
+        "analytics",
+        "privacy"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
